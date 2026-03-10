@@ -19,6 +19,7 @@ Rules:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import re
@@ -27,7 +28,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
@@ -40,6 +41,9 @@ NS = {
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
 REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
+
+_IMAGE_TABLE_PIPELINE_MODULE: Optional[object] = None
+_IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
 
 
 def run_structure_analysis_stage(
@@ -96,8 +100,9 @@ def run_structure_analysis_stage(
 
 
 def ensure_imports(repo_root: Path) -> None:
-    # Support both old and new repository layouts.
+    # Support both new and legacy repository layouts.
     candidates = [
+        repo_root,
         repo_root / "table_parser",
         repo_root / "pptx_table_parser" / "table_parser",
         repo_root / "pptx_table_parser",
@@ -268,6 +273,11 @@ def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
     return pkg_dir.resolve()
 
 
+def is_ignored_pptx_file(path: Path) -> bool:
+    # Skip Office lock/temp files like "~$sample1.pptx".
+    return path.name.startswith("~$")
+
+
 def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
     if not raw_inputs:
         return list(raw_inputs)
@@ -287,6 +297,8 @@ def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
         picked_file: Optional[Path] = None
         for cand in candidates:
             if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
+                if is_ignored_pptx_file(cand):
+                    continue
                 picked_file = cand.resolve()
                 break
         if picked_file is None:
@@ -301,7 +313,11 @@ def collect_raw_pptx_inputs(cwd: Path) -> List[str]:
     raw_dir = raw_pptx_dir(cwd)
     raw_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(
-        [path.resolve() for path in raw_dir.glob("*.pptx") if path.is_file()],
+        [
+            path.resolve()
+            for path in raw_dir.glob("*.pptx")
+            if path.is_file() and not is_ignored_pptx_file(path)
+        ],
         key=lambda path: natural_key(path.name),
     )
     return [str(path) for path in files]
@@ -1034,6 +1050,54 @@ def convert_table_to_markdown(
     return md, None
 
 
+def _load_image_table_pipeline() -> Tuple[Optional[object], Optional[str]]:
+    global _IMAGE_TABLE_PIPELINE_MODULE, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+    if _IMAGE_TABLE_PIPELINE_MODULE is not None:
+        return _IMAGE_TABLE_PIPELINE_MODULE, None
+    if _IMAGE_TABLE_PIPELINE_IMPORT_ERROR is not None:
+        return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+
+    import_errors: List[str] = []
+    for module_name in ("image_pipeline.service", "image_table_pipeline"):
+        try:
+            _IMAGE_TABLE_PIPELINE_MODULE = importlib.import_module(module_name)
+            return _IMAGE_TABLE_PIPELINE_MODULE, None
+        except Exception as exc:  # noqa: BLE001
+            import_errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
+
+    _IMAGE_TABLE_PIPELINE_IMPORT_ERROR = "; ".join(import_errors)
+    return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+
+
+def convert_picture_to_table_markdown(
+    image_path: str,
+) -> Tuple[Optional[str], Optional[str], bool]:
+    module, import_error = _load_image_table_pipeline()
+    if module is None:
+        return None, f"image-table pipeline unavailable: {import_error}", True
+    try:
+        result = module.extract_table_markdown_from_image(Path(image_path), header_rows=1)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}", False
+
+    if not isinstance(result, dict):
+        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False
+
+    status = str(result.get("status", "error"))
+    if status == "table":
+        markdown = result.get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            return markdown, None, False
+        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False
+    if status == "not_table":
+        return None, None, False
+
+    error = result.get("error")
+    if not isinstance(error, str) or not error.strip():
+        error = "unknown image-table pipeline error"
+    return None, f"{Path(image_path).name}: {error}", False
+
+
 def convert_one_slide(
     slide_xml: Path,
     page_no: int,
@@ -1041,6 +1105,7 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    enable_image_table_pipeline: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
@@ -1072,6 +1137,7 @@ def convert_one_slide(
     }
     stats["resolved_images"] += overlay_resolved
     stats["unresolved_images"] += overlay_unresolved
+    image_pipeline_unavailable_reported = False
 
     for child in list(sp_tree):
         tag = local_name(child.tag)
@@ -1140,6 +1206,22 @@ def convert_one_slide(
                 stats["warnings"].append(warn)
             else:
                 stats["resolved_images"] += 1
+
+            if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
+                table_md, table_warn, unavailable = convert_picture_to_table_markdown(img_path)
+                if table_md is not None:
+                    lines.append(table_md.strip())
+                    lines.append("")
+                    stats["table_blocks"] += 1
+                    continue
+                if table_warn:
+                    if unavailable:
+                        if not image_pipeline_unavailable_reported:
+                            stats["warnings"].append(table_warn)
+                            image_pipeline_unavailable_reported = True
+                    else:
+                        stats["warnings"].append(table_warn)
+
             lines.append(
                 format_markdown_image(
                     img_path,
@@ -1319,6 +1401,16 @@ def main() -> int:
         action="store_true",
         help="Use existing output/structure_ready instead of running the Surya pipeline.",
     )
+    parser.add_argument(
+        "--image-table-pipeline",
+        action="store_true",
+        help="Classify image blocks with PaddleOCR and parse table images with Surya.",
+    )
+    parser.add_argument(
+        "--output-file",
+        default=None,
+        help="Optional single markdown output path merged from processed package result(s).",
+    )
     args = parser.parse_args()
     if args.raw and args.inputs:
         parser.error("--raw cannot be used together with positional inputs.")
@@ -1361,7 +1453,7 @@ def main() -> int:
         return 0
 
     manifest = {
-        "started_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "packages": [],
         "summary": {
             "processed_packages": 0,
@@ -1372,6 +1464,7 @@ def main() -> int:
             "table_blocks": 0,
         },
     }
+    merged_packages: List[Tuple[str, str]] = []
 
     for pkg in packages:
         pkg_name = pkg.name
@@ -1465,6 +1558,7 @@ def main() -> int:
                     output_dir=pkg_out,
                     media_dir=media_dir,
                     copied_media=copied_media,
+                    enable_image_table_pipeline=args.image_table_pipeline,
                 )
                 if args.reading_order == "surya":
                     row["surya_source"] = str(structure_output_dir)
@@ -1476,6 +1570,7 @@ def main() -> int:
                         output_dir=per_slide_dir,
                         media_dir=media_dir,
                         copied_media=copied_media,
+                        enable_image_table_pipeline=args.image_table_pipeline,
                     )
                     out_md = per_slide_dir / f"{slide_xml.stem}.md"
                     out_md.write_text(md_text, encoding="utf-8")
@@ -1512,12 +1607,34 @@ def main() -> int:
             merged += "\n"
         merged_path = pkg_out / "result.md"
         merged_path.write_text(merged, encoding="utf-8")
+        merged_packages.append((pkg_name, merged))
         manifest["summary"]["processed_packages"] += 1
         manifest["packages"].append(pkg_row)
 
-    manifest["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    manifest["finished_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     manifest_path = output_dir / "convert_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if args.output_file:
+        out_path = Path(args.output_file).expanduser()
+        if not out_path.is_absolute():
+            out_path = (cwd / out_path).resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if len(merged_packages) <= 1:
+            merged_text = merged_packages[0][1] if merged_packages else ""
+        else:
+            blocks: List[str] = []
+            for pkg_name, pkg_md in merged_packages:
+                block = f"## Package: {pkg_name}\n\n{pkg_md.strip()}".strip()
+                if block:
+                    blocks.append(block)
+            merged_text = "\n\n".join(blocks)
+            if merged_text:
+                merged_text += "\n"
+
+        out_path.write_text(merged_text, encoding="utf-8")
+        print(f"Wrote combined markdown: {out_path.resolve()}")
 
     print(f"Wrote package outputs under: {output_dir.resolve()}")
     print(f"Wrote: {manifest_path.resolve()}")

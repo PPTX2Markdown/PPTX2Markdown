@@ -105,3 +105,29 @@ python3 main_converter/convert_slides_to_md.py --reading-order surya --surya-dir
 
 - `0`: 전체 성공
 - `1`: 하나 이상 슬라이드 변환 실패
+
+## Image Table Pipeline (PaddleOCR + Surya)
+
+Use this option when slide pictures may contain tables:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --image-table-pipeline
+```
+
+Behavior:
+- For each `pic` block, classify with PaddleOCR layout model first.
+- If predicted as non-table, keep existing image markdown behavior.
+- If predicted as table, run Surya table recognition and render markdown table directly.
+
+## Quick output check
+
+You can write one merged markdown file directly:
+
+```bash
+python3 convert_slides_to_md.py --image-table-pipeline --output-file ../../out.md
+```
+
+Check outputs:
+- `../../out.md` (single merged output)
+- `output/xml/<package>/result.md` (per package)
+- `output/xml/convert_manifest.json` (run details)

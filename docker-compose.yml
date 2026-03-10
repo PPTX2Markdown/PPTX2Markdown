@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pptx2markdown-dev:latest
+    container_name: pptx2markdown-dev
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+    volumes:
+      - ./:/workspace
+      - hf_cache:/root/.cache/huggingface
+      - torch_cache:/root/.cache/torch
+      - pip_cache:/root/.cache/pip
+    environment:
+      PYTHONUNBUFFERED: "1"
+      HF_HOME: /root/.cache/huggingface
+      TRANSFORMERS_CACHE: /root/.cache/huggingface
+
+volumes:
+  hf_cache:
+  torch_cache:
+  pip_cache:
