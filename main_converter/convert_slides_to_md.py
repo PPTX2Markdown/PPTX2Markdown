@@ -5,12 +5,14 @@ Convert extracted PPTX package(s) to markdown.
 Usage:
   python convert_slides_to_md.py [ppt_root_dir|file.pptx ...]
   python convert_slides_to_md.py --raw
+  python convert_slides_to_md.py --raw [sample1|sample1.pptx|raw_pptx/sample1.pptx ...]
 
 Rules:
   - If no positional args are provided, process all package roots in ./target_pptx.
   - Package root example: ./target_pptx/sample1
   - If a .pptx file is provided, it is extracted automatically into ./target_pptx/<stem>/.
   - If --raw is provided, process all .pptx files in ./raw_pptx.
+    If positional args are also provided, only those raw .pptx files are processed.
   - Each package must contain: ./ppt/slides
   - Output is always written to ./output (created automatically).
   - Input slide XML order is assumed to be the final reading order.
@@ -49,6 +51,7 @@ _IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
 def run_structure_analysis_stage(
     repo_root: Path,
     slide_xmls: Sequence[Path],
+    strict: bool = False,
 ) -> Tuple[Dict[str, Path], Path]:
     ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
     if not ro_script.exists():
@@ -63,6 +66,8 @@ def run_structure_analysis_stage(
         "--output-dir",
         str(ro_output),
     ]
+    if strict:
+        cmd.append("--strict")
     cmd.extend(str(p.resolve()) for p in slide_xmls)
 
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -232,11 +237,37 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
         zf.extractall(dest_dir)
 
 
-def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
+def extract_pptx_to_target(
+    pptx_path: Path,
+    extraction_root: Path,
+    allow_replace_unmanaged: bool = False,
+) -> Path:
     stat = pptx_path.stat()
     extraction_root.mkdir(parents=True, exist_ok=True)
     pkg_name = sanitize_package_name(pptx_path.stem)
     pkg_dir = extraction_root / pkg_name
+
+    # Raw extraction target should be a real managed directory, never a symlink.
+    # Remove legacy symlink targets (including valid/broken links) before extraction.
+    if pkg_dir.is_symlink():
+        try:
+            pkg_dir.unlink()
+        except PermissionError:
+            if allow_replace_unmanaged:
+                # Some bind-mounted filesystems disallow unlinking symlinks.
+                # Fall back to an alternate managed directory name.
+                suffix = "__raw"
+                idx = 0
+                while True:
+                    candidate_name = f"{pkg_name}{suffix}" if idx == 0 else f"{pkg_name}{suffix}{idx}"
+                    candidate = extraction_root / candidate_name
+                    if not candidate.exists() and not candidate.is_symlink():
+                        pkg_name = candidate_name
+                        pkg_dir = candidate
+                        break
+                    idx += 1
+            else:
+                raise
 
     if package_marker_matches(pkg_dir, pptx_path):
         return pkg_dir.resolve()
@@ -244,6 +275,8 @@ def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
     marker = package_marker_path(pkg_dir)
     if pkg_dir.exists():
         if marker.exists():
+            shutil.rmtree(pkg_dir)
+        elif allow_replace_unmanaged:
             shutil.rmtree(pkg_dir)
         else:
             raise FileExistsError(
@@ -278,7 +311,11 @@ def is_ignored_pptx_file(path: Path) -> bool:
     return path.name.startswith("~$")
 
 
-def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
+def prepare_package_inputs(
+    cwd: Path,
+    raw_inputs: Sequence[str],
+    force_extract: bool = False,
+) -> List[str]:
     if not raw_inputs:
         return list(raw_inputs)
 
@@ -304,7 +341,11 @@ def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
         if picked_file is None:
             prepared.append(item)
             continue
-        pkg_dir = extract_pptx_to_target(picked_file, extraction_root)
+        pkg_dir = extract_pptx_to_target(
+            picked_file,
+            extraction_root,
+            allow_replace_unmanaged=force_extract,
+        )
         prepared.append(str(pkg_dir))
     return prepared
 
@@ -321,6 +362,43 @@ def collect_raw_pptx_inputs(cwd: Path) -> List[str]:
         key=lambda path: natural_key(path.name),
     )
     return [str(path) for path in files]
+
+
+def resolve_selected_raw_inputs(cwd: Path, selections: Sequence[str]) -> List[str]:
+    raw_dir = raw_pptx_dir(cwd)
+    resolved: List[str] = []
+    missing: List[str] = []
+
+    for item in selections:
+        token = item.strip()
+        if not token:
+            continue
+        as_path = Path(token)
+        candidates: List[Path] = [as_path, cwd / as_path, raw_dir / as_path]
+        if as_path.suffix.lower() != ".pptx":
+            candidates.append(raw_dir / f"{token}.pptx")
+
+        picked: Optional[Path] = None
+        for cand in candidates:
+            if not cand.exists() or not cand.is_file():
+                continue
+            if cand.suffix.lower() != ".pptx" or is_ignored_pptx_file(cand):
+                continue
+            picked = cand.resolve()
+            break
+
+        if picked is None:
+            missing.append(item)
+            continue
+        resolved.append(str(picked))
+
+    if missing:
+        msg = ", ".join(missing)
+        raise FileNotFoundError(
+            "Raw selection did not match any .pptx file in ./raw_pptx (or provided path): "
+            f"{msg}"
+        )
+    return resolved
 
 
 def parse_slide_number(filename: str, default_idx: int) -> int:
@@ -737,6 +815,12 @@ def infer_heading_depth_fallback(text: str, text_block_index: int) -> Optional[i
     return None
 
 
+def infer_heading_depth_fallback_strict(text: str, text_block_index: int) -> Optional[int]:
+    # Strict mode keeps fallback conservative; rely on structure_analyzer hints first.
+    # TODO: Add stricter lexical and position-aware fallback heuristics for xml-only mode.
+    return None
+
+
 def shape_id_of(elem: ET.Element) -> str:
     c_nv_pr = elem.find(".//p:cNvPr", NS)
     if c_nv_pr is None:
@@ -1106,6 +1190,7 @@ def convert_one_slide(
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
     enable_image_table_pipeline: bool = False,
+    strict_headings: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
@@ -1169,7 +1254,11 @@ def convert_one_slide(
             is_candidate = bool(hint.get("is_heading_candidate", False))
 
             if not is_candidate:
-                fb_depth = infer_heading_depth_fallback(text, text_block_index)
+                fb_depth = (
+                    infer_heading_depth_fallback_strict(text, text_block_index)
+                    if strict_headings
+                    else infer_heading_depth_fallback(text, text_block_index)
+                )
                 if fb_depth is not None:
                     depth = fb_depth
                     score = 0.8
@@ -1177,7 +1266,8 @@ def convert_one_slide(
 
             rendered = text
             # Final markdown heading level rendering is converter responsibility.
-            if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= 0.7:
+            heading_threshold = 0.88 if strict_headings else 0.7
+            if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
                 key = normalize_text(text)
                 if key not in used_headings:
                     rendered = f"{'#' * depth} {text}"
@@ -1363,12 +1453,18 @@ def main() -> int:
     parser.add_argument(
         "inputs",
         nargs="*",
-        help="Package root dir(s) or .pptx file(s). If omitted, process ./target_pptx/*.",
+        help=(
+            "Package root dir(s) or .pptx file(s). "
+            "If --raw is used, these are treated as raw selections."
+        ),
     )
     parser.add_argument(
         "--raw",
         action="store_true",
-        help="Process all .pptx files in ./raw_pptx by extracting them into ./target_pptx first.",
+        help=(
+            "Process .pptx files in ./raw_pptx by extracting into ./target_pptx first. "
+            "With positional args, process only selected raw files."
+        ),
     )
     parser.add_argument(
         "--per-slide",
@@ -1380,6 +1476,11 @@ def main() -> int:
         choices=("xml", "surya"),
         default="xml",
         help="Reading-order strategy. Default uses legacy XML-only ordering.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Use strict heading detection in xml reading-order mode only.",
     )
     parser.add_argument(
         "--surya-dir",
@@ -1412,9 +1513,6 @@ def main() -> int:
         help="Optional single markdown output path merged from processed package result(s).",
     )
     args = parser.parse_args()
-    if args.raw and args.inputs:
-        parser.error("--raw cannot be used together with positional inputs.")
-
     cwd = Path.cwd()
     output_root = cwd / "output"
     output_dir = output_root / args.reading_order
@@ -1423,16 +1521,20 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     ensure_imports(repo_root)
     if args.raw:
-        raw_inputs = collect_raw_pptx_inputs(cwd)
+        raw_inputs = (
+            resolve_selected_raw_inputs(cwd, args.inputs) if args.inputs else collect_raw_pptx_inputs(cwd)
+        )
         if not raw_inputs:
             print(f"No .pptx files found in: {raw_pptx_dir(cwd).resolve()}")
             return 0
-        prepared_inputs = prepare_package_inputs(cwd, raw_inputs)
+        prepared_inputs = prepare_package_inputs(cwd, raw_inputs, force_extract=True)
     else:
         prepared_inputs = prepare_package_inputs(cwd, args.inputs)
     surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
     surya_structure_root: Optional[Path] = None
     if args.reading_order == "surya":
+        if args.strict:
+            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
         surya_structure_root = prepare_surya_structure_root(
             repo_root=repo_root,
             raw_surya_dir=surya_dir,
@@ -1499,6 +1601,7 @@ def main() -> int:
                 ro_map, ro_output = run_structure_analysis_stage(
                     repo_root=repo_root,
                     slide_xmls=slide_xmls,
+                    strict=args.strict,
                 )
                 pkg_row["structure_analysis_output_dir"] = str(ro_output)
             except Exception as e:  # noqa: BLE001
@@ -1559,6 +1662,7 @@ def main() -> int:
                     media_dir=media_dir,
                     copied_media=copied_media,
                     enable_image_table_pipeline=args.image_table_pipeline,
+                    strict_headings=(args.reading_order == "xml" and args.strict),
                 )
                 if args.reading_order == "surya":
                     row["surya_source"] = str(structure_output_dir)
@@ -1571,6 +1675,7 @@ def main() -> int:
                         media_dir=media_dir,
                         copied_media=copied_media,
                         enable_image_table_pipeline=args.image_table_pipeline,
+                        strict_headings=(args.reading_order == "xml" and args.strict),
                     )
                     out_md = per_slide_dir / f"{slide_xml.stem}.md"
                     out_md.write_text(md_text, encoding="utf-8")
