@@ -8,14 +8,22 @@ existing parsed-table format used by table_parser.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 MODEL_NAME = "PP-DocLayout_plus-L"
+CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
+CLIP_TABLE_THRESHOLD = float(os.getenv("IMAGE_TABLE_CLIP_THRESHOLD", "0.45"))
+CLIP_TABLE_MARGIN = float(os.getenv("IMAGE_TABLE_CLIP_MARGIN", "0.15"))
+CLIP_NEAR_TABLE_THRESHOLD = float(os.getenv("IMAGE_TABLE_CLIP_NEAR_TABLE_THRESHOLD", "0.75"))
+CLIP_STRONG_OTHER_THRESHOLD = float(os.getenv("IMAGE_TABLE_CLIP_STRONG_OTHER_THRESHOLD", "0.60"))
 
 _LAYOUT_MODEL: Any = None
+_CLIP_CLASSIFIER: Any = None
+_CLIP_LOAD_ERROR: Optional[str] = None
 _SURYA_MODELS: Optional[Tuple[Any, Any, Any, Any]] = None
 
 _CLASSIFY_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -30,6 +38,31 @@ _SUPPORTED_LAYOUT_SUFFIXES = {
     ".tiff",
 }
 _DEFAULT_BG_GRAY = 192
+_CLIP_LABEL_SPECS: List[Dict[str, str]] = [
+    {
+        "class_name": "table",
+        "prompt": "a structured data table with clear rows and columns of cell values",
+    },
+    {
+        "class_name": "chart",
+        "prompt": "a chart or graph with plotted data such as bars, lines, or pie slices",
+    },
+    {
+        "class_name": "formula",
+        "prompt": "a mathematical formula",
+    },
+    {
+        "class_name": "photo_or_illustration",
+        "prompt": "a natural photo or illustration",
+    },
+    {
+        "class_name": "other",
+        "prompt": (
+            "a presentation slide screenshot, software user interface, dashboard, map, "
+            "workflow diagram, topology diagram, web page, or other non-table document content"
+        ),
+    },
+]
 
 
 def _to_builtin(obj: Any) -> Any:
@@ -87,40 +120,67 @@ def _get_bbox(item: Dict[str, Any]) -> Optional[List[float]]:
     return None
 
 
-def _classify_page(boxes: Sequence[Dict[str, Any]]) -> Tuple[str, Dict[str, float]]:
-    area_by_label: Dict[str, float] = {}
+def _get_score(item: Dict[str, Any]) -> Optional[float]:
+    for key in ("score", "confidence", "prob"):
+        value = item.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return None
+
+
+def _map_label_to_group(label: str) -> str:
+    if label == "table":
+        return "table"
+    if "chart" in label:
+        return "chart"
+    if label in {
+        "text",
+        "document title",
+        "paragraph title",
+        "abstract",
+        "header",
+        "footer",
+        "references",
+        "footnote",
+        "sidebar text",
+        "algorithm",
+        "formula",
+        "formula number",
+        "figure_table title",
+    }:
+        return "text"
+    return "other"
+
+
+def _classify_page(boxes: Sequence[Dict[str, Any]]) -> Tuple[str, Dict[str, float], Dict[str, float], float]:
+    score_by_label: Dict[str, float] = {}
     for item in boxes:
         label = _get_label(item)
-        bbox = _get_bbox(item)
-        if not label or not bbox:
+        score = _get_score(item)
+        if not label or score is None:
             continue
-        area = max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
-        area_by_label[label] = area_by_label.get(label, 0.0) + area
+        prev = score_by_label.get(label)
+        if prev is None or score > prev:
+            score_by_label[label] = score
 
-    score = {
-        "table": area_by_label.get("table", 0.0),
-        "chart": area_by_label.get("chart", 0.0),
-        "text": (
-            area_by_label.get("text", 0.0)
-            + area_by_label.get("document title", 0.0)
-            + area_by_label.get("paragraph title", 0.0)
-            + area_by_label.get("abstract", 0.0)
-            + area_by_label.get("header", 0.0)
-            + area_by_label.get("footer", 0.0)
-            + area_by_label.get("references", 0.0)
-            + area_by_label.get("footnote", 0.0)
-            + area_by_label.get("sidebar text", 0.0)
-            + area_by_label.get("algorithm", 0.0)
-            + area_by_label.get("formula", 0.0)
-            + area_by_label.get("formula number", 0.0)
-            + area_by_label.get("figure_table title", 0.0)
-        ),
-        "other": area_by_label.get("image", 0.0) + area_by_label.get("seal", 0.0),
+    score_by_group = {
+        "table": 0.0,
+        "chart": 0.0,
+        "text": 0.0,
+        "other": 0.0,
     }
+    for label, score in score_by_label.items():
+        group = _map_label_to_group(label)
+        score_by_group[group] = max(score_by_group[group], score)
 
-    if not boxes or all(v <= 0 for v in score.values()):
-        return "other", score
-    return max(score, key=score.get), score
+    if not score_by_label:
+        return "other", score_by_label, score_by_group, 0.0
+
+    predicted_class = max(
+        sorted(score_by_label),
+        key=lambda label: score_by_label[label],
+    )
+    return predicted_class, score_by_label, score_by_group, score_by_label[predicted_class]
 
 
 def _load_layout_model() -> Any:
@@ -130,6 +190,85 @@ def _load_layout_model() -> Any:
 
         _LAYOUT_MODEL = LayoutDetection(model_name=MODEL_NAME)
     return _LAYOUT_MODEL
+
+
+def _load_clip_classifier() -> Any:
+    global _CLIP_CLASSIFIER, _CLIP_LOAD_ERROR
+    if _CLIP_CLASSIFIER is not None:
+        return _CLIP_CLASSIFIER
+    if _CLIP_LOAD_ERROR is not None:
+        raise RuntimeError(_CLIP_LOAD_ERROR)
+
+    try:
+        from transformers import pipeline  # type: ignore
+
+        _CLIP_CLASSIFIER = pipeline(
+            task="zero-shot-image-classification",
+            model=CLIP_MODEL_NAME,
+            use_fast=True,
+        )
+        return _CLIP_CLASSIFIER
+    except Exception as exc:
+        _CLIP_LOAD_ERROR = f"clip zero-shot classification unavailable: {type(exc).__name__}: {exc}"
+        raise RuntimeError(_CLIP_LOAD_ERROR) from exc
+
+
+def _classify_image_with_clip(image_path: Path) -> Dict[str, Any]:
+    classifier = _load_clip_classifier()
+    candidate_labels = [spec["prompt"] for spec in _CLIP_LABEL_SPECS]
+    label_to_class = {spec["prompt"]: spec["class_name"] for spec in _CLIP_LABEL_SPECS}
+
+    raw_result = classifier(str(image_path), candidate_labels=candidate_labels)
+    predictions: List[Dict[str, Any]] = []
+    for item in raw_result:
+        label = str(item.get("label", ""))
+        score = float(item.get("score", 0.0))
+        predictions.append(
+            {
+                "label": label,
+                "class_name": label_to_class.get(label, label),
+                "score": score,
+            }
+        )
+
+    top_prediction = predictions[0] if predictions else {"label": "other", "class_name": "other", "score": 0.0}
+    second_prediction = predictions[1] if len(predictions) > 1 else {"label": "other", "class_name": "other", "score": 0.0}
+    final_class = top_prediction["class_name"]
+    if top_prediction["score"] < CLIP_TABLE_THRESHOLD:
+        final_class = "other"
+    if (top_prediction["score"] - second_prediction["score"]) < CLIP_TABLE_MARGIN:
+        final_class = "other"
+
+    return {
+        "model": CLIP_MODEL_NAME,
+        "candidate_labels": candidate_labels,
+        "top_label": top_prediction["label"],
+        "top_class": top_prediction["class_name"],
+        "top_score": top_prediction["score"],
+        "second_label": second_prediction["label"],
+        "second_class": second_prediction["class_name"],
+        "second_score": second_prediction["score"],
+        "threshold": CLIP_TABLE_THRESHOLD,
+        "margin": CLIP_TABLE_MARGIN,
+        "final_class": final_class,
+        "predictions": predictions,
+    }
+
+
+def _pick_combined_class(
+    layout_pred: str,
+    clip_result: Optional[Dict[str, Any]],
+) -> Tuple[str, str]:
+    layout_is_table = layout_pred == "table"
+    clip_is_table = isinstance(clip_result, dict) and clip_result.get("final_class") == "table"
+
+    if layout_is_table and clip_is_table:
+        return "table", "layout+clip"
+    if layout_is_table:
+        return "table", "layout"
+    if clip_is_table:
+        return "table", "clip"
+    return layout_pred, "layout"
 
 
 def classify_image(image_path: Path) -> Dict[str, Any]:
@@ -143,14 +282,31 @@ def classify_image(image_path: Path) -> Dict[str, Any]:
     page = results[0] if isinstance(results, list) and results else results
     raw_page = _to_builtin(page)
     boxes = _normalize_boxes(raw_page)
-    pred, score = _classify_page(boxes)
+    layout_pred, label_scores, group_scores, top_score = _classify_page(boxes)
+
+    clip_result: Optional[Dict[str, Any]] = None
+    clip_error: Optional[str] = None
+    if layout_pred != "table":
+        try:
+            clip_result = _classify_image_with_clip(Path(resolved))
+        except Exception as exc:
+            clip_error = str(exc)
+
+    predicted_class, table_decision_source = _pick_combined_class(layout_pred, clip_result)
 
     out = {
         "file": resolved,
-        "predicted_class": pred,
-        "is_table": pred == "table",
-        "score_by_group": score,
+        "predicted_class": predicted_class,
+        "is_table": predicted_class == "table",
+        "table_decision_source": table_decision_source,
+        "top_score": top_score,
+        "score_by_label": label_scores,
+        "score_by_group": group_scores,
         "boxes_count": len(boxes),
+        "layout_predicted_class": layout_pred,
+        "layout_top_score": top_score,
+        "clip_classification": clip_result,
+        "clip_error": clip_error,
     }
     _CLASSIFY_CACHE[resolved] = out
     return out
@@ -550,17 +706,40 @@ def _table_quality_ok(parsed_tables: Sequence[Dict[str, Any]]) -> bool:
 
 
 def _should_try_surya_fallback(classification: Dict[str, Any], image_path: Path) -> bool:
-    score = classification.get("score_by_group")
-    if not isinstance(score, dict):
-        score = {}
-    table_score = float(score.get("table", 0.0) or 0.0)
-    chart_score = float(score.get("chart", 0.0) or 0.0)
-    text_score = float(score.get("text", 0.0) or 0.0)
-    other_score = float(score.get("other", 0.0) or 0.0)
-    max_non_table = max(chart_score, text_score, other_score, 0.0)
+    layout_predicted_class = str(
+        classification.get("layout_predicted_class", classification.get("predicted_class", "other"))
+    )
+    top_score = float(classification.get("top_score", 0.0) or 0.0)
+    label_scores = classification.get("score_by_label")
+    if not isinstance(label_scores, dict):
+        label_scores = {}
+    table_score = float(label_scores.get("table", 0.0) or 0.0)
+    clip_result = classification.get("clip_classification")
+    if not isinstance(clip_result, dict):
+        clip_result = {}
+    clip_final_class = str(clip_result.get("final_class", "other"))
+    clip_top_class = str(clip_result.get("top_class", "other"))
+    clip_top_score = float(clip_result.get("top_score", 0.0) or 0.0)
+    clip_second_score = float(clip_result.get("second_score", 0.0) or 0.0)
 
-    # If table signal exists at all, try once.
-    if table_score > 0:
+    # If CLIP strongly says the image is a slide screenshot / dashboard / map / other content,
+    # avoid sending it to Surya fallback just because it is wide.
+    if clip_top_class == "other" and clip_top_score >= CLIP_STRONG_OTHER_THRESHOLD:
+        return False
+    if clip_final_class == "other" and clip_top_score >= CLIP_STRONG_OTHER_THRESHOLD:
+        return False
+    if clip_top_class == "other" and (clip_top_score - clip_second_score) >= CLIP_TABLE_MARGIN:
+        return False
+
+    # If table is the strongest detected class, the caller will already proceed as table.
+    # For fallback, only keep near-ties so lower-score table boxes do not override clearer labels.
+    if table_score > 0 and top_score > 0 and table_score >= top_score * 0.9:
+        return True
+
+    # CLIP is better at whole-image semantics for pasted tables than layout detection.
+    if clip_final_class == "table":
+        return True
+    if clip_top_class == "table" and clip_top_score >= CLIP_NEAR_TABLE_THRESHOLD:
         return True
 
     # Wide images are often pasted tables/screenshots.
@@ -572,11 +751,11 @@ def _should_try_surya_fallback(classification: Dict[str, Any], image_path: Path)
     except Exception:
         w, h = 0, 0
 
-    if h > 0 and (w / h) >= 2.2:
+    if layout_predicted_class != "image" and h > 0 and (w / h) >= 2.2:
         return True
 
-    # Near-ambiguous layout score.
-    if max_non_table > 0 and table_score >= max_non_table * 0.25:
+    # Keep a conservative fallback path for text-like near misses.
+    if layout_predicted_class in {"paragraph title", "document title", "text"} and table_score > 0:
         return True
     return False
 
@@ -635,11 +814,15 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
                         "status": "table",
                         "file": key,
                         "predicted_class": cls.get("predicted_class"),
+                        "layout_predicted_class": cls.get("layout_predicted_class"),
+                        "table_decision_source": cls.get("table_decision_source"),
                         "score_by_group": cls.get("score_by_group"),
                         "boxes_count": cls.get("boxes_count"),
                         "table_count": len(parsed_tables),
                         "markdown": markdown,
                         "used_surya_fallback": True,
+                        "clip_classification": cls.get("clip_classification"),
+                        "clip_error": cls.get("clip_error"),
                     }
                     _RESULT_CACHE[key] = out
                     return out
@@ -648,8 +831,12 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "status": "not_table",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
+            "layout_predicted_class": cls.get("layout_predicted_class"),
+            "table_decision_source": cls.get("table_decision_source"),
             "score_by_group": cls.get("score_by_group"),
             "boxes_count": cls.get("boxes_count"),
+            "clip_classification": cls.get("clip_classification"),
+            "clip_error": cls.get("clip_error"),
         }
         _RESULT_CACHE[key] = out
         return out
@@ -661,7 +848,11 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "status": "error",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
+            "layout_predicted_class": cls.get("layout_predicted_class"),
+            "table_decision_source": cls.get("table_decision_source"),
             "score_by_group": cls.get("score_by_group"),
+            "clip_classification": cls.get("clip_classification"),
+            "clip_error": cls.get("clip_error"),
             "error": f"surya table extraction failed: {type(exc).__name__}: {exc}",
         }
         _RESULT_CACHE[key] = out
@@ -672,7 +863,11 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "status": "error",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
+            "layout_predicted_class": cls.get("layout_predicted_class"),
+            "table_decision_source": cls.get("table_decision_source"),
             "score_by_group": cls.get("score_by_group"),
+            "clip_classification": cls.get("clip_classification"),
+            "clip_error": cls.get("clip_error"),
             "error": "surya did not produce any table payload",
         }
         _RESULT_CACHE[key] = out
@@ -683,8 +878,12 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "status": "not_table",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
+            "layout_predicted_class": cls.get("layout_predicted_class"),
+            "table_decision_source": cls.get("table_decision_source"),
             "score_by_group": cls.get("score_by_group"),
             "boxes_count": cls.get("boxes_count"),
+            "clip_classification": cls.get("clip_classification"),
+            "clip_error": cls.get("clip_error"),
             "reason": "low_text_density_after_ocr",
         }
         _RESULT_CACHE[key] = out
@@ -696,7 +895,11 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "status": "error",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
+            "layout_predicted_class": cls.get("layout_predicted_class"),
+            "table_decision_source": cls.get("table_decision_source"),
             "score_by_group": cls.get("score_by_group"),
+            "clip_classification": cls.get("clip_classification"),
+            "clip_error": cls.get("clip_error"),
             "error": "table markdown rendering returned empty output",
         }
         _RESULT_CACHE[key] = out
@@ -706,10 +909,14 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
         "status": "table",
         "file": key,
         "predicted_class": cls.get("predicted_class"),
+        "layout_predicted_class": cls.get("layout_predicted_class"),
+        "table_decision_source": cls.get("table_decision_source"),
         "score_by_group": cls.get("score_by_group"),
         "boxes_count": cls.get("boxes_count"),
         "table_count": len(parsed_tables),
         "markdown": markdown,
+        "clip_classification": cls.get("clip_classification"),
+        "clip_error": cls.get("clip_error"),
     }
     _RESULT_CACHE[key] = out
     return out
