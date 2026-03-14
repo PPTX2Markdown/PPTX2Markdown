@@ -733,11 +733,12 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
         if kind in {"list_ul", "list_ol"}:
             indent = "  " * max(0, int(level or 0))
             if kind == "list_ol":
+                clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
                 lvl = max(0, int(level or 0))
                 ordered_counters[lvl] = ordered_counters.get(lvl, 0) + 1
                 for deeper in [k for k in ordered_counters.keys() if k > lvl]:
                     del ordered_counters[deeper]
-                rendered.append(f"{indent}{ordered_counters[lvl]}. {text}")
+                rendered.append(f"{indent}{ordered_counters[lvl]}. {clean_text}")
             else:
                 rendered.append(f"{indent}- {text}")
             continue
@@ -748,10 +749,11 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
             prev_level = max(0, int(blocks[idx - 1][2] or 0))
             indent = "  " * prev_level
             if prev_kind == "list_ol":
+                clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
                 ordered_counters[prev_level] = ordered_counters.get(prev_level, 0) + 1
                 for deeper in [k for k in ordered_counters.keys() if k > prev_level]:
                     del ordered_counters[deeper]
-                rendered.append(f"{indent}{ordered_counters[prev_level]}. {text}")
+                rendered.append(f"{indent}{ordered_counters[prev_level]}. {clean_text}")
             else:
                 rendered.append(f"{indent}- {text}")
         else:
@@ -848,6 +850,7 @@ def normalize_triangle_bullet(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
         return ""
+    raw = re.sub(r"^(\d+)\s+\.\s*", r"\1. ", raw)
     if re.match(r"^▶+\s*", raw):
         return re.sub(r"^▶+\s*", "- ", raw)
     return raw
