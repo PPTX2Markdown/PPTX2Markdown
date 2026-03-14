@@ -88,3 +88,15 @@ python3 table_parser/tableMaker.py
 - `0`: 성공
 - `1`: 입력 없음/파싱 실패/쓰기 실패 등 오류 발생
 
+
+## Image table parser module
+
+New file: `table_parser/image_table_pipeline.py`
+
+Purpose:
+- Classify image as table/non-table with PaddleOCR layout model.
+- If table, extract parsed-table JSON via Surya.
+- Render markdown using existing `tableMaker` internals.
+
+Main entrypoint:
+- `extract_table_markdown_from_image(path, header_rows=1)`

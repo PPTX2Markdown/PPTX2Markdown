@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+output/
+main_converter/output/
+main_converter/target_pptx/
+surya_pipeline/output/
+surya_pipeline/target_pdf/
+
+.vscode/
+.idea/

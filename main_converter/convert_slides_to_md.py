@@ -5,12 +5,14 @@ Convert extracted PPTX package(s) to markdown.
 Usage:
   python convert_slides_to_md.py [ppt_root_dir|file.pptx ...]
   python convert_slides_to_md.py --raw
+  python convert_slides_to_md.py --raw [sample1|sample1.pptx|raw_pptx/sample1.pptx ...]
 
 Rules:
   - If no positional args are provided, process all package roots in ./target_pptx.
   - Package root example: ./target_pptx/sample1
   - If a .pptx file is provided, it is extracted automatically into ./target_pptx/<stem>/.
   - If --raw is provided, process all .pptx files in ./raw_pptx.
+    If positional args are also provided, only those raw .pptx files are processed.
   - Each package must contain: ./ppt/slides
   - Output is always written to ./output (created automatically).
   - Input slide XML order is assumed to be the final reading order.
@@ -19,6 +21,7 @@ Rules:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import re
@@ -27,10 +30,20 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
+
+from heading_rules import (
+    HeadingPolicy,
+    clean_heading_text_for_render as hr_clean_heading_text_for_render,
+    infer_heading_depth_fallback as hr_infer_heading_depth_fallback,
+    is_body_like_long_sentence as hr_is_body_like_long_sentence,
+    looks_like_multi_numbered_items as hr_looks_like_multi_numbered_items,
+    normalize_single_heading_to_h1,
+    strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
+)
 
 
 NS = {
@@ -41,10 +54,14 @@ NS = {
 }
 REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
+_IMAGE_TABLE_PIPELINE_MODULE: Optional[object] = None
+_IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
+
 
 def run_structure_analysis_stage(
     repo_root: Path,
     slide_xmls: Sequence[Path],
+    strict: bool = False,
 ) -> Tuple[Dict[str, Path], Path]:
     ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
     if not ro_script.exists():
@@ -59,6 +76,8 @@ def run_structure_analysis_stage(
         "--output-dir",
         str(ro_output),
     ]
+    if strict:
+        cmd.append("--strict")
     cmd.extend(str(p.resolve()) for p in slide_xmls)
 
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -96,8 +115,9 @@ def run_structure_analysis_stage(
 
 
 def ensure_imports(repo_root: Path) -> None:
-    # Support both old and new repository layouts.
+    # Support both new and legacy repository layouts.
     candidates = [
+        repo_root,
         repo_root / "table_parser",
         repo_root / "pptx_table_parser" / "table_parser",
         repo_root / "pptx_table_parser",
@@ -227,11 +247,37 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
         zf.extractall(dest_dir)
 
 
-def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
+def extract_pptx_to_target(
+    pptx_path: Path,
+    extraction_root: Path,
+    allow_replace_unmanaged: bool = False,
+) -> Path:
     stat = pptx_path.stat()
     extraction_root.mkdir(parents=True, exist_ok=True)
     pkg_name = sanitize_package_name(pptx_path.stem)
     pkg_dir = extraction_root / pkg_name
+
+    # Raw extraction target should be a real managed directory, never a symlink.
+    # Remove legacy symlink targets (including valid/broken links) before extraction.
+    if pkg_dir.is_symlink():
+        try:
+            pkg_dir.unlink()
+        except PermissionError:
+            if allow_replace_unmanaged:
+                # Some bind-mounted filesystems disallow unlinking symlinks.
+                # Fall back to an alternate managed directory name.
+                suffix = "__raw"
+                idx = 0
+                while True:
+                    candidate_name = f"{pkg_name}{suffix}" if idx == 0 else f"{pkg_name}{suffix}{idx}"
+                    candidate = extraction_root / candidate_name
+                    if not candidate.exists() and not candidate.is_symlink():
+                        pkg_name = candidate_name
+                        pkg_dir = candidate
+                        break
+                    idx += 1
+            else:
+                raise
 
     if package_marker_matches(pkg_dir, pptx_path):
         return pkg_dir.resolve()
@@ -239,6 +285,8 @@ def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
     marker = package_marker_path(pkg_dir)
     if pkg_dir.exists():
         if marker.exists():
+            shutil.rmtree(pkg_dir)
+        elif allow_replace_unmanaged:
             shutil.rmtree(pkg_dir)
         else:
             raise FileExistsError(
@@ -268,7 +316,16 @@ def extract_pptx_to_target(pptx_path: Path, extraction_root: Path) -> Path:
     return pkg_dir.resolve()
 
 
-def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
+def is_ignored_pptx_file(path: Path) -> bool:
+    # Skip Office lock/temp files like "~$sample1.pptx".
+    return path.name.startswith("~$")
+
+
+def prepare_package_inputs(
+    cwd: Path,
+    raw_inputs: Sequence[str],
+    force_extract: bool = False,
+) -> List[str]:
     if not raw_inputs:
         return list(raw_inputs)
 
@@ -287,12 +344,18 @@ def prepare_package_inputs(cwd: Path, raw_inputs: Sequence[str]) -> List[str]:
         picked_file: Optional[Path] = None
         for cand in candidates:
             if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
+                if is_ignored_pptx_file(cand):
+                    continue
                 picked_file = cand.resolve()
                 break
         if picked_file is None:
             prepared.append(item)
             continue
-        pkg_dir = extract_pptx_to_target(picked_file, extraction_root)
+        pkg_dir = extract_pptx_to_target(
+            picked_file,
+            extraction_root,
+            allow_replace_unmanaged=force_extract,
+        )
         prepared.append(str(pkg_dir))
     return prepared
 
@@ -301,10 +364,51 @@ def collect_raw_pptx_inputs(cwd: Path) -> List[str]:
     raw_dir = raw_pptx_dir(cwd)
     raw_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(
-        [path.resolve() for path in raw_dir.glob("*.pptx") if path.is_file()],
+        [
+            path.resolve()
+            for path in raw_dir.glob("*.pptx")
+            if path.is_file() and not is_ignored_pptx_file(path)
+        ],
         key=lambda path: natural_key(path.name),
     )
     return [str(path) for path in files]
+
+
+def resolve_selected_raw_inputs(cwd: Path, selections: Sequence[str]) -> List[str]:
+    raw_dir = raw_pptx_dir(cwd)
+    resolved: List[str] = []
+    missing: List[str] = []
+
+    for item in selections:
+        token = item.strip()
+        if not token:
+            continue
+        as_path = Path(token)
+        candidates: List[Path] = [as_path, cwd / as_path, raw_dir / as_path]
+        if as_path.suffix.lower() != ".pptx":
+            candidates.append(raw_dir / f"{token}.pptx")
+
+        picked: Optional[Path] = None
+        for cand in candidates:
+            if not cand.exists() or not cand.is_file():
+                continue
+            if cand.suffix.lower() != ".pptx" or is_ignored_pptx_file(cand):
+                continue
+            picked = cand.resolve()
+            break
+
+        if picked is None:
+            missing.append(item)
+            continue
+        resolved.append(str(picked))
+
+    if missing:
+        msg = ", ".join(missing)
+        raise FileNotFoundError(
+            "Raw selection did not match any .pptx file in ./raw_pptx (or provided path): "
+            f"{msg}"
+        )
+    return resolved
 
 
 def parse_slide_number(filename: str, default_idx: int) -> int:
@@ -365,6 +469,9 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
             "heading_depth_hint": row.get("heading_depth_hint"),
+            "font_pt": row.get("font_pt"),
+            "ph_type": row.get("ph_type"),
+            "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
         }
     return out
 
@@ -578,30 +685,33 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     return False
 
 
-def promote_plain_text_to_list(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    if not any(kind == "list" for kind, _, _ in blocks):
+def promote_plain_text_to_list(
+    blocks: Sequence[Tuple[str, str, Optional[int]]],
+) -> List[Tuple[str, str, Optional[int]]]:
+    if not any(kind in {"list_ul", "list_ol"} for kind, _, _ in blocks):
         return list(blocks)
 
     text_blocks = [(idx, text) for idx, (kind, text, _) in enumerate(blocks) if kind == "text"]
     if len(text_blocks) < 3:
         return list(blocks)
 
+    first_list_kind = next((kind for kind, _, _ in blocks if kind in {"list_ul", "list_ol"}), "list_ul")
     promoted = list(blocks)
     for idx, text in text_blocks:
         if len(text) > 80 or text.endswith((".", ":")):
             continue
-        promoted[idx] = ("list", text, 0)
+        promoted[idx] = (first_list_kind, text, 0)
     return promoted
 
 
 def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    levels = sorted({int(level or 0) for kind, _, level in blocks if kind == "list"})
+    levels = sorted({int(level or 0) for kind, _, level in blocks if kind in {"list_ul", "list_ol"}})
     if not levels:
         return list(blocks)
     remap = {level: idx for idx, level in enumerate(levels)}
     normalized: List[Tuple[str, str, Optional[int]]] = []
     for kind, text, level in blocks:
-        if kind != "list":
+        if kind not in {"list_ul", "list_ol"}:
             normalized.append((kind, text, level))
             continue
         mapped = remap[int(level or 0)]
@@ -615,9 +725,11 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optiona
         text = paragraph_text(p)
         if not text:
             continue
+        p_pr = p.find("./a:pPr", NS)
+        has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
         if paragraph_has_list_semantics(p):
             level = paragraph_level(p)
-            blocks.append(("list", text, 0 if level is None else level))
+            blocks.append(("list_ol" if has_auto_num else "list_ul", text, 0 if level is None else level))
         else:
             blocks.append(("text", text, None))
     return blocks
@@ -629,16 +741,34 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
     blocks = normalize_list_levels(promote_plain_text_to_list(blocks))
 
     rendered: List[str] = []
+    ordered_counters: Dict[int, int] = {}
     for idx, (kind, text, level) in enumerate(blocks):
-        if kind == "list":
+        if kind in {"list_ul", "list_ol"}:
             indent = "  " * max(0, int(level or 0))
-            rendered.append(f"{indent}- {text}")
+            if kind == "list_ol":
+                clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
+                lvl = max(0, int(level or 0))
+                ordered_counters[lvl] = ordered_counters.get(lvl, 0) + 1
+                for deeper in [k for k in ordered_counters.keys() if k > lvl]:
+                    del ordered_counters[deeper]
+                rendered.append(f"{indent}{ordered_counters[lvl]}. {clean_text}")
+            else:
+                rendered.append(f"{indent}- {text}")
             continue
 
         prev_kind = blocks[idx - 1][0] if idx > 0 else None
         next_kind = blocks[idx + 1][0] if idx + 1 < len(blocks) else None
-        if prev_kind == "list" and next_kind == "list":
-            rendered.append(f"- {text}")
+        if prev_kind in {"list_ul", "list_ol"} and next_kind in {"list_ul", "list_ol"}:
+            prev_level = max(0, int(blocks[idx - 1][2] or 0))
+            indent = "  " * prev_level
+            if prev_kind == "list_ol":
+                clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
+                ordered_counters[prev_level] = ordered_counters.get(prev_level, 0) + 1
+                for deeper in [k for k in ordered_counters.keys() if k > prev_level]:
+                    del ordered_counters[deeper]
+                rendered.append(f"{indent}{ordered_counters[prev_level]}. {clean_text}")
+            else:
+                rendered.append(f"{indent}- {text}")
         else:
             rendered.append(text)
     return "\n".join(rendered).strip()
@@ -705,19 +835,73 @@ def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
     return "\n".join(f"- {text}" for text in cleaned)
 
 
-def infer_heading_depth_fallback(text: str, text_block_index: int) -> Optional[int]:
+def infer_heading_depth_fallback(
+    text: str,
+    text_block_index: int,
+    font_pt: Optional[float] = None,
+) -> Optional[int]:
+    return hr_infer_heading_depth_fallback(
+        text=text,
+        text_block_index=text_block_index,
+        font_pt=font_pt,
+    )
+
+
+def clean_heading_text_for_render(text: str) -> str:
+    return hr_clean_heading_text_for_render(text)
+
+
+def looks_like_multi_numbered_items(text: str) -> bool:
+    return hr_looks_like_multi_numbered_items(text)
+
+
+def strict_heading_depth_from_placeholder(ph_type: Optional[str]) -> Optional[int]:
+    return hr_strict_heading_depth_from_placeholder(ph_type)
+
+
+def is_body_like_long_sentence(text: str) -> bool:
+    return hr_is_body_like_long_sentence(text)
+
+
+def normalize_triangle_bullet(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
-        return None
-    if raw.startswith(("▶", "-", "*", "√")):
-        return None
-    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
-        return 3
-    if re.match(r"^\d+[.)]\s+", raw):
-        return 2
-    # First meaningful text on a slide is often the slide title.
-    if text_block_index == 0 and len(raw) <= 80:
-        return 1
+        return ""
+    raw = re.sub(r"^(\d+)\s+\.\s*", r"\1. ", raw)
+    if re.match(r"^▶+\s*", raw):
+        return re.sub(r"^▶+\s*", "- ", raw)
+    return raw
+
+
+def split_triangle_bullets(text: str) -> List[str]:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    rendered_lines: List[str] = []
+    for line in lines:
+        raw = re.sub(r"\s+", " ", line).strip()
+        if not raw:
+            continue
+        if "▶" not in raw:
+            normalized = normalize_triangle_bullet(raw)
+            if normalized:
+                rendered_lines.append(normalized)
+            continue
+
+        parts = [p.strip() for p in re.split(r"\s*▶+\s*", raw) if p.strip()]
+        if not parts:
+            continue
+        if raw.startswith("-"):
+            parts[0] = re.sub(r"^-\s*", "", parts[0]).strip()
+        rendered_lines.extend(f"- {part}" for part in parts if part)
+
+    return rendered_lines
+
+
+def infer_heading_depth_fallback_strict(text: str, text_block_index: int) -> Optional[int]:
+    # Strict mode keeps fallback conservative; rely on structure_analyzer hints first.
+    # TODO: Add stricter lexical and position-aware fallback heuristics for xml-only mode.
     return None
 
 
@@ -1034,6 +1218,54 @@ def convert_table_to_markdown(
     return md, None
 
 
+def _load_image_table_pipeline() -> Tuple[Optional[object], Optional[str]]:
+    global _IMAGE_TABLE_PIPELINE_MODULE, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+    if _IMAGE_TABLE_PIPELINE_MODULE is not None:
+        return _IMAGE_TABLE_PIPELINE_MODULE, None
+    if _IMAGE_TABLE_PIPELINE_IMPORT_ERROR is not None:
+        return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+
+    import_errors: List[str] = []
+    for module_name in ("image_pipeline.service", "image_table_pipeline"):
+        try:
+            _IMAGE_TABLE_PIPELINE_MODULE = importlib.import_module(module_name)
+            return _IMAGE_TABLE_PIPELINE_MODULE, None
+        except Exception as exc:  # noqa: BLE001
+            import_errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
+
+    _IMAGE_TABLE_PIPELINE_IMPORT_ERROR = "; ".join(import_errors)
+    return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+
+
+def convert_picture_to_table_markdown(
+    image_path: str,
+) -> Tuple[Optional[str], Optional[str], bool]:
+    module, import_error = _load_image_table_pipeline()
+    if module is None:
+        return None, f"image-table pipeline unavailable: {import_error}", True
+    try:
+        result = module.extract_table_markdown_from_image(Path(image_path), header_rows=1)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}", False
+
+    if not isinstance(result, dict):
+        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False
+
+    status = str(result.get("status", "error"))
+    if status == "table":
+        markdown = result.get("markdown")
+        if isinstance(markdown, str) and markdown.strip():
+            return markdown, None, False
+        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False
+    if status == "not_table":
+        return None, None, False
+
+    error = result.get("error")
+    if not isinstance(error, str) or not error.strip():
+        error = "unknown image-table pipeline error"
+    return None, f"{Path(image_path).name}: {error}", False
+
+
 def convert_one_slide(
     slide_xml: Path,
     page_no: int,
@@ -1041,7 +1273,10 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    enable_image_table_pipeline: bool = False,
+    strict_headings: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
+    heading_policy = HeadingPolicy(strict=strict_headings)
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
@@ -1072,6 +1307,7 @@ def convert_one_slide(
     }
     stats["resolved_images"] += overlay_resolved
     stats["unresolved_images"] += overlay_unresolved
+    image_pipeline_unavailable_reported = False
 
     for child in list(sp_tree):
         tag = local_name(child.tag)
@@ -1089,7 +1325,9 @@ def convert_one_slide(
             if ph_type in {"sldNum", "ftr", "dt"}:
                 stats["skipped_blocks"] += 1
                 continue
-            text = extract_shape_text(child)
+            shape_blocks = extract_shape_blocks(child)
+            has_list_semantics = any(kind in {"list_ul", "list_ol"} for kind, _, _ in shape_blocks)
+            text = render_shape_blocks(shape_blocks)
             if not text:
                 stats["skipped_blocks"] += 1
                 continue
@@ -1101,28 +1339,64 @@ def convert_one_slide(
             depth = hint.get("heading_depth_hint")
             score = float(hint.get("heading_score", 0.0))
             is_candidate = bool(hint.get("is_heading_candidate", False))
+            raw_font_pt = hint.get("font_pt")
+            try:
+                font_pt = float(raw_font_pt) if raw_font_pt is not None else None
+            except (TypeError, ValueError):
+                font_pt = None
 
-            if not is_candidate:
-                fb_depth = infer_heading_depth_fallback(text, text_block_index)
-                if fb_depth is not None:
-                    depth = fb_depth
-                    score = 0.8
+            if strict_headings:
+                strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
+                strict_depth = strict_heading_depth_from_placeholder(strict_ph_type)
+                is_candidate = strict_depth is not None
+                depth = strict_depth
+                score = 1.0 if is_candidate else 0.0
+            else:
+                non_strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
+                non_strict_depth = strict_heading_depth_from_placeholder(non_strict_ph_type)
+                if non_strict_depth is not None:
+                    depth = non_strict_depth
+                    score = max(score, 0.9)
                     is_candidate = True
+                if not is_candidate:
+                    fb_depth = infer_heading_depth_fallback(text, text_block_index, font_pt=font_pt)
+                    if fb_depth is not None:
+                        depth = fb_depth
+                        score = 0.8
+                        is_candidate = True
 
             rendered = text
+            if not strict_headings:
+                if has_list_semantics:
+                    is_candidate = False
+                if looks_like_multi_numbered_items(rendered):
+                    is_candidate = False
+                if is_body_like_long_sentence(rendered):
+                    is_candidate = False
             # Final markdown heading level rendering is converter responsibility.
-            if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= 0.7:
-                key = normalize_text(text)
+            heading_threshold = heading_policy.threshold
+            if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
+                heading_text = text if strict_headings else clean_heading_text_for_render(text)
+                key = normalize_text(heading_text)
                 if key not in used_headings:
-                    rendered = f"{'#' * depth} {text}"
+                    rendered = f"{'#' * depth} {heading_text}"
                     used_headings.add(key)
                 else:
                     # Deduplicate repeated heading text.
                     stats["skipped_blocks"] += 1
                     continue
 
-            lines.append(rendered)
-            lines.append("")
+            if rendered.startswith("#"):
+                lines.append(rendered)
+                lines.append("")
+            else:
+                rendered_lines = split_triangle_bullets(rendered)
+                if rendered_lines:
+                    lines.extend(rendered_lines)
+                    lines.append("")
+                else:
+                    lines.append(rendered)
+                    lines.append("")
             stats["text_blocks"] += 1
             text_block_index += 1
             continue
@@ -1140,6 +1414,22 @@ def convert_one_slide(
                 stats["warnings"].append(warn)
             else:
                 stats["resolved_images"] += 1
+
+            if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
+                table_md, table_warn, unavailable = convert_picture_to_table_markdown(img_path)
+                if table_md is not None:
+                    lines.append(table_md.strip())
+                    lines.append("")
+                    stats["table_blocks"] += 1
+                    continue
+                if table_warn:
+                    if unavailable:
+                        if not image_pipeline_unavailable_reported:
+                            stats["warnings"].append(table_warn)
+                            image_pipeline_unavailable_reported = True
+                    else:
+                        stats["warnings"].append(table_warn)
+
             lines.append(
                 format_markdown_image(
                     img_path,
@@ -1187,6 +1477,8 @@ def convert_one_slide(
                 if err:
                     stats["warnings"].append(err)
             continue
+
+    lines = normalize_single_heading_to_h1(lines)
 
     md_text = "\n".join(lines).rstrip() + "\n"
     return md_text, stats
@@ -1281,12 +1573,18 @@ def main() -> int:
     parser.add_argument(
         "inputs",
         nargs="*",
-        help="Package root dir(s) or .pptx file(s). If omitted, process ./target_pptx/*.",
+        help=(
+            "Package root dir(s) or .pptx file(s). "
+            "If --raw is used, these are treated as raw selections."
+        ),
     )
     parser.add_argument(
         "--raw",
         action="store_true",
-        help="Process all .pptx files in ./raw_pptx by extracting them into ./target_pptx first.",
+        help=(
+            "Process .pptx files in ./raw_pptx by extracting into ./target_pptx first. "
+            "With positional args, process only selected raw files."
+        ),
     )
     parser.add_argument(
         "--per-slide",
@@ -1298,6 +1596,11 @@ def main() -> int:
         choices=("xml", "surya"),
         default="xml",
         help="Reading-order strategy. Default uses legacy XML-only ordering.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Use strict heading detection in xml reading-order mode only.",
     )
     parser.add_argument(
         "--surya-dir",
@@ -1319,10 +1622,17 @@ def main() -> int:
         action="store_true",
         help="Use existing output/structure_ready instead of running the Surya pipeline.",
     )
+    parser.add_argument(
+        "--image-table-pipeline",
+        action="store_true",
+        help="Classify image blocks with PaddleOCR and parse table images with Surya.",
+    )
+    parser.add_argument(
+        "--output-file",
+        default=None,
+        help="Optional single markdown output path merged from processed package result(s).",
+    )
     args = parser.parse_args()
-    if args.raw and args.inputs:
-        parser.error("--raw cannot be used together with positional inputs.")
-
     cwd = Path.cwd()
     output_root = cwd / "output"
     output_dir = output_root / args.reading_order
@@ -1331,16 +1641,20 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     ensure_imports(repo_root)
     if args.raw:
-        raw_inputs = collect_raw_pptx_inputs(cwd)
+        raw_inputs = (
+            resolve_selected_raw_inputs(cwd, args.inputs) if args.inputs else collect_raw_pptx_inputs(cwd)
+        )
         if not raw_inputs:
             print(f"No .pptx files found in: {raw_pptx_dir(cwd).resolve()}")
             return 0
-        prepared_inputs = prepare_package_inputs(cwd, raw_inputs)
+        prepared_inputs = prepare_package_inputs(cwd, raw_inputs, force_extract=True)
     else:
         prepared_inputs = prepare_package_inputs(cwd, args.inputs)
     surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
     surya_structure_root: Optional[Path] = None
     if args.reading_order == "surya":
+        if args.strict:
+            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
         surya_structure_root = prepare_surya_structure_root(
             repo_root=repo_root,
             raw_surya_dir=surya_dir,
@@ -1361,7 +1675,7 @@ def main() -> int:
         return 0
 
     manifest = {
-        "started_at": datetime.utcnow().isoformat() + "Z",
+        "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "packages": [],
         "summary": {
             "processed_packages": 0,
@@ -1372,6 +1686,7 @@ def main() -> int:
             "table_blocks": 0,
         },
     }
+    merged_packages: List[Tuple[str, str]] = []
 
     for pkg in packages:
         pkg_name = pkg.name
@@ -1406,6 +1721,7 @@ def main() -> int:
                 ro_map, ro_output = run_structure_analysis_stage(
                     repo_root=repo_root,
                     slide_xmls=slide_xmls,
+                    strict=args.strict,
                 )
                 pkg_row["structure_analysis_output_dir"] = str(ro_output)
             except Exception as e:  # noqa: BLE001
@@ -1465,6 +1781,8 @@ def main() -> int:
                     output_dir=pkg_out,
                     media_dir=media_dir,
                     copied_media=copied_media,
+                    enable_image_table_pipeline=args.image_table_pipeline,
+                    strict_headings=(args.reading_order == "xml" and args.strict),
                 )
                 if args.reading_order == "surya":
                     row["surya_source"] = str(structure_output_dir)
@@ -1476,6 +1794,8 @@ def main() -> int:
                         output_dir=per_slide_dir,
                         media_dir=media_dir,
                         copied_media=copied_media,
+                        enable_image_table_pipeline=args.image_table_pipeline,
+                        strict_headings=(args.reading_order == "xml" and args.strict),
                     )
                     out_md = per_slide_dir / f"{slide_xml.stem}.md"
                     out_md.write_text(md_text, encoding="utf-8")
@@ -1512,12 +1832,34 @@ def main() -> int:
             merged += "\n"
         merged_path = pkg_out / "result.md"
         merged_path.write_text(merged, encoding="utf-8")
+        merged_packages.append((pkg_name, merged))
         manifest["summary"]["processed_packages"] += 1
         manifest["packages"].append(pkg_row)
 
-    manifest["finished_at"] = datetime.utcnow().isoformat() + "Z"
+    manifest["finished_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     manifest_path = output_dir / "convert_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if args.output_file:
+        out_path = Path(args.output_file).expanduser()
+        if not out_path.is_absolute():
+            out_path = (cwd / out_path).resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if len(merged_packages) <= 1:
+            merged_text = merged_packages[0][1] if merged_packages else ""
+        else:
+            blocks: List[str] = []
+            for pkg_name, pkg_md in merged_packages:
+                block = f"## Package: {pkg_name}\n\n{pkg_md.strip()}".strip()
+                if block:
+                    blocks.append(block)
+            merged_text = "\n\n".join(blocks)
+            if merged_text:
+                merged_text += "\n"
+
+        out_path.write_text(merged_text, encoding="utf-8")
+        print(f"Wrote combined markdown: {out_path.resolve()}")
 
     print(f"Wrote package outputs under: {output_dir.resolve()}")
     print(f"Wrote: {manifest_path.resolve()}")

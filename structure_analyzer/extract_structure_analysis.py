@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 import os
 import re
 from dataclasses import dataclass
@@ -38,6 +39,7 @@ SLIDE_LAYOUT_REL_TYPE = (
 REORDERABLE = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
 FOOTER_TYPES = {"sldNum", "ftr", "dt"}
 TITLE_TYPES = {"title", "ctrTitle", "subTitle"}
+STRICT_HEADING_PLACEHOLDER_TYPES = {"title", "ctrTitle", "subTitle"}
 
 
 @dataclass
@@ -57,6 +59,7 @@ class SlideObject:
     is_decorative: bool
     is_heading: bool
     is_title_placeholder: bool
+    font_pt: Optional[float]
     bbox: Optional[Tuple[int, int, int, int]] = None
 
 
@@ -109,12 +112,62 @@ def token_set(s: str) -> set:
 def is_numbered_heading_text(text: str) -> bool:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     t = normalize_text(text)
-    # 1. / 1.1 / 1.1.1 / 1)
+    # 1. / 1.1 / 1.1.1
     if re.match(r"^(?:\d+\.\d+(?:\.\d+)*\.?|\d+\.)\s+", t):
         return True
-    if re.match(r"^\d+\)\s+", raw):
-        return True
     return False
+
+
+def strict_heading_semantic_guard(text: str) -> bool:
+    # TODO: Add sentence-ending and punctuation-density checks for strict mode.
+    _ = text
+    return True
+
+
+def strip_leading_heading_markers(text: str) -> str:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return ""
+    # Remove common bullet/prefix markers before depth inference.
+    return re.sub(r"^(?:[-*•▶√]+\s*)+", "", raw).strip()
+
+
+def numbered_suggested_depth(
+    text: str,
+    last_section_depth: Optional[int],
+    seen_title: bool,
+) -> Optional[int]:
+    raw = strip_leading_heading_markers(text)
+    if not raw:
+        return None
+    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
+        if last_section_depth is not None:
+            return min(last_section_depth + 1, 3)
+        return 2 if seen_title else 1
+    if re.match(r"^\d+\.\s+", raw):
+        return 2
+    return None
+
+
+def extract_font_pt(elem: ET.Element) -> Optional[float]:
+    sizes: List[float] = []
+    for rpr in elem.findall(".//a:rPr", NS):
+        sz = rpr.attrib.get("sz")
+        if sz is None:
+            continue
+        val = parse_int(sz, -1)
+        if val > 0:
+            sizes.append(val / 100.0)
+    for rpr in elem.findall(".//a:endParaRPr", NS):
+        sz = rpr.attrib.get("sz")
+        if sz is None:
+            continue
+        val = parse_int(sz, -1)
+        if val > 0:
+            sizes.append(val / 100.0)
+    if not sizes:
+        return None
+    return max(sizes)
 
 
 def get_nvpr_paths(tag: str) -> Tuple[str, str]:
@@ -229,7 +282,7 @@ def parse_layout_placeholders(layout_xml: Optional[Path]) -> Dict[Tuple[str, str
     return out
 
 
-def looks_heading(text: str, ph_type: Optional[str], tag: str) -> bool:
+def looks_heading(text: str, ph_type: Optional[str], tag: str, strict: bool = False) -> bool:
     raw = (text or "").strip()
     if raw.startswith(("▶", "-", "*", "√")):
         return False
@@ -237,13 +290,21 @@ def looks_heading(text: str, ph_type: Optional[str], tag: str) -> bool:
     t = normalize_text(text)
     if not t:
         return False
+    if strict:
+        # Strict mode requires placeholder-backed text for heading candidacy.
+        if ph_type is None:
+            return False
+        if ph_type not in STRICT_HEADING_PLACEHOLDER_TYPES:
+            return False
+        if len(t) < 3 or len(t) > 60:
+            return False
+        if not strict_heading_semantic_guard(text):
+            return False
+        return True
+
     if is_numbered_heading_text(text):
         return True
     if ph_type in TITLE_TYPES and len(t) <= 80:
-        return True
-    if tag == "sp" and len(t) <= 80 and any(
-        k in t for k in ("평가 결과", "조사 결과", "summary", "개발 계획")
-    ):
         return True
     return False
 
@@ -403,10 +464,7 @@ def reason(obj: SlideObject, context: OrderContext) -> str:
 
 
 def numbered_heading_kind(text: str) -> Optional[str]:
-    raw = re.sub(r"\s+", " ", (text or "").strip())
     t = normalize_text(text)
-    if re.match(r"^\d+\)\s+", raw):
-        return "paren"
     if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", t):
         return "dotted-multi"
     if re.match(r"^\d+\.\s+", t):
@@ -417,49 +475,137 @@ def numbered_heading_kind(text: str) -> Optional[str]:
 def compute_heading_depths(
     ordered_objects: Sequence[SlideObject],
     context: OrderContext,
+    strict: bool = False,
 ) -> Dict[str, Optional[int]]:
     depths: Dict[str, Optional[int]] = {}
     seen_title = False
     last_section_depth: Optional[int] = None
+    heading_fonts = [
+        float(obj.font_pt)
+        for obj in ordered_objects
+        if obj.is_heading and obj.font_pt is not None and obj.font_pt > 0
+    ]
+    font_tolerance = 1.0
+    if heading_fonts:
+        median_font = statistics.median(heading_fonts)
+        font_tolerance = max(1.0, float(median_font) * 0.06)
+
+    # Build font-size bands (desc). Same/close sizes are considered one local level.
+    bands: List[float] = []
+    for size in sorted(heading_fonts, reverse=True):
+        if not bands or abs(size - bands[-1]) > font_tolerance:
+            bands.append(size)
+
+    def depth_from_font(size: Optional[float]) -> Optional[int]:
+        if size is None or size <= 0 or not bands:
+            return None
+        closest_idx = min(range(len(bands)), key=lambda i: abs(size - bands[i]))
+        if abs(size - bands[closest_idx]) <= font_tolerance:
+            return min(closest_idx + 1, 6)
+        return None
+
+    prev_heading_depth: Optional[int] = None
+    prev_heading_font: Optional[float] = None
+    h1_assigned = False
+    seen_numbered_heading = False
 
     for obj in ordered_objects:
         depth: Optional[int] = None
+        if strict:
+            if obj.is_heading:
+                if obj.ph_type in {"title", "ctrTitle"}:
+                    depth = 1
+                elif obj.ph_type == "subTitle":
+                    depth = 2
+            depths[obj.shape_id] = depth
+            continue
+
         kind = numbered_heading_kind(obj.text) if obj.is_heading else None
 
         if is_top_title_object(obj, context):
-            depth = 1
+            depth = 1 if not h1_assigned else 2
             seen_title = True
             last_section_depth = 1
         elif obj.is_heading:
-            if kind == "dotted-multi":
-                depth = 2 if seen_title else 1
-                last_section_depth = depth
-            elif kind == "dotted-single":
-                depth = 2 if seen_title else 1
-                last_section_depth = depth
-            elif kind == "paren":
-                if last_section_depth is not None:
-                    depth = min(last_section_depth + 1, 3)
-                elif seen_title:
-                    depth = 2
-                else:
-                    depth = 1
+            # Not strict: font-size takes precedence for local heading depth.
+            font_depth = depth_from_font(obj.font_pt)
+            if (
+                font_depth is not None
+                and prev_heading_depth is not None
+                and obj.font_pt is not None
+                and prev_heading_font is not None
+                and abs(float(obj.font_pt) - float(prev_heading_font)) <= font_tolerance
+            ):
+                # When sizes are effectively equal, preserve local sequence depth.
+                depth = prev_heading_depth
+            elif font_depth is not None:
+                depth = font_depth
             else:
-                depth = 2 if seen_title else 1
-                last_section_depth = depth
+                # Fallback to legacy sequence heuristics when font signal is unavailable.
+                if kind == "dotted-multi":
+                    depth = 2 if seen_title else 1
+                    last_section_depth = depth
+                elif kind == "dotted-single":
+                    depth = 2 if seen_title else 1
+                    last_section_depth = depth
+                else:
+                    depth = 2 if seen_title else 1
+                    last_section_depth = depth
+
+            suggested_depth = numbered_suggested_depth(
+                obj.text,
+                last_section_depth=last_section_depth,
+                seen_title=seen_title,
+            )
+            if suggested_depth is not None:
+                # First numbered heading starts at most from H2.
+                if not seen_numbered_heading:
+                    suggested_depth = min(suggested_depth, 2)
+                if depth is None:
+                    depth = suggested_depth
+                else:
+                    # Numbered pattern is a soft hint in not-strict mode.
+                    depth = max(depth, suggested_depth)
+                seen_numbered_heading = True
+
+            # Keep local heading tree stable: only first top-level heading stays H1.
+            if h1_assigned and depth == 1:
+                depth = 2
+            # Prevent abrupt depth jumps like H1 -> H3.
+            if prev_heading_depth is not None and depth is not None and depth > (prev_heading_depth + 1):
+                depth = prev_heading_depth + 1
+
+            if depth is not None:
+                if depth == 1:
+                    h1_assigned = True
+                prev_heading_depth = depth
+                prev_heading_font = obj.font_pt
 
         depths[obj.shape_id] = depth
 
     return depths
 
 
-def heading_score(obj: SlideObject) -> float:
+def heading_score(obj: SlideObject, strict: bool = False) -> float:
     # Confidence-like score for heading candidacy.
+    if strict:
+        if not obj.is_heading:
+            return 0.0
+        if obj.ph_type in {"title", "ctrTitle"}:
+            return 0.93
+        if obj.ph_type == "subTitle":
+            return 0.90
+        return 0.0
+
     if obj.is_heading and is_numbered_heading_text(obj.text):
         return 0.95
     if obj.is_heading:
         return 0.75
     return 0.0
+
+
+def heading_threshold(strict: bool = False) -> float:
+    return 0.88 if strict else 0.7
 
 
 def confidence(objs: Sequence[SlideObject]) -> str:
@@ -478,13 +624,14 @@ def object_to_dict(
     o: SlideObject,
     context: OrderContext,
     heading_depths: Optional[Dict[str, Optional[int]]] = None,
+    strict: bool = False,
 ) -> Dict[str, object]:
     if heading_depths is None:
-        depth = compute_heading_depths([o], context).get(o.shape_id)
+        depth = compute_heading_depths([o], context, strict=strict).get(o.shape_id)
     else:
         depth = heading_depths.get(o.shape_id)
-    score = heading_score(o)
-    is_candidate = depth is not None and score >= 0.7
+    score = heading_score(o, strict=strict)
+    is_candidate = depth is not None and score >= heading_threshold(strict=strict)
     return {
         "shape_id": o.shape_id,
         "xml_index": o.xml_index,
@@ -496,6 +643,7 @@ def object_to_dict(
         "y": o.y,
         "coord_source": o.coord_source,
         "text": o.text,
+        "font_pt": o.font_pt,
         "is_footer": o.is_footer,
         "is_decorative": o.is_decorative,
         "is_heading": o.is_heading,
@@ -509,7 +657,7 @@ def object_to_dict(
     }
 
 
-def extract_slide_objects_xml(slide_xml: Path) -> Tuple[List[SlideObject], Dict[str, object]]:
+def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[List[SlideObject], Dict[str, object]]:
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
@@ -584,8 +732,9 @@ def extract_slide_objects_xml(slide_xml: Path) -> Tuple[List[SlideObject], Dict[
                 normalized=normalized,
                 is_footer=(ph_type in FOOTER_TYPES) or bool(re.fullmatch(r"\d+", normalized)),
                 is_decorative=is_decorative(tag, text),
-                is_heading=looks_heading(text, ph_type, tag),
+                is_heading=looks_heading(text, ph_type, tag, strict=strict),
                 is_title_placeholder=ph_type in TITLE_TYPES,
+                font_pt=extract_font_pt(ch),
                 bbox=bbox,
             )
         )
@@ -620,9 +769,11 @@ def extract_slide_objects_xml(slide_xml: Path) -> Tuple[List[SlideObject], Dict[
 def extract_slide_objects(
     slide_xml: Path,
     mode: str,
+    strict: bool = False,
 ) -> Tuple[List[SlideObject], Dict[str, object]]:
-    objects, meta = extract_slide_objects_xml(slide_xml)
+    objects, meta = extract_slide_objects_xml(slide_xml, strict=strict)
     meta["mode"] = mode
+    meta["strict"] = strict
     return objects, meta
 
 
@@ -769,12 +920,13 @@ def write_outputs(
     slide_xml: Path,
     output_dir: Path,
     mode: str,
+    strict: bool = False,
 ) -> Dict[str, object]:
-    objects, meta = extract_slide_objects(slide_xml, mode=mode)
+    objects, meta = extract_slide_objects(slide_xml, mode=mode, strict=strict)
     context = build_order_context(objects)
     ordered = order_objects(objects, mode=mode)
-    ordered_heading_depths = compute_heading_depths(ordered, context)
-    raw_heading_depths = compute_heading_depths(sorted(objects, key=lambda x: x.xml_index), context)
+    ordered_heading_depths = compute_heading_depths(ordered, context, strict=strict)
+    raw_heading_depths = compute_heading_depths(sorted(objects, key=lambda x: x.xml_index), context, strict=strict)
 
     ordered_indexes = [obj.xml_index for obj in ordered]
 
@@ -788,6 +940,7 @@ def write_outputs(
     report: Dict[str, object] = {
         "input_xml": str(slide_xml),
         "mode": mode,
+        "strict": strict,
         "layout_xml": meta.get("layout_xml"),
         "confidence": confidence(objects),
         "counts": {
@@ -803,9 +956,10 @@ def write_outputs(
         },
         "xml_tables": meta.get("xml_tables", []),
         "xml_images": meta.get("xml_images", []),
-        "structure_order": [object_to_dict(o, context, ordered_heading_depths) for o in ordered],
+        "structure_order": [object_to_dict(o, context, ordered_heading_depths, strict=strict) for o in ordered],
         "raw_xml_order": [
-            object_to_dict(o, context, raw_heading_depths) for o in sorted(objects, key=lambda x: x.xml_index)
+            object_to_dict(o, context, raw_heading_depths, strict=strict)
+            for o in sorted(objects, key=lambda x: x.xml_index)
         ],
         "ordered_xml_indexes": ordered_indexes,
         "output_structure_xml": str(xml_path),
@@ -843,6 +997,11 @@ def main() -> None:
         default="./output",
         help="Output directory for reading-order JSON/XML artifacts.",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Use stricter xml heading detection and candidacy thresholds.",
+    )
     args = parser.parse_args()
 
     target_dir = Path("./target_slides")
@@ -863,7 +1022,7 @@ def main() -> None:
 
     for slide_xml in sorted(inputs, key=natural_key):
         try:
-            row = write_outputs(slide_xml, output_dir, mode=args.mode)
+            row = write_outputs(slide_xml, output_dir, mode=args.mode, strict=args.strict)
             manifest["processed"].append(row)
             print(f"Processed: {slide_xml.name}")
         except Exception as e:  # noqa: BLE001

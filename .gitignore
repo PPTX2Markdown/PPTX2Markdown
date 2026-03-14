@@ -16,6 +16,8 @@
 
 # Sensitive source PPTX and generated artifacts (must not be published)
 /main_converter/raw_pptx/
+/main_converter/raw_pptx.zip
+/main_converter/*.zip
 /main_converter/target_pptx/
 /main_converter/output/
 /surya_pipeline/target_pptx/

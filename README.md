@@ -26,6 +26,9 @@ PPTX(또는 PPTX 추출 패키지)를 Markdown으로 변환하는 파이프라�
 - `table_parser`
   - 역할: 테이블 XML을 JSON으로 파싱하고 Markdown/HTML/CSV 렌더링
   - 상세: `table_parser/README.md`
+- `image_pipeline`
+  - 역할: 이미지 블록 분류(PaddleOCR) + 표 이미지 Surya 추출
+  - 상세: `image_pipeline/README.md`
 
 ## 입력/출력 요약
 
@@ -55,6 +58,13 @@ python3 convert_slides_to_md.py --raw --reading-order xml
 cd main_converter
 python3 convert_slides_to_md.py --reading-order xml
 ```
+
+(임시 사진 테이블 처리 로직 실행...)
+```bash
+cd main_converter
+python3 convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
+```
+
 
 ### 3) 특정 패키지만 변환
 
@@ -94,3 +104,57 @@ python3 table_parser/tableMaker.py
 - Python 3.10+ 권장
 - 경로는 상대경로 기준으로 작성되어 있습니다.
 - `surya_pipeline` 관련 옵션/흐름은 이 README 범위에서 제외했습니다.
+
+## Quick output check
+
+If you want one markdown file directly:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --image-table-pipeline --output-file ../out.md
+```
+
+Then check:
+- `../out.md` (single merged output)
+- `output/xml/<package>/result.md` (per package)
+- `output/xml/convert_manifest.json` (detailed run logs)
+
+## Docker (venv-like workflow)
+
+For development, edit files on host and run inside Docker.
+Project is bind-mounted, so source changes are reflected immediately.
+
+### 1) Build
+```bash
+docker compose build
+```
+
+### 2) Start
+```bash
+docker compose up -d
+```
+
+### 3) Enter container
+```bash
+docker compose exec app bash
+```
+
+### 4) Run converters
+```bash
+cd /workspace/main_converter
+python convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
+```
+
+```bash
+cd /workspace/surya_pipeline
+python run_surya_pipeline.py --surya-dir .
+```
+
+### 5) Stop
+```bash
+docker compose down
+```
+
+Notes:
+- Rebuild required when `Dockerfile` changes.
+- Rebuild not required for `.py` source edits.
+- See `DOCKER.md` for the full workflow.
