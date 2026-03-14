@@ -83,28 +83,13 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
         row_cells: list[dict[str, object]] = []
         current_origin_col: int | None = None
         touched_v_cols: set[int] = set()
-        grid_col = 0
 
-        for tc in tc_elems:
-            # If this row omits explicit vMerge placeholders, consume them first.
-            while grid_col in active_v:
-                origin = active_v[grid_col]["origin"]
-                remaining = int(active_v[grid_col]["remaining"]) - 1
-                touched_v_cols.add(grid_col)
-                if remaining <= 0:
-                    del active_v[grid_col]
-                else:
-                    active_v[grid_col]["remaining"] = remaining
-                row_cells.append({"type": "vMerge", "origin": origin, "text": ""})
-                grid_col += 1
-
-            c_idx = grid_col
+        for c_idx, tc in enumerate(tc_elems):
             grid_span = _int_attr(tc, "gridSpan", 1)
             row_span = _int_attr(tc, "rowSpan", 1)
             is_h_merge = tc.get("hMerge") == "1"
             is_v_merge = tc.get("vMerge") == "1"
             text = _cell_text(tc)
-            span_width = max(1, grid_span)
 
             if is_h_merge:
                 origin_col = current_origin_col if current_origin_col is not None else c_idx - 1
@@ -116,38 +101,27 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
                     }
                 )
                 current_origin_col = max(origin_col, 0)
-                for _ in range(1, span_width):
-                    row_cells.append(
-                        {
-                            "type": "hMerge",
-                            "origin": [r_idx, max(origin_col, 0)],
-                            "text": "",
-                        }
-                    )
-                grid_col += span_width
                 continue
 
             if is_v_merge:
-                for covered_col in range(c_idx, c_idx + span_width):
-                    if covered_col in active_v:
-                        origin = active_v[covered_col]["origin"]
-                        remaining = int(active_v[covered_col]["remaining"]) - 1
-                        touched_v_cols.add(covered_col)
-                        if remaining <= 0:
-                            del active_v[covered_col]
-                        else:
-                            active_v[covered_col]["remaining"] = remaining
+                if c_idx in active_v:
+                    origin = active_v[c_idx]["origin"]
+                    remaining = int(active_v[c_idx]["remaining"]) - 1
+                    touched_v_cols.add(c_idx)
+                    if remaining <= 0:
+                        del active_v[c_idx]
                     else:
-                        origin = [max(r_idx - 1, 0), covered_col]
-                    row_cells.append(
-                        {
-                            "type": "vMerge",
-                            "origin": origin,
-                            "text": text if covered_col == c_idx else "",
-                        }
-                    )
+                        active_v[c_idx]["remaining"] = remaining
+                else:
+                    origin = [max(r_idx - 1, 0), c_idx]
+                row_cells.append(
+                    {
+                        "type": "vMerge",
+                        "origin": origin,
+                        "text": text,
+                    }
+                )
                 current_origin_col = None
-                grid_col += span_width
                 continue
 
             # Origin cell.
@@ -159,14 +133,6 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
                 "colspan": grid_span,
             }
             row_cells.append(cell)
-            for _ in range(1, span_width):
-                row_cells.append(
-                    {
-                        "type": "hMerge",
-                        "origin": [r_idx, c_idx],
-                        "text": "",
-                    }
-                )
             origin_cells.append(
                 {
                     "row": r_idx,
@@ -177,7 +143,6 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
                 }
             )
             current_origin_col = c_idx
-            grid_col += span_width
 
             if row_span > 1:
                 for covered_col in range(c_idx, c_idx + grid_span):
@@ -187,8 +152,8 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
                     }
 
         # If XML omitted vMerge placeholders, backfill from active spans.
-        if n_cols and grid_col < n_cols:
-            for c_idx in range(grid_col, n_cols):
+        if n_cols and len(row_cells) < n_cols:
+            for c_idx in range(len(row_cells), n_cols):
                 if c_idx in active_v and c_idx not in touched_v_cols:
                     origin = active_v[c_idx]["origin"]
                     remaining = int(active_v[c_idx]["remaining"]) - 1
