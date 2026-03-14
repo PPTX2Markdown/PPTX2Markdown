@@ -459,6 +459,7 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
             "heading_depth_hint": row.get("heading_depth_hint"),
+            "font_pt": row.get("font_pt"),
         }
     return out
 
@@ -822,15 +823,25 @@ def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
     return "\n".join(f"- {text}" for text in cleaned)
 
 
-def infer_heading_depth_fallback(text: str, text_block_index: int) -> Optional[int]:
+def infer_heading_depth_fallback(
+    text: str,
+    text_block_index: int,
+    font_pt: Optional[float] = None,
+) -> Optional[int]:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
         return None
     if raw.startswith(("▶", "-", "*", "√")):
         return None
+    # Numbered-list-like text blocks should not be promoted to headings in non-strict mode.
+    numeric_markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
+    if len(numeric_markers) >= 2:
+        return None
     if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
         return 3
-    if re.match(r"^\d+[.)]\s+", raw):
+    if re.match(r"^\d+\.\s+", raw):
+        if font_pt is None or font_pt < 24.0:
+            return None
         return 2
     # First meaningful text on a slide is often the slide title.
     if text_block_index == 0 and len(raw) <= 80:
@@ -844,6 +855,14 @@ def clean_heading_text_for_render(text: str) -> str:
         return ""
     cleaned = re.sub(r"^(?:[-*•▶√]+\s*)+", "", raw).strip()
     return cleaned or raw
+
+
+def looks_like_multi_numbered_items(text: str) -> bool:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return False
+    markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
+    return len(markers) >= 2
 
 
 def normalize_triangle_bullet(text: str) -> str:
@@ -1319,12 +1338,17 @@ def convert_one_slide(
             depth = hint.get("heading_depth_hint")
             score = float(hint.get("heading_score", 0.0))
             is_candidate = bool(hint.get("is_heading_candidate", False))
+            raw_font_pt = hint.get("font_pt")
+            try:
+                font_pt = float(raw_font_pt) if raw_font_pt is not None else None
+            except (TypeError, ValueError):
+                font_pt = None
 
             if not is_candidate:
                 fb_depth = (
                     infer_heading_depth_fallback_strict(text, text_block_index)
                     if strict_headings
-                    else infer_heading_depth_fallback(text, text_block_index)
+                    else infer_heading_depth_fallback(text, text_block_index, font_pt=font_pt)
                 )
                 if fb_depth is not None:
                     depth = fb_depth
@@ -1332,6 +1356,8 @@ def convert_one_slide(
                     is_candidate = True
 
             rendered = text
+            if not strict_headings and looks_like_multi_numbered_items(rendered):
+                is_candidate = False
             # Final markdown heading level rendering is converter responsibility.
             heading_threshold = 0.88 if strict_headings else 0.7
             if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
