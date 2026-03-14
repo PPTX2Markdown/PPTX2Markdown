@@ -672,30 +672,33 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     return False
 
 
-def promote_plain_text_to_list(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    if not any(kind == "list" for kind, _, _ in blocks):
+def promote_plain_text_to_list(
+    blocks: Sequence[Tuple[str, str, Optional[int]]],
+) -> List[Tuple[str, str, Optional[int]]]:
+    if not any(kind in {"list_ul", "list_ol"} for kind, _, _ in blocks):
         return list(blocks)
 
     text_blocks = [(idx, text) for idx, (kind, text, _) in enumerate(blocks) if kind == "text"]
     if len(text_blocks) < 3:
         return list(blocks)
 
+    first_list_kind = next((kind for kind, _, _ in blocks if kind in {"list_ul", "list_ol"}), "list_ul")
     promoted = list(blocks)
     for idx, text in text_blocks:
         if len(text) > 80 or text.endswith((".", ":")):
             continue
-        promoted[idx] = ("list", text, 0)
+        promoted[idx] = (first_list_kind, text, 0)
     return promoted
 
 
 def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    levels = sorted({int(level or 0) for kind, _, level in blocks if kind == "list"})
+    levels = sorted({int(level or 0) for kind, _, level in blocks if kind in {"list_ul", "list_ol"}})
     if not levels:
         return list(blocks)
     remap = {level: idx for idx, level in enumerate(levels)}
     normalized: List[Tuple[str, str, Optional[int]]] = []
     for kind, text, level in blocks:
-        if kind != "list":
+        if kind not in {"list_ul", "list_ol"}:
             normalized.append((kind, text, level))
             continue
         mapped = remap[int(level or 0)]
@@ -709,9 +712,11 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optiona
         text = paragraph_text(p)
         if not text:
             continue
+        p_pr = p.find("./a:pPr", NS)
+        has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
         if paragraph_has_list_semantics(p):
             level = paragraph_level(p)
-            blocks.append(("list", text, 0 if level is None else level))
+            blocks.append(("list_ol" if has_auto_num else "list_ul", text, 0 if level is None else level))
         else:
             blocks.append(("text", text, None))
     return blocks
@@ -723,16 +728,32 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
     blocks = normalize_list_levels(promote_plain_text_to_list(blocks))
 
     rendered: List[str] = []
+    ordered_counters: Dict[int, int] = {}
     for idx, (kind, text, level) in enumerate(blocks):
-        if kind == "list":
+        if kind in {"list_ul", "list_ol"}:
             indent = "  " * max(0, int(level or 0))
-            rendered.append(f"{indent}- {text}")
+            if kind == "list_ol":
+                lvl = max(0, int(level or 0))
+                ordered_counters[lvl] = ordered_counters.get(lvl, 0) + 1
+                for deeper in [k for k in ordered_counters.keys() if k > lvl]:
+                    del ordered_counters[deeper]
+                rendered.append(f"{indent}{ordered_counters[lvl]}. {text}")
+            else:
+                rendered.append(f"{indent}- {text}")
             continue
 
         prev_kind = blocks[idx - 1][0] if idx > 0 else None
         next_kind = blocks[idx + 1][0] if idx + 1 < len(blocks) else None
-        if prev_kind == "list" and next_kind == "list":
-            rendered.append(f"- {text}")
+        if prev_kind in {"list_ul", "list_ol"} and next_kind in {"list_ul", "list_ol"}:
+            prev_level = max(0, int(blocks[idx - 1][2] or 0))
+            indent = "  " * prev_level
+            if prev_kind == "list_ol":
+                ordered_counters[prev_level] = ordered_counters.get(prev_level, 0) + 1
+                for deeper in [k for k in ordered_counters.keys() if k > prev_level]:
+                    del ordered_counters[deeper]
+                rendered.append(f"{indent}{ordered_counters[prev_level]}. {text}")
+            else:
+                rendered.append(f"{indent}- {text}")
         else:
             rendered.append(text)
     return "\n".join(rendered).strip()
@@ -813,6 +834,49 @@ def infer_heading_depth_fallback(text: str, text_block_index: int) -> Optional[i
     if text_block_index == 0 and len(raw) <= 80:
         return 1
     return None
+
+
+def clean_heading_text_for_render(text: str) -> str:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return ""
+    cleaned = re.sub(r"^(?:[-*•▶√]+\s*)+", "", raw).strip()
+    return cleaned or raw
+
+
+def normalize_triangle_bullet(text: str) -> str:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return ""
+    if re.match(r"^▶+\s*", raw):
+        return re.sub(r"^▶+\s*", "- ", raw)
+    return raw
+
+
+def split_triangle_bullets(text: str) -> List[str]:
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    rendered_lines: List[str] = []
+    for line in lines:
+        raw = re.sub(r"\s+", " ", line).strip()
+        if not raw:
+            continue
+        if "▶" not in raw:
+            normalized = normalize_triangle_bullet(raw)
+            if normalized:
+                rendered_lines.append(normalized)
+            continue
+
+        parts = [p.strip() for p in re.split(r"\s*▶+\s*", raw) if p.strip()]
+        if not parts:
+            continue
+        if raw.startswith("-"):
+            parts[0] = re.sub(r"^-\s*", "", parts[0]).strip()
+        rendered_lines.extend(f"- {part}" for part in parts if part)
+
+    return rendered_lines
 
 
 def infer_heading_depth_fallback_strict(text: str, text_block_index: int) -> Optional[int]:
@@ -1268,17 +1332,27 @@ def convert_one_slide(
             # Final markdown heading level rendering is converter responsibility.
             heading_threshold = 0.88 if strict_headings else 0.7
             if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
-                key = normalize_text(text)
+                heading_text = text if strict_headings else clean_heading_text_for_render(text)
+                key = normalize_text(heading_text)
                 if key not in used_headings:
-                    rendered = f"{'#' * depth} {text}"
+                    rendered = f"{'#' * depth} {heading_text}"
                     used_headings.add(key)
                 else:
                     # Deduplicate repeated heading text.
                     stats["skipped_blocks"] += 1
                     continue
 
-            lines.append(rendered)
-            lines.append("")
+            if rendered.startswith("#"):
+                lines.append(rendered)
+                lines.append("")
+            else:
+                rendered_lines = split_triangle_bullets(rendered)
+                if rendered_lines:
+                    lines.extend(rendered_lines)
+                    lines.append("")
+                else:
+                    lines.append(rendered)
+                    lines.append("")
             stats["text_blocks"] += 1
             text_block_index += 1
             continue
