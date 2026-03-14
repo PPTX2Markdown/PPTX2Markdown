@@ -460,6 +460,8 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "heading_score": float(row.get("heading_score", 0.0)),
             "heading_depth_hint": row.get("heading_depth_hint"),
             "font_pt": row.get("font_pt"),
+            "ph_type": row.get("ph_type"),
+            "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
         }
     return out
 
@@ -863,6 +865,28 @@ def looks_like_multi_numbered_items(text: str) -> bool:
         return False
     markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
     return len(markers) >= 2
+
+
+def strict_heading_depth_from_placeholder(ph_type: Optional[str]) -> Optional[int]:
+    if ph_type is None:
+        return None
+    key = str(ph_type).strip().lower()
+    if key in {"ctrtitle", "title"}:
+        return 1
+    if key == "subtitle":
+        return 2
+    return None
+
+
+def is_body_like_long_sentence(text: str) -> bool:
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return False
+    if len(raw) >= 90:
+        return True
+    if raw.count(" ") >= 10 and re.search(r"(다|됨|필요|수행|사용|검토)(?:\s|$)", raw):
+        return True
+    return False
 
 
 def normalize_triangle_bullet(text: str) -> str:
@@ -1326,7 +1350,9 @@ def convert_one_slide(
             if ph_type in {"sldNum", "ftr", "dt"}:
                 stats["skipped_blocks"] += 1
                 continue
-            text = extract_shape_text(child)
+            shape_blocks = extract_shape_blocks(child)
+            has_list_semantics = any(kind in {"list_ul", "list_ol"} for kind, _, _ in shape_blocks)
+            text = render_shape_blocks(shape_blocks)
             if not text:
                 stats["skipped_blocks"] += 1
                 continue
@@ -1344,20 +1370,34 @@ def convert_one_slide(
             except (TypeError, ValueError):
                 font_pt = None
 
-            if not is_candidate:
-                fb_depth = (
-                    infer_heading_depth_fallback_strict(text, text_block_index)
-                    if strict_headings
-                    else infer_heading_depth_fallback(text, text_block_index, font_pt=font_pt)
-                )
-                if fb_depth is not None:
-                    depth = fb_depth
-                    score = 0.8
+            if strict_headings:
+                strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
+                strict_depth = strict_heading_depth_from_placeholder(strict_ph_type)
+                is_candidate = strict_depth is not None
+                depth = strict_depth
+                score = 1.0 if is_candidate else 0.0
+            else:
+                non_strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
+                non_strict_depth = strict_heading_depth_from_placeholder(non_strict_ph_type)
+                if non_strict_depth is not None:
+                    depth = non_strict_depth
+                    score = max(score, 0.9)
                     is_candidate = True
+                if not is_candidate:
+                    fb_depth = infer_heading_depth_fallback(text, text_block_index, font_pt=font_pt)
+                    if fb_depth is not None:
+                        depth = fb_depth
+                        score = 0.8
+                        is_candidate = True
 
             rendered = text
-            if not strict_headings and looks_like_multi_numbered_items(rendered):
-                is_candidate = False
+            if not strict_headings:
+                if has_list_semantics:
+                    is_candidate = False
+                if looks_like_multi_numbered_items(rendered):
+                    is_candidate = False
+                if is_body_like_long_sentence(rendered):
+                    is_candidate = False
             # Final markdown heading level rendering is converter responsibility.
             heading_threshold = 0.88 if strict_headings else 0.7
             if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
@@ -1462,6 +1502,14 @@ def convert_one_slide(
                 if err:
                     stats["warnings"].append(err)
             continue
+
+    # If a slide has only one heading, keep hierarchy simple by normalizing it to H1.
+    heading_lines = [i for i, line in enumerate(lines) if re.match(r"^#{1,6}\s+", line)]
+    if len(heading_lines) == 1:
+        idx = heading_lines[0]
+        m = re.match(r"^(#{2,6})\s+(.*)$", lines[idx])
+        if m:
+            lines[idx] = f"# {m.group(2)}"
 
     md_text = "\n".join(lines).rstrip() + "\n"
     return md_text, stats
