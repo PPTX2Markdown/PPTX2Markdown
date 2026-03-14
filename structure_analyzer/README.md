@@ -57,4 +57,8 @@ python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/targ
 
 - `--mode xml`: 읽기 순서 분석 모드 (`xml`만 지원)
 - `--output-dir <path>`: 결과(JSON/XML/manifest) 저장 디렉터리
+- `--strict`: XML 기반 strict heading 규칙 적용
 
+## Strict 규칙 문서
+
+- `--strict` 규칙/테스트 매트릭스: `structure_analyzer/STRICT_HEADING_RULES.md`
