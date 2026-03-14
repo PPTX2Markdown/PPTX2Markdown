@@ -35,6 +35,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from heading_rules import (
+    HeadingPolicy,
+    clean_heading_text_for_render as hr_clean_heading_text_for_render,
+    infer_heading_depth_fallback as hr_infer_heading_depth_fallback,
+    is_body_like_long_sentence as hr_is_body_like_long_sentence,
+    looks_like_multi_numbered_items as hr_looks_like_multi_numbered_items,
+    normalize_single_heading_to_h1,
+    strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
+)
+
 
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
@@ -830,63 +840,27 @@ def infer_heading_depth_fallback(
     text_block_index: int,
     font_pt: Optional[float] = None,
 ) -> Optional[int]:
-    raw = re.sub(r"\s+", " ", (text or "").strip())
-    if not raw:
-        return None
-    if raw.startswith(("▶", "-", "*", "√")):
-        return None
-    # Numbered-list-like text blocks should not be promoted to headings in non-strict mode.
-    numeric_markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
-    if len(numeric_markers) >= 2:
-        return None
-    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
-        return 3
-    if re.match(r"^\d+\.\s+", raw):
-        if font_pt is None or font_pt < 24.0:
-            return None
-        return 2
-    # First meaningful text on a slide is often the slide title.
-    if text_block_index == 0 and len(raw) <= 80:
-        return 1
-    return None
+    return hr_infer_heading_depth_fallback(
+        text=text,
+        text_block_index=text_block_index,
+        font_pt=font_pt,
+    )
 
 
 def clean_heading_text_for_render(text: str) -> str:
-    raw = re.sub(r"\s+", " ", (text or "").strip())
-    if not raw:
-        return ""
-    cleaned = re.sub(r"^(?:[-*•▶√]+\s*)+", "", raw).strip()
-    return cleaned or raw
+    return hr_clean_heading_text_for_render(text)
 
 
 def looks_like_multi_numbered_items(text: str) -> bool:
-    raw = re.sub(r"\s+", " ", (text or "").strip())
-    if not raw:
-        return False
-    markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
-    return len(markers) >= 2
+    return hr_looks_like_multi_numbered_items(text)
 
 
 def strict_heading_depth_from_placeholder(ph_type: Optional[str]) -> Optional[int]:
-    if ph_type is None:
-        return None
-    key = str(ph_type).strip().lower()
-    if key in {"ctrtitle", "title"}:
-        return 1
-    if key == "subtitle":
-        return 2
-    return None
+    return hr_strict_heading_depth_from_placeholder(ph_type)
 
 
 def is_body_like_long_sentence(text: str) -> bool:
-    raw = re.sub(r"\s+", " ", (text or "").strip())
-    if not raw:
-        return False
-    if len(raw) >= 90:
-        return True
-    if raw.count(" ") >= 10 and re.search(r"(다|됨|필요|수행|사용|검토)(?:\s|$)", raw):
-        return True
-    return False
+    return hr_is_body_like_long_sentence(text)
 
 
 def normalize_triangle_bullet(text: str) -> str:
@@ -1302,6 +1276,7 @@ def convert_one_slide(
     enable_image_table_pipeline: bool = False,
     strict_headings: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
+    heading_policy = HeadingPolicy(strict=strict_headings)
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
@@ -1399,7 +1374,7 @@ def convert_one_slide(
                 if is_body_like_long_sentence(rendered):
                     is_candidate = False
             # Final markdown heading level rendering is converter responsibility.
-            heading_threshold = 0.88 if strict_headings else 0.7
+            heading_threshold = heading_policy.threshold
             if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
                 heading_text = text if strict_headings else clean_heading_text_for_render(text)
                 key = normalize_text(heading_text)
@@ -1503,13 +1478,7 @@ def convert_one_slide(
                     stats["warnings"].append(err)
             continue
 
-    # If a slide has only one heading, keep hierarchy simple by normalizing it to H1.
-    heading_lines = [i for i, line in enumerate(lines) if re.match(r"^#{1,6}\s+", line)]
-    if len(heading_lines) == 1:
-        idx = heading_lines[0]
-        m = re.match(r"^(#{2,6})\s+(.*)$", lines[idx])
-        if m:
-            lines[idx] = f"# {m.group(2)}"
+    lines = normalize_single_heading_to_h1(lines)
 
     md_text = "\n".join(lines).rstrip() + "\n"
     return md_text, stats
