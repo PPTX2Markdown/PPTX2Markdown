@@ -513,13 +513,13 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     raw_score = positive_score - penalty_score
 
     hard_table_signal = (
-        intersection_count >= 18
-        and rectangle_count >= 8
+        intersection_count >= 30
+        and rectangle_count >= 15
         and horizontal_ratio >= 0.02
         and vertical_ratio >= 0.015
-        and repeating_cell_score >= 0.50
-        and gap_regularity_score >= 0.55
-        and chart_score < 0.28
+        and repeating_cell_score >= 0.75
+        and gap_regularity_score >= 0.75
+        and chart_score < 0.18
         and diagonal_ratio < 0.15
         and irregular_blob_ratio < 0.10
     )
@@ -545,6 +545,27 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and repeating_cell_score < 0.40
         and gap_regularity_score < 0.55
     )
+    weak_cell_structure_veto = (
+        (intersection_count >= 20 or (horizontal_ratio >= 0.04 and vertical_ratio >= 0.04))
+        and rectangle_count <= 15
+        and repeating_cell_score < 0.40
+    )
+    dense_grid_low_repeat_veto = (
+        intersection_count >= 120
+        and repeating_cell_score < 0.75
+        and gap_regularity_score < 0.60
+    )
+    irregular_grid_veto = (
+        intersection_count >= 35
+        and rectangle_count >= 12
+        and gap_regularity_score < 0.68
+        and chart_score >= 0.10
+    )
+    chart_dense_grid_veto = (
+        chart_score >= 0.40
+        and rectangle_count <= 24
+        and intersection_count >= 30
+    )
 
     score = _clamp(raw_score)
     if hard_non_table_signal and chart_score >= 0.45:
@@ -563,6 +584,14 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         score = min(score, 0.30)
     if sparse_cell_grid_veto:
         score = min(score, 0.28)
+    if weak_cell_structure_veto:
+        score = min(score, 0.28)
+    if dense_grid_low_repeat_veto:
+        score = min(score, 0.28)
+    if irregular_grid_veto:
+        score = min(score, 0.32)
+    if chart_dense_grid_veto:
+        score = min(score, 0.24)
 
     return {
         "image_size": {"width": width, "height": height},
@@ -603,6 +632,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "sparse_rect_chart_veto": sparse_rect_chart_veto,
             "weak_grid_chart_veto": weak_grid_chart_veto,
             "sparse_cell_grid_veto": sparse_cell_grid_veto,
+            "weak_cell_structure_veto": weak_cell_structure_veto,
+            "dense_grid_low_repeat_veto": dense_grid_low_repeat_veto,
+            "irregular_grid_veto": irregular_grid_veto,
+            "chart_dense_grid_veto": chart_dense_grid_veto,
         },
     }
 
