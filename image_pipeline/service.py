@@ -939,15 +939,20 @@ def _grid_table_detector(
 
 
 def _alignment_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
+    row_sufficiency = _normalize_score(float(layout_info.get("meaningful_row_count", 0)), 4.0)
+    row_gate = _clamp(0.10 + (row_sufficiency * 0.90))
+    component_count_score = _normalize_score(float(layout_info.get("components_used", 0)), 36.0)
+    component_area_score = _normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.08)
     row_pattern_score = _clamp(
-        (_normalize_score(float(layout_info.get("meaningful_row_count", 0)), 5.0) * 0.55)
+        (_normalize_score(float(layout_info.get("meaningful_row_count", 0)), 5.0) * 0.60)
         + (float(layout_info.get("row_component_stability_score", 0.0)) * 0.45)
     )
     column_pattern_score = _clamp(
-        (_normalize_score(float(layout_info.get("best_anchor_cluster_count", 0)), 4.0) * 0.40)
-        + (float(layout_info.get("best_anchor_row_coverage", 0.0)) * 0.30)
-        + (_normalize_score(float(layout_info.get("meaningful_col_count", 0)), 4.0) * 0.15)
+        (_normalize_score(float(layout_info.get("best_anchor_cluster_count", 0)), 4.0) * 0.30)
+        + (float(layout_info.get("best_anchor_row_coverage", 0.0)) * 0.20)
+        + (_normalize_score(float(layout_info.get("meaningful_col_count", 0)), 4.0) * 0.20)
         + (float(layout_info.get("projection_col_regularity_score", 0.0)) * 0.15)
+        + (float(layout_info.get("projection_col_peak_score", 0.0)) * 0.15)
     )
     projection_pattern_score = _clamp(
         (float(layout_info.get("projection_row_peak_score", 0.0)) * 0.35)
@@ -956,18 +961,22 @@ def _alignment_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
         + (float(layout_info.get("projection_col_regularity_score", 0.0)) * 0.15)
     )
     occupancy_score = _clamp(
-        (_normalize_score(float(layout_info.get("components_used", 0)), 36.0) * 0.55)
-        + (_normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.08) * 0.45)
+        (component_count_score * 0.60)
+        + (min(component_count_score, component_area_score) * 0.40)
     )
     score = _clamp(
-        (row_pattern_score * 0.32)
-        + (column_pattern_score * 0.34)
-        + (projection_pattern_score * 0.18)
-        + (occupancy_score * 0.16)
+        (
+            (row_pattern_score * 0.34)
+            + (column_pattern_score * 0.28)
+            + (projection_pattern_score * 0.20)
+            + (occupancy_score * 0.18)
+        )
+        * row_gate
     )
     return {
         "score": score,
         "components": {
+            "row_gate": row_gate,
             "row_pattern_score": row_pattern_score,
             "column_pattern_score": column_pattern_score,
             "projection_pattern_score": projection_pattern_score,
@@ -977,9 +986,13 @@ def _alignment_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _dense_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
+    row_sufficiency = _normalize_score(float(layout_info.get("meaningful_row_count", 0)), 4.0)
+    row_gate = _clamp(0.10 + (row_sufficiency * 0.90))
+    component_count_score = _normalize_score(float(layout_info.get("components_used", 0)), 48.0)
+    component_area_score = _normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.11)
     density_score = _clamp(
-        (_normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.11) * 0.55)
-        + (_normalize_score(float(layout_info.get("components_used", 0)), 48.0) * 0.45)
+        (min(component_area_score, component_count_score) * 0.70)
+        + (component_count_score * 0.30)
     )
     compact_matrix_score = _clamp(
         (float(layout_info.get("compact_component_ratio", 0.0)) * 0.30)
@@ -995,14 +1008,18 @@ def _dense_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
     )
     header_body_score = float(layout_info.get("header_body_transition_score", 0.0))
     score = _clamp(
-        (density_score * 0.34)
-        + (compact_matrix_score * 0.28)
-        + (partial_alignment_score * 0.24)
-        + (header_body_score * 0.14)
+        (
+            (density_score * 0.28)
+            + (compact_matrix_score * 0.30)
+            + (partial_alignment_score * 0.26)
+            + (header_body_score * 0.16)
+        )
+        * row_gate
     )
     return {
         "score": score,
         "components": {
+            "row_gate": row_gate,
             "density_score": density_score,
             "compact_matrix_score": compact_matrix_score,
             "partial_alignment_score": partial_alignment_score,
@@ -1169,7 +1186,23 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     )
     strongest_veto_score = float(veto_breakdown["strongest_veto_score"])
     low_table_evidence = final_table_score < 0.55
-    veto_applied = low_table_evidence and strongest_veto_score >= 0.62
+    weak_non_grid_table = (
+        strongest_detector_name != "grid"
+        and float(grid_detector["score"]) < 0.40
+        and strongest_veto_score >= 0.58
+    )
+    sparse_text_grid_veto = (
+        float(grid_detector["score"]) >= 0.72
+        and float(alignment_detector["score"]) < 0.40
+        and float(dense_detector["score"]) < 0.55
+        and int(layout_info.get("meaningful_row_count", 0)) <= 1
+        and int(layout_info.get("components_used", 0)) <= 18
+    )
+    veto_applied = (
+        (low_table_evidence and strongest_veto_score >= 0.62)
+        or weak_non_grid_table
+        or sparse_text_grid_veto
+    )
     score = final_table_score
     if veto_applied:
         score = min(score, 0.24)
@@ -1202,6 +1235,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "projection_row_regularity_score": layout_info.get("projection_row_regularity_score"),
             "projection_col_regularity_score": layout_info.get("projection_col_regularity_score"),
             "header_body_transition_score": layout_info.get("header_body_transition_score"),
+            "alignment_row_gate": alignment_detector["components"].get("row_gate"),
+            "dense_row_gate": dense_detector["components"].get("row_gate"),
             "diagonal_curve_ratio": diagonal_ratio,
             "irregular_blob_ratio": irregular_blob_ratio,
             "chart_like_structure_score": chart_score,
@@ -1248,6 +1283,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "strongest_detector_is_alignment": strongest_detector_name == "alignment",
             "strongest_detector_is_dense": strongest_detector_name == "dense",
             "low_table_evidence": low_table_evidence,
+            "weak_non_grid_table": weak_non_grid_table,
+            "sparse_text_grid_veto": sparse_text_grid_veto,
             "veto_applied": veto_applied,
             "strong_chart_evidence": bool(veto_breakdown["chart"]["active"]),
             "strong_diagram_evidence": bool(veto_breakdown["diagram"]["active"]),
