@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import io
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -44,6 +45,7 @@ _VECTOR_IMAGE_SUFFIXES = {
     ".wmf",
 }
 _DEFAULT_BG_GRAY = 192
+_HIDE_SURYA_LOGS = os.getenv("IMAGE_TABLE_HIDE_SURYA_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}
 
 warnings.filterwarnings(
     "ignore",
@@ -957,7 +959,8 @@ def _prepare_image_for_surya(image_path: Path, bg_gray: int = _DEFAULT_BG_GRAY) 
 
 
 def _run_surya_parsed_tables(image_path: Path) -> List[Dict[str, Any]]:
-    with _suppress_external_output():
+    run_ctx = _suppress_external_output() if _HIDE_SURYA_LOGS else contextlib.nullcontext()
+    with run_ctx:
         table_predictor, det_predictor, rec_predictor, task_names = _load_surya_models()
         image = _prepare_image_for_surya(image_path)
         table_preds = table_predictor([image])
