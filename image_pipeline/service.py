@@ -1199,10 +1199,33 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and int(layout_info.get("meaningful_row_count", 0)) <= 1
         and int(layout_info.get("components_used", 0)) <= 18
     )
+    low_row_grid_panel_veto = (
+        float(grid_detector["score"]) >= 0.78
+        and int(layout_info.get("meaningful_row_count", 0)) <= 3
+        and int(layout_info.get("components_used", 0)) <= 60
+        and float(dense_detector["score"]) < 0.60
+    )
+    irregular_grid_diagram_veto = (
+        strongest_detector_name == "grid"
+        and float(grid_detector["score"]) >= 0.82
+        and int(layout_info.get("meaningful_row_count", 0)) >= 10
+        and float(layout_info.get("row_component_stability_score", 0.0)) < 0.08
+        and float(layout_info.get("best_anchor_score", 0.0)) < 0.88
+        and strongest_veto_score >= 0.18
+    )
+    grid_diagram_veto = (
+        strongest_detector_name == "grid"
+        and float(grid_detector["score"]) >= 0.84
+        and strongest_veto_score >= 0.50
+        and float(layout_info.get("best_anchor_score", 0.0)) < 0.82
+    )
     veto_applied = (
         (low_table_evidence and strongest_veto_score >= 0.62)
         or weak_non_grid_table
         or sparse_text_grid_veto
+        or low_row_grid_panel_veto
+        or irregular_grid_diagram_veto
+        or grid_diagram_veto
     )
     score = final_table_score
     if veto_applied:
@@ -1286,6 +1309,9 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "low_table_evidence": low_table_evidence,
             "weak_non_grid_table": weak_non_grid_table,
             "sparse_text_grid_veto": sparse_text_grid_veto,
+            "low_row_grid_panel_veto": low_row_grid_panel_veto,
+            "irregular_grid_diagram_veto": irregular_grid_diagram_veto,
+            "grid_diagram_veto": grid_diagram_veto,
             "veto_applied": veto_applied,
             "strong_chart_evidence": bool(veto_breakdown["chart"]["active"]),
             "strong_diagram_evidence": bool(veto_breakdown["diagram"]["active"]),
@@ -1783,7 +1809,7 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
 
     if _DISABLE_SURYA:
         out = {
-            "status": "not_table",
+            "status": "table_skipped",
             "file": key,
             "predicted_class": cls.get("predicted_class"),
             "score": cls.get("score"),

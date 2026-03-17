@@ -1305,6 +1305,8 @@ def convert_picture_to_table_markdown(
         if isinstance(markdown, str) and markdown.strip():
             return markdown, None, False, result
         return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False, result
+    if status == "table_skipped":
+        return None, None, False, result
     if status == "not_table":
         return None, None, False, result
 

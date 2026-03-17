@@ -178,7 +178,7 @@ export IMAGE_TABLE_HIDE_SURYA_LOGS=1
 명령어 없고 걍 저장됨. 일단...
 ```
 
-### surya 끄지
+### surya 끄는 코드
 ```
 export IMAGE_TABLE_DISABLE_SURYA=1
 ```
