@@ -614,9 +614,16 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     intersections_norm = _normalize_score(intersection_count, 20.0)
     rectangles_norm = _normalize_score(rectangle_count, 10.0)
     grid_support = min(horizontal_norm, vertical_norm)
-    dominant_bbox_area_ratio = float(dominant_grid_bbox_info.get("area_ratio", 0.0) or 0.0)
-    dominant_bbox_outside_noise_ratio = float(dominant_grid_bbox_info.get("outside_noise_ratio", 1.0) or 1.0)
-    dominant_bbox_rect_coverage_ratio = float(dominant_grid_bbox_info.get("rect_coverage_ratio", 0.0) or 0.0)
+    dominant_bbox_area_raw = dominant_grid_bbox_info.get("area_ratio", 0.0)
+    dominant_bbox_outside_raw = dominant_grid_bbox_info.get("outside_noise_ratio", 1.0)
+    dominant_bbox_cover_raw = dominant_grid_bbox_info.get("rect_coverage_ratio", 0.0)
+    dominant_bbox_area_ratio = float(dominant_bbox_area_raw if dominant_bbox_area_raw is not None else 0.0)
+    dominant_bbox_outside_noise_ratio = float(
+        dominant_bbox_outside_raw if dominant_bbox_outside_raw is not None else 1.0
+    )
+    dominant_bbox_rect_coverage_ratio = float(
+        dominant_bbox_cover_raw if dominant_bbox_cover_raw is not None else 0.0
+    )
 
     positive_score = (
         (horizontal_norm * 0.12)
@@ -693,9 +700,9 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     )
     dominant_grid_bbox_signal = (
         dominant_grid_bbox_score >= 0.72
-        and dominant_bbox_area_ratio >= 0.28
-        and dominant_bbox_rect_coverage_ratio >= 0.45
-        and dominant_bbox_outside_noise_ratio <= 0.28
+        and dominant_bbox_area_ratio >= 0.70
+        and dominant_bbox_rect_coverage_ratio >= 0.85
+        and dominant_bbox_outside_noise_ratio <= 0.10
     )
 
     score = _clamp(raw_score)
