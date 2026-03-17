@@ -513,16 +513,23 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     raw_score = positive_score - penalty_score
 
     hard_table_signal = (
-        intersection_count >= 6
-        and rectangle_count >= 4
-        and horizontal_ratio >= 0.01
-        and vertical_ratio >= 0.01
+        intersection_count >= 18
+        and rectangle_count >= 8
+        and horizontal_ratio >= 0.02
+        and vertical_ratio >= 0.015
+        and repeating_cell_score >= 0.50
+        and gap_regularity_score >= 0.55
+        and chart_score < 0.28
+        and diagonal_ratio < 0.15
+        and irregular_blob_ratio < 0.10
     )
     hard_non_table_signal = (
         intersection_count == 0
         and rectangle_count < 2
         and (long_horizontal_lines + long_vertical_lines) < 2
     )
+    impure_chart_veto = chart_score >= 0.35 and gap_regularity_score < 0.80
+    impure_diagonal_veto = diagonal_ratio >= 0.18
     chart_blob_veto = chart_score >= 0.45 and irregular_blob_ratio >= 0.10
     diagonal_blob_veto = diagonal_ratio >= 0.20 and irregular_blob_ratio >= 0.15
     sparse_rect_chart_veto = chart_score >= 0.45 and rectangle_count <= 10
@@ -544,6 +551,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         score = max(score, 0.60)
     if hard_non_table_signal and chart_score >= 0.45:
         score = min(score, 0.20)
+    if impure_chart_veto:
+        score = min(score, 0.24)
+    if impure_diagonal_veto:
+        score = min(score, 0.22)
     if chart_blob_veto:
         score = min(score, 0.20)
     if diagonal_blob_veto:
@@ -587,6 +598,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         "decision_flags": {
             "hard_table_signal": hard_table_signal,
             "hard_non_table_signal": hard_non_table_signal,
+            "impure_chart_veto": impure_chart_veto,
+            "impure_diagonal_veto": impure_diagonal_veto,
             "chart_blob_veto": chart_blob_veto,
             "diagonal_blob_veto": diagonal_blob_veto,
             "sparse_rect_chart_veto": sparse_rect_chart_veto,

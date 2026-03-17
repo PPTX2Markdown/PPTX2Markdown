@@ -61,6 +61,7 @@ python3 convert_slides_to_md.py --reading-order xml
 
 (OpenCV 휴리스틱 기반 테이블 이진 분류 + 표 이미지 Surya 추출...)
 ```bash
+export IMAGE_TABLE_HIDE_SURYA_LOGS=1
 cd main_converter
 python3 convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
 ```
