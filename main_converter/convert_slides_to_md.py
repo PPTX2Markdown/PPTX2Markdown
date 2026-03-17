@@ -1761,6 +1761,8 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     repo_root = Path(__file__).resolve().parent.parent
+    debug_output_dir = repo_root / "main_converter" / "output" / args.reading_order
+    debug_output_dir.mkdir(parents=True, exist_ok=True)
     ensure_imports(repo_root)
     if args.raw:
         raw_inputs = (
@@ -1820,7 +1822,7 @@ def main() -> int:
         pkg_out = output_dir / pkg_name
         per_slide_dir = pkg_out / "per_slide"
         media_dir = pkg_out / "media"
-        surya_debug_dir = pkg_out / "surya_run_images"
+        surya_debug_dir = debug_output_dir / pkg_name / "surya_run_images"
         copied_media: Dict[str, Path] = {}
         copied_surya_debug_images: Dict[str, Path] = {}
         pkg_out.mkdir(parents=True, exist_ok=True)
