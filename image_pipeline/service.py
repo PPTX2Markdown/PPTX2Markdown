@@ -411,6 +411,88 @@ def _gap_regularity(rectangles: Sequence[Dict[str, float]]) -> Tuple[float, Dict
     return score, {"row_gap_cv": row_cv, "col_gap_cv": col_cv}
 
 
+def _dominant_grid_bbox(
+    horizontal_mask: Any,
+    vertical_mask: Any,
+    binary: Any,
+    rectangles: Sequence[Dict[str, float]],
+    image_shape: Tuple[int, int],
+    cv2: Any,
+) -> Tuple[float, Dict[str, Any]]:
+    height, width = image_shape
+    image_area = float(height * width)
+    if image_area <= 0:
+        return 0.0, {"found": False}
+
+    grid_mask = cv2.bitwise_or(horizontal_mask, vertical_mask)
+    grid_pixels = float(cv2.countNonZero(grid_mask))
+    binary_pixels = float(cv2.countNonZero(binary))
+    if grid_pixels <= 0:
+        return 0.0, {"found": False, "grid_pixels": 0}
+
+    bridge_kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (max(5, width // 160), max(5, height // 160)),
+    )
+    merged = cv2.dilate(grid_mask, bridge_kernel, iterations=2)
+    contours, _ = cv2.findContours(merged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    best_score = 0.0
+    best_info: Dict[str, Any] = {"found": False, "grid_pixels": int(grid_pixels)}
+    min_bbox_area = image_area * 0.03
+
+    for contour in contours:
+        x, y, w, h = cv2.boundingRect(contour)
+        bbox_area = float(w * h)
+        if bbox_area < min_bbox_area:
+            continue
+
+        x2 = min(width, x + w)
+        y2 = min(height, y + h)
+        line_pixels_inside = float(cv2.countNonZero(grid_mask[y:y2, x:x2]))
+        binary_pixels_inside = float(cv2.countNonZero(binary[y:y2, x:x2]))
+
+        area_ratio = _clamp(bbox_area / image_area)
+        line_density = _safe_ratio(line_pixels_inside, bbox_area)
+        outside_noise_ratio = 0.0
+        if binary_pixels > 0:
+            outside_noise_ratio = _clamp((binary_pixels - binary_pixels_inside) / binary_pixels)
+
+        rect_inside = 0
+        for rect in rectangles:
+            cx = rect["x"] + (rect["w"] / 2.0)
+            cy = rect["y"] + (rect["h"] / 2.0)
+            if x <= cx <= x2 and y <= cy <= y2:
+                rect_inside += 1
+        rect_coverage = _safe_ratio(rect_inside, len(rectangles)) if rectangles else 0.0
+
+        score = _clamp(
+            (_normalize_score(area_ratio, 0.45) * 0.45)
+            + (_normalize_score(line_density, 0.08) * 0.15)
+            + (rect_coverage * 0.20)
+            + ((1.0 - outside_noise_ratio) * 0.20)
+        )
+        if score <= best_score:
+            continue
+
+        best_score = score
+        best_info = {
+            "found": True,
+            "x": int(x),
+            "y": int(y),
+            "w": int(w),
+            "h": int(h),
+            "area_ratio": area_ratio,
+            "line_density": line_density,
+            "outside_noise_ratio": outside_noise_ratio,
+            "rect_coverage_ratio": rect_coverage,
+            "rectangles_inside": rect_inside,
+            "grid_pixels": int(grid_pixels),
+        }
+
+    return best_score, best_info
+
+
 def _diagonal_line_ratio(gray: Any, cv2: Any) -> float:
     edges = cv2.Canny(gray, 50, 150, apertureSize=3)
     lines = cv2.HoughLinesP(edges, 1, math.pi / 180.0, threshold=40, minLineLength=25, maxLineGap=8)
@@ -506,6 +588,14 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     repeating_cell_score, repeating_info = _repeating_cell_structure(rectangles)
     alignment_score, alignment_info = _component_alignment(binary, (height, width), cv2)
     gap_regularity_score, gap_info = _gap_regularity(rectangles)
+    dominant_grid_bbox_score, dominant_grid_bbox_info = _dominant_grid_bbox(
+        horizontal_mask,
+        vertical_mask,
+        binary,
+        rectangles,
+        (height, width),
+        cv2,
+    )
     diagonal_ratio = _diagonal_line_ratio(gray, cv2)
     irregular_blob_ratio = _irregular_blob_ratio(binary, line_mask, cv2)
     chart_score = _chart_like_score(
@@ -524,6 +614,9 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     intersections_norm = _normalize_score(intersection_count, 20.0)
     rectangles_norm = _normalize_score(rectangle_count, 10.0)
     grid_support = min(horizontal_norm, vertical_norm)
+    dominant_bbox_area_ratio = float(dominant_grid_bbox_info.get("area_ratio", 0.0) or 0.0)
+    dominant_bbox_outside_noise_ratio = float(dominant_grid_bbox_info.get("outside_noise_ratio", 1.0) or 1.0)
+    dominant_bbox_rect_coverage_ratio = float(dominant_grid_bbox_info.get("rect_coverage_ratio", 0.0) or 0.0)
 
     positive_score = (
         (horizontal_norm * 0.12)
@@ -535,6 +628,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         + (alignment_score * 0.05)
         + (gap_regularity_score * 0.06)
         + (grid_support * 0.10)
+        + (dominant_grid_bbox_score * 0.14)
     )
     penalty_score = (
         (_clamp(diagonal_ratio / 0.35) * 0.16)
@@ -597,6 +691,12 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and rectangle_count <= 24
         and intersection_count >= 30
     )
+    dominant_grid_bbox_signal = (
+        dominant_grid_bbox_score >= 0.72
+        and dominant_bbox_area_ratio >= 0.28
+        and dominant_bbox_rect_coverage_ratio >= 0.45
+        and dominant_bbox_outside_noise_ratio <= 0.28
+    )
 
     score = _clamp(raw_score)
     if hard_non_table_signal and chart_score >= 0.45:
@@ -623,6 +723,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         score = min(score, 0.32)
     if chart_dense_grid_veto:
         score = min(score, 0.24)
+    if dominant_grid_bbox_signal:
+        score = max(score, 0.64)
 
     return {
         "image_size": {"width": width, "height": height},
@@ -640,12 +742,17 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "irregular_blob_ratio": irregular_blob_ratio,
             "chart_like_structure_score": chart_score,
             "grid_support_score": grid_support,
+            "dominant_grid_bbox_score": dominant_grid_bbox_score,
+            "dominant_grid_bbox_area_ratio": dominant_bbox_area_ratio,
+            "dominant_grid_bbox_outside_noise_ratio": dominant_bbox_outside_noise_ratio,
+            "dominant_grid_bbox_rect_coverage_ratio": dominant_bbox_rect_coverage_ratio,
         },
         "feature_details": {
             "rectangles_used": rectangle_count,
             "repeating_cells": repeating_info,
             "component_alignment": alignment_info,
             "gap_regularity": gap_info,
+            "dominant_grid_bbox": dominant_grid_bbox_info,
         },
         "score_breakdown": {
             "positive_score": positive_score,
@@ -667,6 +774,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "dense_grid_low_repeat_veto": dense_grid_low_repeat_veto,
             "irregular_grid_veto": irregular_grid_veto,
             "chart_dense_grid_veto": chart_dense_grid_veto,
+            "dominant_grid_bbox_signal": dominant_grid_bbox_signal,
         },
     }
 
