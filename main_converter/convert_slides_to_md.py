@@ -637,6 +637,47 @@ def copy_media_asset(
     return str(dest)
 
 
+def copy_debug_image_asset(
+    path: str,
+    debug_dir: Optional[Path],
+    copied_debug_images: Optional[Dict[str, Path]] = None,
+) -> Optional[str]:
+    if path.startswith("[unresolved-image") or debug_dir is None:
+        return None
+
+    src = Path(path)
+    if not src.exists() or not src.is_file():
+        return None
+
+    try:
+        src_key = str(src.resolve())
+    except Exception:
+        src_key = str(src)
+
+    if copied_debug_images is not None and src_key in copied_debug_images:
+        return str(copied_debug_images[src_key])
+
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    dest = debug_dir / src.name
+    if dest.exists():
+        try:
+            same_file = dest.resolve() == src.resolve()
+        except Exception:
+            same_file = False
+        if not same_file:
+            stem = src.stem
+            suffix = src.suffix
+            n = 2
+            while dest.exists():
+                dest = debug_dir / f"{stem}-{n}{suffix}"
+                n += 1
+
+    shutil.copy2(src, dest)
+    if copied_debug_images is not None:
+        copied_debug_images[src_key] = dest
+    return str(dest)
+
+
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],
@@ -1239,17 +1280,22 @@ def _load_image_table_pipeline() -> Tuple[Optional[object], Optional[str]]:
 
 def convert_picture_to_table_markdown(
     image_path: str,
-) -> Tuple[Optional[str], Optional[str], bool]:
+) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
     module, import_error = _load_image_table_pipeline()
     if module is None:
-        return None, f"image-table pipeline unavailable: {import_error}", True
+        return None, f"image-table pipeline unavailable: {import_error}", True, None
     try:
         result = module.extract_table_markdown_from_image(Path(image_path), header_rows=1)
     except Exception as exc:  # noqa: BLE001
-        return None, f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}", False
+        return (
+            None,
+            f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}",
+            False,
+            None,
+        )
 
     if not isinstance(result, dict):
-        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False
+        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False, None
 
     _log_image_table_evaluation(image_path, result)
 
@@ -1257,15 +1303,15 @@ def convert_picture_to_table_markdown(
     if status == "table":
         markdown = result.get("markdown")
         if isinstance(markdown, str) and markdown.strip():
-            return markdown, None, False
-        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False
+            return markdown, None, False, result
+        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False, result
     if status == "not_table":
-        return None, None, False
+        return None, None, False, result
 
     error = result.get("error")
     if not isinstance(error, str) or not error.strip():
         error = "unknown image-table pipeline error"
-    return None, f"{Path(image_path).name}: {error}", False
+    return None, f"{Path(image_path).name}: {error}", False, result
 
 
 def _fmt_eval_value(value: object, digits: int = 3) -> str:
@@ -1341,6 +1387,8 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    surya_debug_dir: Optional[Path] = None,
+    copied_surya_debug_images: Optional[Dict[str, Path]] = None,
     enable_image_table_pipeline: bool = False,
     strict_headings: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
@@ -1484,7 +1532,13 @@ def convert_one_slide(
                 stats["resolved_images"] += 1
 
             if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
-                table_md, table_warn, unavailable = convert_picture_to_table_markdown(img_path)
+                table_md, table_warn, unavailable, table_result = convert_picture_to_table_markdown(img_path)
+                if isinstance(table_result, dict) and bool(table_result.get("surya_attempted")):
+                    copy_debug_image_asset(
+                        img_path,
+                        debug_dir=surya_debug_dir,
+                        copied_debug_images=copied_surya_debug_images,
+                    )
                 if table_md is not None:
                     lines.append(table_md.strip())
                     lines.append("")
@@ -1766,7 +1820,9 @@ def main() -> int:
         pkg_out = output_dir / pkg_name
         per_slide_dir = pkg_out / "per_slide"
         media_dir = pkg_out / "media"
+        surya_debug_dir = pkg_out / "surya_run_images"
         copied_media: Dict[str, Path] = {}
+        copied_surya_debug_images: Dict[str, Path] = {}
         pkg_out.mkdir(parents=True, exist_ok=True)
         if args.per_slide:
             per_slide_dir.mkdir(parents=True, exist_ok=True)
@@ -1849,6 +1905,8 @@ def main() -> int:
                     output_dir=pkg_out,
                     media_dir=media_dir,
                     copied_media=copied_media,
+                    surya_debug_dir=surya_debug_dir,
+                    copied_surya_debug_images=copied_surya_debug_images,
                     enable_image_table_pipeline=args.image_table_pipeline,
                     strict_headings=(args.reading_order == "xml" and args.strict),
                 )
@@ -1862,6 +1920,8 @@ def main() -> int:
                         output_dir=per_slide_dir,
                         media_dir=media_dir,
                         copied_media=copied_media,
+                        surya_debug_dir=surya_debug_dir,
+                        copied_surya_debug_images=copied_surya_debug_images,
                         enable_image_table_pipeline=args.image_table_pipeline,
                         strict_headings=(args.reading_order == "xml" and args.strict),
                     )

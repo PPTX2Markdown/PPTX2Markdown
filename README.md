@@ -61,7 +61,6 @@ python3 convert_slides_to_md.py --reading-order xml
 
 (OpenCV 휴리스틱 기반 테이블 이진 분류 + 표 이미지 Surya 추출...)
 ```bash
-export IMAGE_TABLE_HIDE_SURYA_LOGS=1
 cd main_converter
 python3 convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
 ```
@@ -159,3 +158,22 @@ docker compose down
 Notes:
 - Rebuild required when `Dockerfile` changes.
 - Rebuild not required for `.py` source edits.
+
+## 디버깅(임시)
+
+다음과 같은 명령어를 도커 컨테이너 내부에서 사용할 수 있습니다.
+
+### 테이블 로그
+
+```
+export IMAGE_TABLE_HIDE_SURYA_LOGS=1
+```
+
+터미널에서 이미지가 휴리스틱 알고리즘에서 무슨 수치를 내뱉는지 알 수 있습니다.
+
+### 이미지 저장
+/workspace/main_converter/output/xml/<package>/surya_run_images/
+
+```
+명령어 없고 걍 저장됨. 일단...
+```
