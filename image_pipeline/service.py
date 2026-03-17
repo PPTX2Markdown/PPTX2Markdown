@@ -35,6 +35,7 @@ _SUPPORTED_IMAGE_SUFFIXES = {
     ".png",
     ".jpg",
     ".jpeg",
+    ".gif",
     ".bmp",
     ".webp",
     ".tif",
@@ -106,7 +107,7 @@ def _resolve_vector_converter() -> Optional[str]:
     return None
 
 
-def _rasterize_vector_image_with_cv(image_path: Path, cv2: Any, imread_flag: int) -> Any:
+def _rasterize_vector_image(image_path: Path) -> Path:
     converter = _resolve_vector_converter()
     if not converter:
         raise RuntimeError("LibreOffice is required to rasterize vector images such as EMF/WMF")
@@ -142,23 +143,53 @@ def _rasterize_vector_image_with_cv(image_path: Path, cv2: Any, imread_flag: int
             if not pngs:
                 raise RuntimeError(f"vector image rasterization produced no PNG output: {image_path.name}")
             output_path = pngs[0]
-
-        image = cv2.imread(str(output_path), imread_flag)
-        if image is None:
-            raise RuntimeError(f"failed to read rasterized vector image: {output_path}")
-        return image
+        persisted_output = Path(tempfile.mkdtemp(prefix="vector_raster_png_")) / output_path.name
+        shutil.copy2(output_path, persisted_output)
+        return persisted_output
 
 
-def _read_image_with_cv(image_path: Path, cv2: Any, imread_flag: int) -> Any:
+def _load_normalized_rgb_image(image_path: Path, bg_gray: int = _DEFAULT_BG_GRAY) -> Any:
+    from PIL import Image, ImageOps  # type: ignore
+
     suffix = image_path.suffix.lower()
-    if suffix in _SUPPORTED_IMAGE_SUFFIXES:
-        image = cv2.imread(str(image_path), imread_flag)
-        if image is None:
-            raise ValueError(f"failed to read image: {image_path}")
-        return image
+    if not _is_supported_image_suffix(suffix):
+        raise ValueError(f"unsupported image extension: {suffix or '(none)'}")
+
+    bg_gray = max(0, min(255, int(bg_gray)))
+    raster_path = image_path
+    cleanup_dir: Optional[Path] = None
+
     if suffix in _VECTOR_IMAGE_SUFFIXES:
-        return _rasterize_vector_image_with_cv(image_path, cv2, imread_flag)
-    raise ValueError(f"unsupported image extension: {suffix or '(none)'}")
+        raster_path = _rasterize_vector_image(image_path)
+        cleanup_dir = raster_path.parent
+
+    try:
+        with Image.open(raster_path) as loaded:
+            image = ImageOps.exif_transpose(loaded)
+            try:
+                image.seek(0)
+            except Exception:
+                pass
+
+            if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+                rgba = image.convert("RGBA")
+                bg = Image.new("RGBA", rgba.size, (bg_gray, bg_gray, bg_gray, 255))
+                composited = Image.alpha_composite(bg, rgba)
+                return composited.convert("RGB")
+
+            return image.convert("RGB")
+    finally:
+        if cleanup_dir is not None:
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
+
+
+def _load_normalized_bgr_image(image_path: Path, bg_gray: int = _DEFAULT_BG_GRAY) -> Any:
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
+
+    rgb_image = _load_normalized_rgb_image(image_path, bg_gray=bg_gray)
+    rgb = np.array(rgb_image)
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
 @contextlib.contextmanager
@@ -450,7 +481,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"opencv heuristic classifier unavailable: {type(exc).__name__}: {exc}") from exc
 
-    image = _read_image_with_cv(image_path, cv2, cv2.IMREAD_COLOR)
+    image = _load_normalized_bgr_image(image_path)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray, binary = _prepare_binary(gray, cv2)
@@ -981,25 +1012,7 @@ def _load_surya_models() -> Tuple[Any, Any, Any, Any]:
 
 
 def _prepare_image_for_surya(image_path: Path, bg_gray: int = _DEFAULT_BG_GRAY) -> Any:
-    import cv2  # type: ignore
-    import numpy as np  # type: ignore
-    from PIL import Image  # type: ignore
-
-    image = _read_image_with_cv(image_path, cv2, cv2.IMREAD_UNCHANGED)
-    bg_gray = max(0, min(255, int(bg_gray)))
-
-    if len(image.shape) == 2:
-        return Image.fromarray(image).convert("RGB")
-
-    if len(image.shape) == 3 and image.shape[2] == 4:
-        alpha = image[:, :, 3:4].astype("float32") / 255.0
-        rgb = image[:, :, :3][:, :, ::-1].astype("float32")
-        bg = np.full(rgb.shape, bg_gray, dtype="float32")
-        composited = (rgb * alpha) + (bg * (1.0 - alpha))
-        return Image.fromarray(composited.clip(0, 255).astype("uint8"), mode="RGB")
-
-    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(rgb)
+    return _load_normalized_rgb_image(image_path, bg_gray=bg_gray)
 
 
 def _run_surya_parsed_tables(image_path: Path) -> List[Dict[str, Any]]:
