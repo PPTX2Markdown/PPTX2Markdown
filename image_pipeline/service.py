@@ -547,8 +547,6 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     )
 
     score = _clamp(raw_score)
-    if hard_table_signal:
-        score = max(score, 0.60)
     if hard_non_table_signal and chart_score >= 0.45:
         score = min(score, 0.20)
     if impure_chart_veto:
