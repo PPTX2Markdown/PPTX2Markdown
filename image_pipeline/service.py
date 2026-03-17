@@ -1092,6 +1092,7 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "predicted_class": cls.get("predicted_class"),
             "score": cls.get("score"),
             "low_confidence": cls.get("low_confidence"),
+            "surya_attempted": False,
             "classification": cls,
         }
         _RESULT_CACHE[key] = out
@@ -1106,6 +1107,7 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "predicted_class": cls.get("predicted_class"),
             "score": cls.get("score"),
             "low_confidence": cls.get("low_confidence"),
+            "surya_attempted": True,
             "classification": cls,
             "error": f"surya table extraction failed: {type(exc).__name__}: {exc}",
         }
@@ -1119,21 +1121,9 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "predicted_class": cls.get("predicted_class"),
             "score": cls.get("score"),
             "low_confidence": cls.get("low_confidence"),
+            "surya_attempted": True,
             "classification": cls,
             "error": "surya did not produce any table payload",
-        }
-        _RESULT_CACHE[key] = out
-        return out
-
-    if not _table_quality_ok(parsed_tables):
-        out = {
-            "status": "not_table",
-            "file": key,
-            "predicted_class": cls.get("predicted_class"),
-            "score": cls.get("score"),
-            "low_confidence": cls.get("low_confidence"),
-            "classification": cls,
-            "reason": "low_text_density_after_ocr",
         }
         _RESULT_CACHE[key] = out
         return out
@@ -1146,21 +1136,27 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "predicted_class": cls.get("predicted_class"),
             "score": cls.get("score"),
             "low_confidence": cls.get("low_confidence"),
+            "surya_attempted": True,
             "classification": cls,
             "error": "table markdown rendering returned empty output",
         }
         _RESULT_CACHE[key] = out
         return out
 
+    quality_ok = _table_quality_ok(parsed_tables)
     out = {
         "status": "table",
         "file": key,
         "predicted_class": cls.get("predicted_class"),
         "score": cls.get("score"),
         "low_confidence": cls.get("low_confidence"),
+        "surya_attempted": True,
+        "surya_quality_ok": quality_ok,
         "table_count": len(parsed_tables),
         "markdown": markdown,
         "classification": cls,
     }
+    if not quality_ok:
+        out["reason"] = "low_text_density_after_ocr"
     _RESULT_CACHE[key] = out
     return out

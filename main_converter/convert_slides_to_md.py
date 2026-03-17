@@ -1299,6 +1299,8 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     table_count = result.get("table_count")
     reason = result.get("reason")
     error = result.get("error")
+    surya_attempted = bool(result.get("surya_attempted"))
+    surya_quality_ok = result.get("surya_quality_ok")
 
     summary = (
         f"[image-table] {name} "
@@ -1321,8 +1323,11 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     )
 
     extras: List[str] = []
+    extras.append(f"surya={'run' if surya_attempted else 'skip'}")
     if isinstance(table_count, int):
         extras.append(f"tables={table_count}")
+    if isinstance(surya_quality_ok, bool):
+        extras.append(f"surya_quality={'ok' if surya_quality_ok else 'low'}")
     if isinstance(reason, str) and reason.strip():
         extras.append(f"reason={reason}")
     if isinstance(error, str) and error.strip():
