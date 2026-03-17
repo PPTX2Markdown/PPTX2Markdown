@@ -1439,6 +1439,7 @@ def convert_one_slide(
         "text_blocks": 0,
         "image_blocks": 0,
         "table_blocks": 0,
+        "table_skipped_blocks": 0,
         "unsupported_blocks": 0,
         "skipped_blocks": 0,
         "resolved_images": 0,
@@ -1569,6 +1570,8 @@ def convert_one_slide(
                     lines.append("")
                     stats["table_blocks"] += 1
                     continue
+                if isinstance(table_result, dict) and str(table_result.get("status", "")) == "table_skipped":
+                    stats["table_skipped_blocks"] += 1
                 if table_warn:
                     if unavailable:
                         if not image_pipeline_unavailable_reported:
@@ -1833,6 +1836,7 @@ def main() -> int:
             "resolved_images": 0,
             "unresolved_images": 0,
             "table_blocks": 0,
+            "table_skipped_blocks": 0,
         },
     }
     merged_packages: List[Tuple[str, str]] = []
@@ -1963,6 +1967,7 @@ def main() -> int:
                         "text_blocks": stats["text_blocks"],
                         "image_blocks": stats["image_blocks"],
                         "table_blocks": stats["table_blocks"],
+                        "table_skipped_blocks": stats["table_skipped_blocks"],
                         "unsupported_blocks": stats["unsupported_blocks"],
                         "skipped_blocks": stats["skipped_blocks"],
                         "rels_path": stats["rels_path"],
@@ -1975,6 +1980,7 @@ def main() -> int:
                 manifest["summary"]["resolved_images"] += stats["resolved_images"]
                 manifest["summary"]["unresolved_images"] += stats["unresolved_images"]
                 manifest["summary"]["table_blocks"] += stats["table_blocks"]
+                manifest["summary"]["table_skipped_blocks"] += stats["table_skipped_blocks"]
                 print(f"[{pkg_name}] Processed: {slide_xml.name}")
             except Exception as e:  # noqa: BLE001
                 row.update({"status": "failed", "error": str(e)})
@@ -2024,6 +2030,7 @@ def main() -> int:
         f"slides={manifest['summary']['processed_slides']} "
         f"failed={manifest['summary']['failed']} "
         f"tables={manifest['summary']['table_blocks']} "
+        f"table_skipped={manifest['summary']['table_skipped_blocks']} "
         f"images_resolved={manifest['summary']['resolved_images']} "
         f"images_unresolved={manifest['summary']['unresolved_images']}"
     )

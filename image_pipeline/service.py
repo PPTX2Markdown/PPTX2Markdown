@@ -1205,6 +1205,13 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and int(layout_info.get("components_used", 0)) <= 60
         and float(dense_detector["score"]) < 0.60
     )
+    tiny_row_grid_panel_veto = (
+        strongest_detector_name == "grid"
+        and float(grid_detector["score"]) >= 0.60
+        and int(layout_info.get("meaningful_row_count", 0)) <= 2
+        and int(layout_info.get("components_used", 0)) <= 30
+        and float(dense_detector["score"]) < 0.45
+    )
     irregular_grid_diagram_veto = (
         strongest_detector_name == "grid"
         and float(grid_detector["score"]) >= 0.82
@@ -1212,6 +1219,23 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and float(layout_info.get("row_component_stability_score", 0.0)) < 0.08
         and float(layout_info.get("best_anchor_score", 0.0)) < 0.88
         and strongest_veto_score >= 0.18
+    )
+    high_area_grid_infographic_veto = (
+        strongest_detector_name == "grid"
+        and float(grid_detector["score"]) >= 0.88
+        and float(layout_info.get("component_area_ratio", 0.0)) >= 0.18
+        and (
+            float(layout_info.get("best_anchor_score", 0.0)) < 0.92
+            or float(layout_info.get("row_component_stability_score", 0.0)) < 0.35
+        )
+    )
+    header_panel_grid_veto = (
+        strongest_detector_name == "grid"
+        and float(grid_detector["score"]) >= 0.78
+        and int(layout_info.get("meaningful_row_count", 0)) <= 12
+        and float(layout_info.get("header_body_transition_score", 0.0)) >= 0.90
+        and float(layout_info.get("best_anchor_score", 0.0)) < 0.80
+        and float(layout_info.get("component_area_ratio", 0.0)) >= 0.10
     )
     grid_diagram_veto = (
         strongest_detector_name == "grid"
@@ -1224,7 +1248,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         or weak_non_grid_table
         or sparse_text_grid_veto
         or low_row_grid_panel_veto
+        or tiny_row_grid_panel_veto
         or irregular_grid_diagram_veto
+        or high_area_grid_infographic_veto
+        or header_panel_grid_veto
         or grid_diagram_veto
     )
     score = final_table_score
@@ -1310,7 +1337,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "weak_non_grid_table": weak_non_grid_table,
             "sparse_text_grid_veto": sparse_text_grid_veto,
             "low_row_grid_panel_veto": low_row_grid_panel_veto,
+            "tiny_row_grid_panel_veto": tiny_row_grid_panel_veto,
             "irregular_grid_diagram_veto": irregular_grid_diagram_veto,
+            "high_area_grid_infographic_veto": high_area_grid_infographic_veto,
+            "header_panel_grid_veto": header_panel_grid_veto,
             "grid_diagram_veto": grid_diagram_veto,
             "veto_applied": veto_applied,
             "strong_chart_evidence": bool(veto_breakdown["chart"]["active"]),
