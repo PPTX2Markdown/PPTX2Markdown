@@ -1251,6 +1251,8 @@ def convert_picture_to_table_markdown(
     if not isinstance(result, dict):
         return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False
 
+    _log_image_table_evaluation(image_path, result)
+
     status = str(result.get("status", "error"))
     if status == "table":
         markdown = result.get("markdown")
@@ -1264,6 +1266,68 @@ def convert_picture_to_table_markdown(
     if not isinstance(error, str) or not error.strip():
         error = "unknown image-table pipeline error"
     return None, f"{Path(image_path).name}: {error}", False
+
+
+def _fmt_eval_value(value: object, digits: int = 3) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):.{digits}f}"
+    return "n/a"
+
+
+def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> None:
+    name = Path(image_path).name
+    status = str(result.get("status", "error"))
+    predicted = str(result.get("predicted_class", "unknown"))
+    low_confidence = bool(result.get("low_confidence"))
+
+    classification = result.get("classification")
+    if not isinstance(classification, dict):
+        classification = {}
+    feature_values = classification.get("feature_values")
+    if not isinstance(feature_values, dict):
+        feature_values = {}
+    score_breakdown = classification.get("score_breakdown")
+    if not isinstance(score_breakdown, dict):
+        score_breakdown = {}
+
+    score = result.get("score", classification.get("score", score_breakdown.get("final_score")))
+    positive_score = score_breakdown.get("positive_score")
+    penalty_score = score_breakdown.get("penalty_score")
+    table_count = result.get("table_count")
+    reason = result.get("reason")
+    error = result.get("error")
+
+    summary = (
+        f"[image-table] {name} "
+        f"status={status} "
+        f"pred={predicted} "
+        f"score={_fmt_eval_value(score)} "
+        f"pos={_fmt_eval_value(positive_score)} "
+        f"pen={_fmt_eval_value(penalty_score)} "
+        f"low_conf={'yes' if low_confidence else 'no'} "
+        f"h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))} "
+        f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))} "
+        f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)} "
+        f"rect={_fmt_eval_value(feature_values.get('rectangle_contour_count'), digits=0)} "
+        f"repeat={_fmt_eval_value(feature_values.get('repeating_cell_structure_score'))} "
+        f"align={_fmt_eval_value(feature_values.get('connected_component_alignment_score'))} "
+        f"gap={_fmt_eval_value(feature_values.get('gap_regularity_score'))} "
+        f"diag={_fmt_eval_value(feature_values.get('diagonal_curve_ratio'))} "
+        f"blob={_fmt_eval_value(feature_values.get('irregular_blob_ratio'))} "
+        f"chart={_fmt_eval_value(feature_values.get('chart_like_structure_score'))}"
+    )
+
+    extras: List[str] = []
+    if isinstance(table_count, int):
+        extras.append(f"tables={table_count}")
+    if isinstance(reason, str) and reason.strip():
+        extras.append(f"reason={reason}")
+    if isinstance(error, str) and error.strip():
+        extras.append(f"error={error}")
+    if extras:
+        summary = f"{summary} " + " ".join(extras)
+
+    print(summary)
 
 
 def convert_one_slide(
