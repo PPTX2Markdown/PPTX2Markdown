@@ -1334,6 +1334,9 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     score_breakdown = classification.get("score_breakdown")
     if not isinstance(score_breakdown, dict):
         score_breakdown = {}
+    veto_breakdown = classification.get("veto_breakdown")
+    if not isinstance(veto_breakdown, dict):
+        veto_breakdown = {}
     decision_flags = classification.get("decision_flags")
     if not isinstance(decision_flags, dict):
         decision_flags = {}
@@ -1345,23 +1348,38 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     surya_attempted = bool(result.get("surya_attempted"))
     surya_quality_ok = result.get("surya_quality_ok")
 
+    grid_score = score_breakdown.get("grid_score")
+    alignment_score = score_breakdown.get("alignment_score")
+    dense_score = score_breakdown.get("dense_score")
+    pre_veto_score = score_breakdown.get("final_table_score")
+    strongest_veto_score = score_breakdown.get("strongest_veto_score")
+
     summary = (
         f"[image-table] {name} "
         f"status={status} "
         f"pred={predicted} "
         f"score={_fmt_eval_value(score)} "
+        f"det(grid={_fmt_eval_value(grid_score)},"
+        f"align={_fmt_eval_value(alignment_score)},"
+        f"dense={_fmt_eval_value(dense_score)},"
+        f"pre={_fmt_eval_value(pre_veto_score)}) "
         f"grid(h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))},"
         f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))},"
-        f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)} "
+        f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)},"
         f"rect={_fmt_eval_value(feature_values.get('rectangle_contour_count'), digits=0)},"
-        f"repeat={_fmt_eval_value(feature_values.get('repeating_cell_structure_score'))},"
-        f"gap={_fmt_eval_value(feature_values.get('gap_regularity_score'))}) "
-        f"bbox(area={_fmt_eval_value(feature_values.get('dominant_grid_bbox_area_ratio'))},"
-        f"cover={_fmt_eval_value(feature_values.get('dominant_grid_bbox_rect_coverage_ratio'))},"
-        f"outside={_fmt_eval_value(feature_values.get('dominant_grid_bbox_outside_noise_ratio'))}) "
-        f"penalty(diag={_fmt_eval_value(feature_values.get('diagonal_curve_ratio'))},"
-        f"blob={_fmt_eval_value(feature_values.get('irregular_blob_ratio'))},"
-        f"chart={_fmt_eval_value(feature_values.get('chart_like_structure_score'))})"
+        f"bbox={_fmt_eval_value(feature_values.get('dominant_grid_bbox_score'))}) "
+        f"align(rows={_fmt_eval_value(feature_values.get('meaningful_row_count'), digits=0)},"
+        f"cols={_fmt_eval_value(feature_values.get('meaningful_col_count'), digits=0)},"
+        f"anchor={_fmt_eval_value(feature_values.get('best_anchor_score'))},"
+        f"stable={_fmt_eval_value(feature_values.get('row_component_stability_score'))}) "
+        f"dense(comp={_fmt_eval_value(feature_values.get('text_component_count'), digits=0)},"
+        f"area={_fmt_eval_value(feature_values.get('text_component_area_ratio'))},"
+        f"compact={_fmt_eval_value(feature_values.get('compact_component_ratio'))},"
+        f"header={_fmt_eval_value(feature_values.get('header_body_transition_score'))}) "
+        f"veto(chart={_fmt_eval_value(veto_breakdown.get('chart', {}).get('score') if isinstance(veto_breakdown.get('chart'), dict) else None)},"
+        f"diagram={_fmt_eval_value(veto_breakdown.get('diagram', {}).get('score') if isinstance(veto_breakdown.get('diagram'), dict) else None)},"
+        f"photo={_fmt_eval_value(veto_breakdown.get('photo', {}).get('score') if isinstance(veto_breakdown.get('photo'), dict) else None)},"
+        f"max={_fmt_eval_value(strongest_veto_score)})"
     )
 
     extras: List[str] = []

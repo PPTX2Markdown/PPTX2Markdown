@@ -89,6 +89,22 @@ def _median(values: Sequence[float]) -> float:
     return (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
+def _mean(values: Sequence[float]) -> float:
+    if not values:
+        return 0.0
+    return sum(float(v) for v in values) / float(len(values))
+
+
+def _coefficient_of_variation(values: Sequence[float]) -> Optional[float]:
+    if len(values) < 2:
+        return None
+    mean_value = _mean(values)
+    if mean_value <= 0:
+        return None
+    variance = sum((float(value) - mean_value) ** 2 for value in values) / float(len(values))
+    return (variance ** 0.5) / mean_value
+
+
 def _normalize_score(value: float, full_score_at: float) -> float:
     if full_score_at <= 0:
         return 0.0
@@ -334,45 +350,359 @@ def _repeating_cell_structure(rectangles: Sequence[Dict[str, float]]) -> Tuple[f
     return score, {"repeating_cells": len(similar) >= 4, "similar_rectangles": len(similar)}
 
 
-def _component_alignment(binary: Any, image_shape: Tuple[int, int], cv2: Any) -> Tuple[float, Dict[str, Any]]:
+def _collect_text_like_components(
+    binary: Any,
+    image_shape: Tuple[int, int],
+    cv2: Any,
+) -> Tuple[List[Dict[str, float]], Dict[str, Any]]:
     height, width = image_shape
+    image_area = float(height * width)
     count, _, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
-    boxes: List[Dict[str, float]] = []
-    min_area = max(6.0, float(height * width) * 0.000015)
-    max_area = float(height * width) * 0.03
+
+    components: List[Dict[str, float]] = []
+    component_area_total = 0.0
+    min_area = max(6.0, image_area * 0.000015)
+    max_area = image_area * 0.03
+
     for idx in range(1, count):
         area = float(stats[idx, cv2.CC_STAT_AREA])
         if area < min_area or area > max_area:
             continue
+
+        x = float(stats[idx, cv2.CC_STAT_LEFT])
+        y = float(stats[idx, cv2.CC_STAT_TOP])
         w = float(stats[idx, cv2.CC_STAT_WIDTH])
         h = float(stats[idx, cv2.CC_STAT_HEIGHT])
         if w <= 1 or h <= 1:
             continue
+
         aspect = max(w / h, h / w)
         if aspect > 25:
             continue
+
+        bbox_area = w * h
+        if bbox_area <= 0:
+            continue
+
+        fill_ratio = area / bbox_area
+        if fill_ratio < 0.08:
+            continue
+
         cx, cy = centroids[idx]
-        boxes.append({"cx": float(cx), "cy": float(cy), "w": w, "h": h})
+        components.append(
+            {
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+                "cx": float(cx),
+                "cy": float(cy),
+                "left": x,
+                "center": float(cx),
+                "right": x + w,
+                "area": area,
+                "fill_ratio": fill_ratio,
+            }
+        )
+        component_area_total += area
 
-    if len(boxes) < 6:
-        return 0.0, {"components_used": len(boxes), "row_clusters": 0, "col_clusters": 0}
-
-    median_h = _median([box["h"] for box in boxes])
-    median_w = _median([box["w"] for box in boxes])
-    row_groups = _cluster_positions([box["cy"] for box in boxes], tolerance=max(6.0, median_h * 0.8))
-    col_groups = _cluster_positions([box["cx"] for box in boxes], tolerance=max(6.0, median_w * 0.8))
-
-    meaningful_rows = [group for group in row_groups if len(group) >= 2]
-    meaningful_cols = [group for group in col_groups if len(group) >= 2]
-    row_score = _normalize_score(len(meaningful_rows), 5.0)
-    col_score = _normalize_score(len(meaningful_cols), 4.0)
-    occupancy = _normalize_score(len(boxes), 40.0)
-    score = (row_score * 0.45) + (col_score * 0.35) + (occupancy * 0.20)
-    return score, {
-        "components_used": len(boxes),
-        "row_clusters": len(meaningful_rows),
-        "col_clusters": len(meaningful_cols),
+    components.sort(key=lambda item: (item["y"], item["x"]))
+    return components, {
+        "components_used": len(components),
+        "component_area_ratio": _safe_ratio(component_area_total, image_area),
     }
+
+
+def _cluster_components_by_axis(
+    components: Sequence[Dict[str, float]],
+    axis_key: str,
+    tolerance: float,
+) -> List[List[Dict[str, float]]]:
+    if not components:
+        return []
+
+    ordered = sorted(components, key=lambda item: float(item[axis_key]))
+    groups: List[List[Dict[str, float]]] = [[ordered[0]]]
+    for component in ordered[1:]:
+        group = groups[-1]
+        center = _mean([entry[axis_key] for entry in group])
+        if abs(float(component[axis_key]) - center) <= max(1.0, float(tolerance)):
+            group.append(component)
+        else:
+            groups.append([component])
+    return groups
+
+
+def _cluster_labeled_positions(
+    pairs: Sequence[Tuple[float, int]],
+    tolerance: float,
+) -> List[Dict[str, Any]]:
+    if not pairs:
+        return []
+
+    ordered = sorted((float(pos), int(label)) for pos, label in pairs)
+    clusters: List[Dict[str, Any]] = [
+        {
+            "positions": [ordered[0][0]],
+            "rows": {ordered[0][1]},
+        }
+    ]
+    for position, row_idx in ordered[1:]:
+        current = clusters[-1]
+        center = _mean(current["positions"])
+        if abs(position - center) <= max(1.0, float(tolerance)):
+            current["positions"].append(position)
+            current["rows"].add(row_idx)
+        else:
+            clusters.append({"positions": [position], "rows": {row_idx}})
+    return clusters
+
+
+def _smooth_sequence(values: Sequence[float], window: int) -> List[float]:
+    if not values:
+        return []
+    half = max(0, int(window) // 2)
+    out: List[float] = []
+    for idx in range(len(values)):
+        start = max(0, idx - half)
+        end = min(len(values), idx + half + 1)
+        out.append(_mean(values[start:end]))
+    return out
+
+
+def _gap_cv_from_centers(centers: Sequence[float]) -> Optional[float]:
+    if len(centers) < 3:
+        return None
+    gaps = [float(centers[idx + 1]) - float(centers[idx]) for idx in range(len(centers) - 1)]
+    return _coefficient_of_variation(gaps)
+
+
+def _projection_peak_summary(values: Sequence[float], threshold: float) -> Dict[str, Any]:
+    peaks: List[Dict[str, float]] = []
+    start: Optional[int] = None
+    total = 0.0
+    for idx, value in enumerate(values):
+        if value >= threshold:
+            if start is None:
+                start = idx
+                total = 0.0
+            total += float(value)
+            continue
+        if start is None:
+            continue
+        end = idx - 1
+        peaks.append(
+            {
+                "start": float(start),
+                "end": float(end),
+                "center": float(start + end) / 2.0,
+                "strength": total / float(max(1, end - start + 1)),
+            }
+        )
+        start = None
+        total = 0.0
+
+    if start is not None:
+        end = len(values) - 1
+        peaks.append(
+            {
+                "start": float(start),
+                "end": float(end),
+                "center": float(start + end) / 2.0,
+                "strength": total / float(max(1, end - start + 1)),
+            }
+        )
+
+    centers = [peak["center"] for peak in peaks]
+    gap_cv = _gap_cv_from_centers(centers)
+    return {
+        "peak_count": len(peaks),
+        "gap_cv": gap_cv,
+        "peak_strength_mean": _mean([peak["strength"] for peak in peaks]),
+    }
+
+
+def _best_anchor_alignment(
+    meaningful_rows: Sequence[Sequence[Dict[str, float]]],
+    tolerance: float,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "best_anchor": None,
+        "best_anchor_score": 0.0,
+        "best_anchor_cluster_count": 0,
+        "best_anchor_row_coverage": 0.0,
+        "left_anchor_clusters": 0,
+        "center_anchor_clusters": 0,
+        "right_anchor_clusters": 0,
+    }
+    row_count = len(meaningful_rows)
+    if row_count < 2:
+        return out
+
+    min_rows = 3 if row_count >= 5 else 2
+    best_score = 0.0
+
+    for anchor_key in ("left", "center", "right"):
+        labeled_positions: List[Tuple[float, int]] = []
+        for row_idx, row in enumerate(meaningful_rows):
+            for component in row:
+                labeled_positions.append((float(component[anchor_key]), row_idx))
+
+        recurring = [
+            cluster
+            for cluster in _cluster_labeled_positions(labeled_positions, tolerance=tolerance)
+            if len(cluster["rows"]) >= min_rows
+        ]
+        cluster_count = len(recurring)
+        if anchor_key == "left":
+            out["left_anchor_clusters"] = cluster_count
+        elif anchor_key == "center":
+            out["center_anchor_clusters"] = cluster_count
+        else:
+            out["right_anchor_clusters"] = cluster_count
+
+        if not recurring:
+            continue
+
+        row_coverages = [len(cluster["rows"]) / float(row_count) for cluster in recurring]
+        cluster_score = _normalize_score(cluster_count, 4.0)
+        coverage_score = max(row_coverages)
+        score = _clamp((cluster_score * 0.55) + (coverage_score * 0.45))
+        if score <= best_score:
+            continue
+
+        best_score = score
+        out["best_anchor"] = anchor_key
+        out["best_anchor_score"] = score
+        out["best_anchor_cluster_count"] = cluster_count
+        out["best_anchor_row_coverage"] = coverage_score
+
+    return out
+
+
+def _header_body_transition_score(meaningful_rows: Sequence[Sequence[Dict[str, float]]]) -> float:
+    if len(meaningful_rows) < 4:
+        return 0.0
+
+    header = meaningful_rows[0]
+    body = meaningful_rows[1:]
+    header_count = float(len(header))
+    body_counts = [float(len(row)) for row in body]
+    body_count_median = _median(body_counts)
+
+    header_width = _median([component["w"] for component in header])
+    body_width = _median([component["w"] for row in body for component in row])
+    if body_count_median <= 0 or body_width <= 0:
+        return 0.0
+
+    count_delta = abs(header_count - body_count_median) / body_count_median
+    width_delta = max(0.0, (header_width / body_width) - 1.0)
+    return _clamp((_clamp(count_delta / 0.60) * 0.55) + (_clamp(width_delta / 0.80) * 0.45))
+
+
+def _analyze_text_layout(binary: Any, image_shape: Tuple[int, int], cv2: Any) -> Dict[str, Any]:
+    height, width = image_shape
+    components, component_info = _collect_text_like_components(binary, image_shape, cv2)
+    component_area_ratio = float(component_info["component_area_ratio"])
+
+    out: Dict[str, Any] = {
+        **component_info,
+        "meaningful_row_count": 0,
+        "meaningful_col_count": 0,
+        "rows_with_three_plus_ratio": 0.0,
+        "median_components_per_row": 0.0,
+        "row_component_count_cv": None,
+        "row_component_stability_score": 0.0,
+        "compact_component_ratio": 0.0,
+        "header_body_transition_score": 0.0,
+        "projection_row_peak_count": 0,
+        "projection_col_peak_count": 0,
+        "projection_row_peak_score": 0.0,
+        "projection_col_peak_score": 0.0,
+        "projection_row_regularity_score": 0.0,
+        "projection_col_regularity_score": 0.0,
+        "projection_row_gap_cv": None,
+        "projection_col_gap_cv": None,
+        "best_anchor": None,
+        "best_anchor_score": 0.0,
+        "best_anchor_cluster_count": 0,
+        "best_anchor_row_coverage": 0.0,
+        "left_anchor_clusters": 0,
+        "center_anchor_clusters": 0,
+        "right_anchor_clusters": 0,
+        "row_groups_total": 0,
+        "column_groups_total": 0,
+    }
+
+    if len(components) < 6:
+        return out
+
+    median_h = _median([component["h"] for component in components])
+    median_w = _median([component["w"] for component in components])
+    row_tolerance = max(6.0, median_h * 0.85)
+    col_tolerance = max(6.0, median_w * 0.85)
+
+    row_groups = _cluster_components_by_axis(components, "cy", tolerance=row_tolerance)
+    col_groups = _cluster_components_by_axis(components, "cx", tolerance=col_tolerance)
+    meaningful_rows = [sorted(group, key=lambda item: item["x"]) for group in row_groups if len(group) >= 2]
+    meaningful_cols = [group for group in col_groups if len(group) >= 2]
+
+    row_counts = [float(len(row)) for row in meaningful_rows]
+    compact_threshold = _median([component["area"] for component in components]) * 1.8
+    if compact_threshold > 0:
+        compact_count = sum(1 for component in components if component["area"] <= compact_threshold)
+        out["compact_component_ratio"] = compact_count / float(len(components))
+
+    row_count_cv = _coefficient_of_variation(row_counts)
+    row_component_stability_score = 0.0
+    if row_count_cv is not None:
+        row_component_stability_score = 1.0 - _clamp(row_count_cv / 0.65)
+
+    anchor_info = _best_anchor_alignment(meaningful_rows, tolerance=max(6.0, median_w * 0.75))
+
+    row_projection = [float(value) / (255.0 * float(width)) for value in binary.sum(axis=1)]
+    col_projection = [float(value) / (255.0 * float(height)) for value in binary.sum(axis=0)]
+    row_projection = _smooth_sequence(row_projection, window=5)
+    col_projection = _smooth_sequence(col_projection, window=5)
+    row_threshold = max(0.015, min(0.12, max(row_projection) * 0.30 if row_projection else 0.0))
+    col_threshold = max(0.015, min(0.12, max(col_projection) * 0.30 if col_projection else 0.0))
+    row_peak_info = _projection_peak_summary(row_projection, threshold=row_threshold)
+    col_peak_info = _projection_peak_summary(col_projection, threshold=col_threshold)
+
+    row_peak_regularity_score = 0.0
+    if row_peak_info["gap_cv"] is not None:
+        row_peak_regularity_score = 1.0 - _clamp(float(row_peak_info["gap_cv"]) / 0.65)
+    col_peak_regularity_score = 0.0
+    if col_peak_info["gap_cv"] is not None:
+        col_peak_regularity_score = 1.0 - _clamp(float(col_peak_info["gap_cv"]) / 0.65)
+
+    out.update(anchor_info)
+    out.update(
+        {
+            "meaningful_row_count": len(meaningful_rows),
+            "meaningful_col_count": len(meaningful_cols),
+            "rows_with_three_plus_ratio": _safe_ratio(
+                sum(1 for row in meaningful_rows if len(row) >= 3),
+                len(meaningful_rows),
+            ),
+            "median_components_per_row": _median(row_counts),
+            "row_component_count_cv": row_count_cv,
+            "row_component_stability_score": row_component_stability_score,
+            "header_body_transition_score": _header_body_transition_score(meaningful_rows),
+            "projection_row_peak_count": int(row_peak_info["peak_count"]),
+            "projection_col_peak_count": int(col_peak_info["peak_count"]),
+            "projection_row_peak_score": _normalize_score(float(row_peak_info["peak_count"]), 6.0),
+            "projection_col_peak_score": _normalize_score(float(col_peak_info["peak_count"]), 5.0),
+            "projection_row_regularity_score": row_peak_regularity_score,
+            "projection_col_regularity_score": col_peak_regularity_score,
+            "projection_row_gap_cv": row_peak_info["gap_cv"],
+            "projection_col_gap_cv": col_peak_info["gap_cv"],
+            "row_groups_total": len(row_groups),
+            "column_groups_total": len(col_groups),
+        }
+    )
+    out["component_area_ratio"] = component_area_ratio
+    return out
 
 
 def _gap_regularity(rectangles: Sequence[Dict[str, float]]) -> Tuple[float, Dict[str, Any]]:
@@ -564,6 +894,181 @@ def _chart_like_score(
     )
 
 
+def _grid_table_detector(
+    horizontal_ratio: float,
+    vertical_ratio: float,
+    long_horizontal_lines: int,
+    long_vertical_lines: int,
+    intersection_count: int,
+    rectangle_count: int,
+    repeating_cell_score: float,
+    gap_regularity_score: float,
+    dominant_grid_bbox_score: float,
+) -> Dict[str, Any]:
+    horizontal_norm = _normalize_score(horizontal_ratio, 0.08)
+    vertical_norm = _normalize_score(vertical_ratio, 0.08)
+    line_count_norm = _normalize_score(long_horizontal_lines + long_vertical_lines, 8.0)
+    intersections_norm = _normalize_score(intersection_count, 20.0)
+    rectangles_norm = _normalize_score(rectangle_count, 10.0)
+    grid_support = min(horizontal_norm, vertical_norm)
+    score = _clamp(
+        (horizontal_norm * 0.12)
+        + (vertical_norm * 0.12)
+        + (line_count_norm * 0.08)
+        + (intersections_norm * 0.20)
+        + (rectangles_norm * 0.10)
+        + (repeating_cell_score * 0.08)
+        + (gap_regularity_score * 0.08)
+        + (grid_support * 0.10)
+        + (dominant_grid_bbox_score * 0.20)
+    )
+    return {
+        "score": score,
+        "components": {
+            "horizontal_line_score": horizontal_norm,
+            "vertical_line_score": vertical_norm,
+            "line_count_score": line_count_norm,
+            "intersection_score": intersections_norm,
+            "rectangle_score": rectangles_norm,
+            "repeating_cell_score": repeating_cell_score,
+            "gap_regularity_score": gap_regularity_score,
+            "grid_support_score": grid_support,
+            "dominant_grid_bbox_score": dominant_grid_bbox_score,
+        },
+    }
+
+
+def _alignment_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
+    row_pattern_score = _clamp(
+        (_normalize_score(float(layout_info.get("meaningful_row_count", 0)), 5.0) * 0.55)
+        + (float(layout_info.get("row_component_stability_score", 0.0)) * 0.45)
+    )
+    column_pattern_score = _clamp(
+        (_normalize_score(float(layout_info.get("best_anchor_cluster_count", 0)), 4.0) * 0.40)
+        + (float(layout_info.get("best_anchor_row_coverage", 0.0)) * 0.30)
+        + (_normalize_score(float(layout_info.get("meaningful_col_count", 0)), 4.0) * 0.15)
+        + (float(layout_info.get("projection_col_regularity_score", 0.0)) * 0.15)
+    )
+    projection_pattern_score = _clamp(
+        (float(layout_info.get("projection_row_peak_score", 0.0)) * 0.35)
+        + (float(layout_info.get("projection_col_peak_score", 0.0)) * 0.20)
+        + (float(layout_info.get("projection_row_regularity_score", 0.0)) * 0.30)
+        + (float(layout_info.get("projection_col_regularity_score", 0.0)) * 0.15)
+    )
+    occupancy_score = _clamp(
+        (_normalize_score(float(layout_info.get("components_used", 0)), 36.0) * 0.55)
+        + (_normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.08) * 0.45)
+    )
+    score = _clamp(
+        (row_pattern_score * 0.32)
+        + (column_pattern_score * 0.34)
+        + (projection_pattern_score * 0.18)
+        + (occupancy_score * 0.16)
+    )
+    return {
+        "score": score,
+        "components": {
+            "row_pattern_score": row_pattern_score,
+            "column_pattern_score": column_pattern_score,
+            "projection_pattern_score": projection_pattern_score,
+            "occupancy_score": occupancy_score,
+        },
+    }
+
+
+def _dense_table_detector(layout_info: Dict[str, Any]) -> Dict[str, Any]:
+    density_score = _clamp(
+        (_normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.11) * 0.55)
+        + (_normalize_score(float(layout_info.get("components_used", 0)), 48.0) * 0.45)
+    )
+    compact_matrix_score = _clamp(
+        (float(layout_info.get("compact_component_ratio", 0.0)) * 0.30)
+        + (_normalize_score(float(layout_info.get("meaningful_row_count", 0)), 6.0) * 0.25)
+        + (float(layout_info.get("rows_with_three_plus_ratio", 0.0)) * 0.25)
+        + (_normalize_score(float(layout_info.get("median_components_per_row", 0.0)), 4.5) * 0.20)
+    )
+    partial_alignment_score = _clamp(
+        (float(layout_info.get("best_anchor_score", 0.0)) * 0.40)
+        + (float(layout_info.get("best_anchor_row_coverage", 0.0)) * 0.20)
+        + (float(layout_info.get("projection_col_peak_score", 0.0)) * 0.20)
+        + (float(layout_info.get("row_component_stability_score", 0.0)) * 0.20)
+    )
+    header_body_score = float(layout_info.get("header_body_transition_score", 0.0))
+    score = _clamp(
+        (density_score * 0.34)
+        + (compact_matrix_score * 0.28)
+        + (partial_alignment_score * 0.24)
+        + (header_body_score * 0.14)
+    )
+    return {
+        "score": score,
+        "components": {
+            "density_score": density_score,
+            "compact_matrix_score": compact_matrix_score,
+            "partial_alignment_score": partial_alignment_score,
+            "header_body_score": header_body_score,
+        },
+    }
+
+
+def _non_table_veto_detectors(
+    chart_score: float,
+    diagonal_ratio: float,
+    irregular_blob_ratio: float,
+    horizontal_ratio: float,
+    vertical_ratio: float,
+    layout_info: Dict[str, Any],
+) -> Dict[str, Any]:
+    structure_presence = max(
+        float(layout_info.get("best_anchor_score", 0.0)),
+        _normalize_score(float(layout_info.get("meaningful_row_count", 0)), 5.0),
+        _normalize_score(float(layout_info.get("meaningful_col_count", 0)), 4.0),
+    )
+    line_presence = _clamp((horizontal_ratio + vertical_ratio) / 0.10)
+    text_presence = _clamp(
+        (_normalize_score(float(layout_info.get("components_used", 0)), 24.0) * 0.55)
+        + (_normalize_score(float(layout_info.get("component_area_ratio", 0.0)), 0.06) * 0.45)
+    )
+
+    chart_veto_score = _clamp(
+        (chart_score * 0.55)
+        + (_clamp(diagonal_ratio / 0.25) * 0.10)
+        + (_clamp(irregular_blob_ratio / 0.22) * 0.10)
+        + ((1.0 - structure_presence) * 0.15)
+        + ((1.0 - text_presence) * 0.10)
+    )
+    diagram_veto_score = _clamp(
+        (_clamp(diagonal_ratio / 0.20) * 0.45)
+        + (_clamp(irregular_blob_ratio / 0.24) * 0.25)
+        + ((1.0 - structure_presence) * 0.20)
+        + ((1.0 - line_presence) * 0.10)
+    )
+    photo_veto_score = _clamp(
+        (_clamp(irregular_blob_ratio / 0.28) * 0.45)
+        + ((1.0 - text_presence) * 0.30)
+        + ((1.0 - line_presence) * 0.15)
+        + ((1.0 - structure_presence) * 0.10)
+    )
+    strongest_name, strongest_score = max(
+        (
+            ("chart", chart_veto_score),
+            ("diagram", diagram_veto_score),
+            ("photo", photo_veto_score),
+        ),
+        key=lambda item: item[1],
+    )
+    return {
+        "chart": {"score": chart_veto_score, "active": chart_veto_score >= 0.62},
+        "diagram": {"score": diagram_veto_score, "active": diagram_veto_score >= 0.62},
+        "photo": {"score": photo_veto_score, "active": photo_veto_score >= 0.62},
+        "strongest_veto": strongest_name,
+        "strongest_veto_score": strongest_score,
+        "line_presence_score": line_presence,
+        "structure_presence_score": structure_presence,
+        "text_presence_score": text_presence,
+    }
+
+
 def _compute_features(image_path: Path) -> Dict[str, Any]:
     try:
         import cv2  # type: ignore
@@ -593,7 +1098,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     rectangles = _collect_rectangles(combined_mask, (height, width), cv2)
     rectangle_count = len(rectangles)
     repeating_cell_score, repeating_info = _repeating_cell_structure(rectangles)
-    alignment_score, alignment_info = _component_alignment(binary, (height, width), cv2)
+    layout_info = _analyze_text_layout(binary, (height, width), cv2)
     gap_regularity_score, gap_info = _gap_regularity(rectangles)
     dominant_grid_bbox_score, dominant_grid_bbox_info = _dominant_grid_bbox(
         horizontal_mask,
@@ -618,12 +1123,6 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         gap_regularity_score=gap_regularity_score,
     )
 
-    horizontal_norm = _normalize_score(horizontal_ratio, 0.08)
-    vertical_norm = _normalize_score(vertical_ratio, 0.08)
-    long_lines_norm = _normalize_score(long_horizontal_lines + long_vertical_lines, 8.0)
-    intersections_norm = _normalize_score(intersection_count, 20.0)
-    rectangles_norm = _normalize_score(rectangle_count, 10.0)
-    grid_support = min(horizontal_norm, vertical_norm)
     dominant_bbox_area_raw = dominant_grid_bbox_info.get("area_ratio", 0.0)
     dominant_bbox_outside_raw = dominant_grid_bbox_info.get("outside_noise_ratio", 1.0)
     dominant_bbox_cover_raw = dominant_grid_bbox_info.get("rect_coverage_ratio", 0.0)
@@ -635,126 +1134,45 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         dominant_bbox_cover_raw if dominant_bbox_cover_raw is not None else 0.0
     )
 
-    positive_score = (
-        (horizontal_norm * 0.12)
-        + (vertical_norm * 0.12)
-        + (long_lines_norm * 0.10)
-        + (intersections_norm * 0.16)
-        + (rectangles_norm * 0.12)
-        + (repeating_cell_score * 0.06)
-        + (alignment_score * 0.05)
-        + (gap_regularity_score * 0.06)
-        + (grid_support * 0.10)
-        + (dominant_grid_bbox_score * 0.14)
+    grid_detector = _grid_table_detector(
+        horizontal_ratio=horizontal_ratio,
+        vertical_ratio=vertical_ratio,
+        long_horizontal_lines=long_horizontal_lines,
+        long_vertical_lines=long_vertical_lines,
+        intersection_count=intersection_count,
+        rectangle_count=rectangle_count,
+        repeating_cell_score=repeating_cell_score,
+        gap_regularity_score=gap_regularity_score,
+        dominant_grid_bbox_score=dominant_grid_bbox_score,
     )
-    penalty_score = (
-        (_clamp(diagonal_ratio / 0.35) * 0.16)
-        + (_clamp(irregular_blob_ratio / 0.35) * 0.18)
-        + (chart_score * 0.22)
-    )
-    raw_score = positive_score - penalty_score
+    alignment_detector = _alignment_table_detector(layout_info)
+    dense_detector = _dense_table_detector(layout_info)
 
-    hard_table_signal = (
-        intersection_count >= 30
-        and rectangle_count >= 15
-        and horizontal_ratio >= 0.02
-        and vertical_ratio >= 0.015
-        and repeating_cell_score >= 0.75
-        and gap_regularity_score >= 0.75
-        and chart_score < 0.18
-        and diagonal_ratio < 0.15
-        and irregular_blob_ratio < 0.10
+    detector_scores = {
+        "grid": grid_detector,
+        "alignment": alignment_detector,
+        "dense": dense_detector,
+    }
+    strongest_detector_name, strongest_detector = max(
+        detector_scores.items(),
+        key=lambda item: float(item[1]["score"]),
     )
-    hard_non_table_signal = (
-        intersection_count == 0
-        and rectangle_count < 2
-        and (long_horizontal_lines + long_vertical_lines) < 2
-    )
-    impure_chart_veto = chart_score >= 0.35 and gap_regularity_score < 0.80
-    impure_diagonal_veto = diagonal_ratio >= 0.18
-    chart_blob_veto = chart_score >= 0.45 and irregular_blob_ratio >= 0.10
-    diagonal_blob_veto = diagonal_ratio >= 0.20 and irregular_blob_ratio >= 0.15
-    sparse_rect_chart_veto = chart_score >= 0.45 and rectangle_count <= 10
-    weak_grid_chart_veto = (
-        gap_regularity_score < 0.40
-        and chart_score >= 0.12
-        and irregular_blob_ratio >= 0.10
-        and rectangle_count <= 12
-    )
-    sparse_cell_grid_veto = (
-        intersection_count >= 40
-        and rectangle_count <= 8
-        and repeating_cell_score < 0.40
-        and gap_regularity_score < 0.55
-    )
-    weak_cell_structure_veto = (
-        (intersection_count >= 20 or (horizontal_ratio >= 0.04 and vertical_ratio >= 0.04))
-        and rectangle_count <= 15
-        and repeating_cell_score < 0.40
-    )
-    dense_grid_low_repeat_veto = (
-        intersection_count >= 120
-        and repeating_cell_score < 0.75
-        and gap_regularity_score < 0.60
-    )
-    irregular_grid_veto = (
-        intersection_count >= 35
-        and rectangle_count >= 12
-        and gap_regularity_score < 0.68
-        and chart_score >= 0.10
-    )
-    chart_dense_grid_veto = (
-        chart_score >= 0.40
-        and rectangle_count <= 24
-        and intersection_count >= 30
-    )
-    full_canvas_low_repeat_veto = (
-        dominant_bbox_area_ratio >= 0.90
-        and dominant_bbox_rect_coverage_ratio >= 0.90
-        and dominant_bbox_outside_noise_ratio <= 0.05
-        and repeating_cell_score < 0.55
-    )
-    dominant_grid_bbox_signal = (
-        dominant_grid_bbox_score >= 0.72
-        and dominant_bbox_area_ratio >= 0.70
-        and dominant_bbox_rect_coverage_ratio >= 0.85
-        and dominant_bbox_outside_noise_ratio <= 0.10
-        and not impure_diagonal_veto
-        and not weak_cell_structure_veto
-        and not dense_grid_low_repeat_veto
-        and not irregular_grid_veto
-        and not full_canvas_low_repeat_veto
-    )
+    final_table_score = float(strongest_detector["score"])
 
-    score = _clamp(raw_score)
-    if hard_non_table_signal and chart_score >= 0.45:
-        score = min(score, 0.20)
-    if impure_chart_veto:
+    veto_breakdown = _non_table_veto_detectors(
+        chart_score=chart_score,
+        diagonal_ratio=diagonal_ratio,
+        irregular_blob_ratio=irregular_blob_ratio,
+        horizontal_ratio=horizontal_ratio,
+        vertical_ratio=vertical_ratio,
+        layout_info=layout_info,
+    )
+    strongest_veto_score = float(veto_breakdown["strongest_veto_score"])
+    low_table_evidence = final_table_score < 0.55
+    veto_applied = low_table_evidence and strongest_veto_score >= 0.62
+    score = final_table_score
+    if veto_applied:
         score = min(score, 0.24)
-    if impure_diagonal_veto:
-        score = min(score, 0.22)
-    if chart_blob_veto:
-        score = min(score, 0.20)
-    if diagonal_blob_veto:
-        score = min(score, 0.20)
-    if sparse_rect_chart_veto:
-        score = min(score, 0.25)
-    if weak_grid_chart_veto:
-        score = min(score, 0.30)
-    if sparse_cell_grid_veto:
-        score = min(score, 0.28)
-    if weak_cell_structure_veto:
-        score = min(score, 0.28)
-    if dense_grid_low_repeat_veto:
-        score = min(score, 0.28)
-    if irregular_grid_veto:
-        score = min(score, 0.32)
-    if chart_dense_grid_veto:
-        score = min(score, 0.24)
-    if full_canvas_low_repeat_veto:
-        score = min(score, 0.24)
-    if dominant_grid_bbox_signal:
-        score = max(score, 0.64)
 
     return {
         "image_size": {"width": width, "height": height},
@@ -766,46 +1184,74 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "intersection_count": intersection_count,
             "rectangle_contour_count": rectangle_count,
             "repeating_cell_structure_score": repeating_cell_score,
-            "connected_component_alignment_score": alignment_score,
             "gap_regularity_score": gap_regularity_score,
+            "text_component_count": layout_info.get("components_used"),
+            "text_component_area_ratio": layout_info.get("component_area_ratio"),
+            "meaningful_row_count": layout_info.get("meaningful_row_count"),
+            "meaningful_col_count": layout_info.get("meaningful_col_count"),
+            "row_component_stability_score": layout_info.get("row_component_stability_score"),
+            "rows_with_three_plus_ratio": layout_info.get("rows_with_three_plus_ratio"),
+            "median_components_per_row": layout_info.get("median_components_per_row"),
+            "best_anchor_score": layout_info.get("best_anchor_score"),
+            "best_anchor_row_coverage": layout_info.get("best_anchor_row_coverage"),
+            "compact_component_ratio": layout_info.get("compact_component_ratio"),
+            "projection_row_peak_count": layout_info.get("projection_row_peak_count"),
+            "projection_col_peak_count": layout_info.get("projection_col_peak_count"),
+            "projection_row_peak_score": layout_info.get("projection_row_peak_score"),
+            "projection_col_peak_score": layout_info.get("projection_col_peak_score"),
+            "projection_row_regularity_score": layout_info.get("projection_row_regularity_score"),
+            "projection_col_regularity_score": layout_info.get("projection_col_regularity_score"),
+            "header_body_transition_score": layout_info.get("header_body_transition_score"),
             "diagonal_curve_ratio": diagonal_ratio,
             "irregular_blob_ratio": irregular_blob_ratio,
             "chart_like_structure_score": chart_score,
-            "grid_support_score": grid_support,
             "dominant_grid_bbox_score": dominant_grid_bbox_score,
             "dominant_grid_bbox_area_ratio": dominant_bbox_area_ratio,
             "dominant_grid_bbox_outside_noise_ratio": dominant_bbox_outside_noise_ratio,
             "dominant_grid_bbox_rect_coverage_ratio": dominant_bbox_rect_coverage_ratio,
         },
         "feature_details": {
-            "rectangles_used": rectangle_count,
-            "repeating_cells": repeating_info,
-            "component_alignment": alignment_info,
-            "gap_regularity": gap_info,
-            "dominant_grid_bbox": dominant_grid_bbox_info,
+            "grid": {
+                "rectangles_used": rectangle_count,
+                "repeating_cells": repeating_info,
+                "gap_regularity": gap_info,
+                "dominant_grid_bbox": dominant_grid_bbox_info,
+            },
+            "alignment": layout_info,
+            "dense": {
+                "component_area_ratio": layout_info.get("component_area_ratio"),
+                "compact_component_ratio": layout_info.get("compact_component_ratio"),
+                "header_body_transition_score": layout_info.get("header_body_transition_score"),
+                "rows_with_three_plus_ratio": layout_info.get("rows_with_three_plus_ratio"),
+            },
+            "veto": {
+                "line_presence_score": veto_breakdown.get("line_presence_score"),
+                "structure_presence_score": veto_breakdown.get("structure_presence_score"),
+                "text_presence_score": veto_breakdown.get("text_presence_score"),
+            },
         },
+        "detector_scores": {
+            name: {"score": detector["score"], "components": detector["components"]}
+            for name, detector in detector_scores.items()
+        },
+        "veto_breakdown": veto_breakdown,
         "score_breakdown": {
-            "positive_score": positive_score,
-            "penalty_score": penalty_score,
-            "raw_score": raw_score,
+            "grid_score": grid_detector["score"],
+            "alignment_score": alignment_detector["score"],
+            "dense_score": dense_detector["score"],
+            "final_table_score": final_table_score,
+            "strongest_veto_score": strongest_veto_score,
             "final_score": score,
         },
         "decision_flags": {
-            "hard_table_signal": hard_table_signal,
-            "hard_non_table_signal": hard_non_table_signal,
-            "impure_chart_veto": impure_chart_veto,
-            "impure_diagonal_veto": impure_diagonal_veto,
-            "chart_blob_veto": chart_blob_veto,
-            "diagonal_blob_veto": diagonal_blob_veto,
-            "sparse_rect_chart_veto": sparse_rect_chart_veto,
-            "weak_grid_chart_veto": weak_grid_chart_veto,
-            "sparse_cell_grid_veto": sparse_cell_grid_veto,
-            "weak_cell_structure_veto": weak_cell_structure_veto,
-            "dense_grid_low_repeat_veto": dense_grid_low_repeat_veto,
-            "irregular_grid_veto": irregular_grid_veto,
-            "chart_dense_grid_veto": chart_dense_grid_veto,
-            "full_canvas_low_repeat_veto": full_canvas_low_repeat_veto,
-            "dominant_grid_bbox_signal": dominant_grid_bbox_signal,
+            "strongest_detector_is_grid": strongest_detector_name == "grid",
+            "strongest_detector_is_alignment": strongest_detector_name == "alignment",
+            "strongest_detector_is_dense": strongest_detector_name == "dense",
+            "low_table_evidence": low_table_evidence,
+            "veto_applied": veto_applied,
+            "strong_chart_evidence": bool(veto_breakdown["chart"]["active"]),
+            "strong_diagram_evidence": bool(veto_breakdown["diagram"]["active"]),
+            "strong_photo_evidence": bool(veto_breakdown["photo"]["active"]),
         },
     }
 
