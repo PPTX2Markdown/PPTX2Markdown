@@ -544,16 +544,23 @@ def _chart_like_score(
     irregular_blob_ratio: float,
     horizontal_ratio: float,
     vertical_ratio: float,
+    rectangle_count: int,
+    repeating_cell_score: float,
+    gap_regularity_score: float,
 ) -> float:
     axis_presence = 1.0 if long_horizontal_lines >= 1 and long_vertical_lines >= 1 else 0.0
-    sparse_grid = 1.0 - _normalize_score(intersection_count, 8.0)
-    line_presence = _clamp((horizontal_ratio + vertical_ratio) / 0.12)
+    sparse_grid = 1.0 - _normalize_score(intersection_count, 28.0)
+    line_presence = _clamp((horizontal_ratio + vertical_ratio) / 0.12) * sparse_grid
+    weak_cell_structure = 1.0 - max(repeating_cell_score, _normalize_score(rectangle_count, 18.0))
+    irregular_spacing = 1.0 - gap_regularity_score
     return _clamp(
-        (axis_presence * 0.35)
-        + (sparse_grid * 0.20)
-        + (_clamp(diagonal_ratio / 0.35) * 0.25)
-        + (_clamp(irregular_blob_ratio / 0.30) * 0.10)
+        ((axis_presence * sparse_grid) * 0.18)
+        + (sparse_grid * 0.18)
+        + (_clamp(diagonal_ratio / 0.35) * 0.26)
+        + (_clamp(irregular_blob_ratio / 0.30) * 0.12)
         + (line_presence * 0.10)
+        + (weak_cell_structure * 0.08)
+        + (irregular_spacing * 0.08)
     )
 
 
@@ -606,6 +613,9 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         irregular_blob_ratio=irregular_blob_ratio,
         horizontal_ratio=horizontal_ratio,
         vertical_ratio=vertical_ratio,
+        rectangle_count=rectangle_count,
+        repeating_cell_score=repeating_cell_score,
+        gap_regularity_score=gap_regularity_score,
     )
 
     horizontal_norm = _normalize_score(horizontal_ratio, 0.08)
@@ -698,11 +708,22 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and rectangle_count <= 24
         and intersection_count >= 30
     )
+    full_canvas_low_repeat_veto = (
+        dominant_bbox_area_ratio >= 0.90
+        and dominant_bbox_rect_coverage_ratio >= 0.90
+        and dominant_bbox_outside_noise_ratio <= 0.05
+        and repeating_cell_score < 0.55
+    )
     dominant_grid_bbox_signal = (
         dominant_grid_bbox_score >= 0.72
         and dominant_bbox_area_ratio >= 0.70
         and dominant_bbox_rect_coverage_ratio >= 0.85
         and dominant_bbox_outside_noise_ratio <= 0.10
+        and not impure_diagonal_veto
+        and not weak_cell_structure_veto
+        and not dense_grid_low_repeat_veto
+        and not irregular_grid_veto
+        and not full_canvas_low_repeat_veto
     )
 
     score = _clamp(raw_score)
@@ -729,6 +750,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     if irregular_grid_veto:
         score = min(score, 0.32)
     if chart_dense_grid_veto:
+        score = min(score, 0.24)
+    if full_canvas_low_repeat_veto:
         score = min(score, 0.24)
     if dominant_grid_bbox_signal:
         score = max(score, 0.64)
@@ -781,6 +804,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "dense_grid_low_repeat_veto": dense_grid_low_repeat_veto,
             "irregular_grid_veto": irregular_grid_veto,
             "chart_dense_grid_veto": chart_dense_grid_veto,
+            "full_canvas_low_repeat_veto": full_canvas_low_repeat_veto,
             "dominant_grid_bbox_signal": dominant_grid_bbox_signal,
         },
     }
