@@ -47,6 +47,7 @@ _VECTOR_IMAGE_SUFFIXES = {
 }
 _DEFAULT_BG_GRAY = 192
 _HIDE_SURYA_LOGS = os.getenv("IMAGE_TABLE_HIDE_SURYA_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}
+_DISABLE_SURYA = os.getenv("IMAGE_TABLE_DISABLE_SURYA", "").strip().lower() in {"1", "true", "yes", "on"}
 
 warnings.filterwarnings(
     "ignore",
@@ -1776,6 +1777,20 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
             "low_confidence": cls.get("low_confidence"),
             "surya_attempted": False,
             "classification": cls,
+        }
+        _RESULT_CACHE[key] = out
+        return out
+
+    if _DISABLE_SURYA:
+        out = {
+            "status": "not_table",
+            "file": key,
+            "predicted_class": cls.get("predicted_class"),
+            "score": cls.get("score"),
+            "low_confidence": cls.get("low_confidence"),
+            "surya_attempted": False,
+            "classification": cls,
+            "reason": "surya_disabled_by_env",
         }
         _RESULT_CACHE[key] = out
         return out
