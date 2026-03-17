@@ -1625,7 +1625,7 @@ def main() -> int:
     parser.add_argument(
         "--image-table-pipeline",
         action="store_true",
-        help="Classify image blocks with PaddleOCR and parse table images with Surya.",
+        help="Classify image blocks with OpenCV heuristics and parse detected table images with Surya.",
     )
     parser.add_argument(
         "--output-file",

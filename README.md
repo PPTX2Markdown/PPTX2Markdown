@@ -27,8 +27,8 @@ PPTX(또는 PPTX 추출 패키지)를 Markdown으로 변환하는 파이프라�
   - 역할: 테이블 XML을 JSON으로 파싱하고 Markdown/HTML/CSV 렌더링
   - 상세: `table_parser/README.md`
 - `image_pipeline`
-  - 역할: 이미지 블록 분류(PaddleOCR) + 표 이미지 Surya 추출
-  - 상세: `image_pipeline/README.md`
+  - 역할: OpenCV 휴리스틱 기반 이미지 테이블 이진 분류 + 표 이미지 Surya 추출
+  - 상세: `image_pipeline/service.py`
 
 ## 입력/출력 요약
 
@@ -59,7 +59,7 @@ cd main_converter
 python3 convert_slides_to_md.py --reading-order xml
 ```
 
-(임시 사진 테이블 처리 로직 실행...)
+(OpenCV 휴리스틱 기반 테이블 이진 분류 + 표 이미지 Surya 추출...)
 ```bash
 cd main_converter
 python3 convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
@@ -102,6 +102,7 @@ python3 table_parser/tableMaker.py
 ## 참고
 
 - Python 3.10+ 권장
+- `image_pipeline` 사용 시 `opencv-python` 또는 `opencv-python-headless`, `numpy` 필요
 - 경로는 상대경로 기준으로 작성되어 있습니다.
 - `surya_pipeline` 관련 옵션/흐름은 이 README 범위에서 제외했습니다.
 
@@ -157,4 +158,3 @@ docker compose down
 Notes:
 - Rebuild required when `Dockerfile` changes.
 - Rebuild not required for `.py` source edits.
-- See `DOCKER.md` for the full workflow.
