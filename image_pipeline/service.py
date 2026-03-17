@@ -530,6 +530,12 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and irregular_blob_ratio >= 0.10
         and rectangle_count <= 12
     )
+    sparse_cell_grid_veto = (
+        intersection_count >= 40
+        and rectangle_count <= 8
+        and repeating_cell_score < 0.40
+        and gap_regularity_score < 0.55
+    )
 
     score = _clamp(raw_score)
     if hard_table_signal:
@@ -544,6 +550,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         score = min(score, 0.25)
     if weak_grid_chart_veto:
         score = min(score, 0.30)
+    if sparse_cell_grid_veto:
+        score = min(score, 0.28)
 
     return {
         "image_size": {"width": width, "height": height},
@@ -581,6 +589,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "diagonal_blob_veto": diagonal_blob_veto,
             "sparse_rect_chart_veto": sparse_rect_chart_veto,
             "weak_grid_chart_veto": weak_grid_chart_veto,
+            "sparse_cell_grid_veto": sparse_cell_grid_veto,
         },
     }
 
