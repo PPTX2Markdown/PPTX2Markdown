@@ -1171,9 +1171,17 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         "alignment": alignment_detector,
         "dense": dense_detector,
     }
+    detector_score_values = {name: float(detector["score"]) for name, detector in detector_scores.items()}
     strongest_detector_name, strongest_detector = max(
         detector_scores.items(),
         key=lambda item: float(item[1]["score"]),
+    )
+    ordered_detector_scores = sorted(detector_score_values.items(), key=lambda item: item[1], reverse=True)
+    _, second_detector_score = ordered_detector_scores[1]
+    detector_coherence = max(
+        min(detector_score_values["grid"], detector_score_values["alignment"]),
+        min(detector_score_values["grid"], detector_score_values["dense"]),
+        min(detector_score_values["alignment"], detector_score_values["dense"]),
     )
     final_table_score = float(strongest_detector["score"])
 
@@ -1187,10 +1195,26 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     )
     strongest_veto_score = float(veto_breakdown["strongest_veto_score"])
     low_table_evidence = final_table_score < 0.55
+    detector_conflict_veto = (
+        strongest_veto_score >= 0.55
+        and detector_coherence < 0.80
+    )
+    non_grid_conflict_veto = (
+        strongest_detector_name != "grid"
+        and strongest_veto_score >= 0.52
+        and detector_coherence < 0.82
+    )
     weak_non_grid_table = (
         strongest_detector_name != "grid"
         and float(grid_detector["score"]) < 0.40
         and strongest_veto_score >= 0.58
+    )
+    dense_header_panel_veto = (
+        strongest_detector_name != "grid"
+        and float(layout_info.get("header_body_transition_score", 0.0)) >= 0.95
+        and float(layout_info.get("best_anchor_score", 0.0)) < 0.80
+        and float(layout_info.get("row_component_stability_score", 0.0)) < 0.30
+        and int(layout_info.get("components_used", 0)) <= 120
     )
     sparse_text_grid_veto = (
         float(grid_detector["score"]) >= 0.72
@@ -1245,7 +1269,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     )
     veto_applied = (
         (low_table_evidence and strongest_veto_score >= 0.62)
+        or detector_conflict_veto
+        or non_grid_conflict_veto
         or weak_non_grid_table
+        or dense_header_panel_veto
         or sparse_text_grid_veto
         or low_row_grid_panel_veto
         or tiny_row_grid_panel_veto
@@ -1288,6 +1315,8 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "header_body_transition_score": layout_info.get("header_body_transition_score"),
             "alignment_row_gate": alignment_detector["components"].get("row_gate"),
             "dense_row_gate": dense_detector["components"].get("row_gate"),
+            "detector_coherence_score": detector_coherence,
+            "second_detector_score": second_detector_score,
             "diagonal_curve_ratio": diagonal_ratio,
             "irregular_blob_ratio": irregular_blob_ratio,
             "chart_like_structure_score": chart_score,
@@ -1326,6 +1355,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "alignment_score": alignment_detector["score"],
             "dense_score": dense_detector["score"],
             "final_table_score": final_table_score,
+            "detector_coherence_score": detector_coherence,
             "strongest_veto_score": strongest_veto_score,
             "final_score": score,
         },
@@ -1334,7 +1364,10 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "strongest_detector_is_alignment": strongest_detector_name == "alignment",
             "strongest_detector_is_dense": strongest_detector_name == "dense",
             "low_table_evidence": low_table_evidence,
+            "detector_conflict_veto": detector_conflict_veto,
+            "non_grid_conflict_veto": non_grid_conflict_veto,
             "weak_non_grid_table": weak_non_grid_table,
+            "dense_header_panel_veto": dense_header_panel_veto,
             "sparse_text_grid_veto": sparse_text_grid_veto,
             "low_row_grid_panel_veto": low_row_grid_panel_veto,
             "tiny_row_grid_panel_veto": tiny_row_grid_panel_veto,

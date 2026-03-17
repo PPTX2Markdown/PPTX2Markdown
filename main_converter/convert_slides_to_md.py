@@ -1354,6 +1354,7 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     alignment_score = score_breakdown.get("alignment_score")
     dense_score = score_breakdown.get("dense_score")
     pre_veto_score = score_breakdown.get("final_table_score")
+    detector_coherence_score = score_breakdown.get("detector_coherence_score")
     strongest_veto_score = score_breakdown.get("strongest_veto_score")
 
     summary = (
@@ -1364,7 +1365,8 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         f"det(grid={_fmt_eval_value(grid_score)},"
         f"align={_fmt_eval_value(alignment_score)},"
         f"dense={_fmt_eval_value(dense_score)},"
-        f"pre={_fmt_eval_value(pre_veto_score)}) "
+        f"pre={_fmt_eval_value(pre_veto_score)},"
+        f"coh={_fmt_eval_value(detector_coherence_score)}) "
         f"grid(h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))},"
         f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))},"
         f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)},"
