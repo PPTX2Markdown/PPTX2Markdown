@@ -11,13 +11,19 @@ as ``table``, Surya table recognition is used as the downstream extractor.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import math
 import re
+import shutil
+import subprocess
+import tempfile
+import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 
-TABLE_THRESHOLD = 0.52
+TABLE_THRESHOLD = 0.59
 LOW_CONFIDENCE_THRESHOLD = 0.34
 MAX_IMAGE_EDGE = 1600
 
@@ -33,7 +39,17 @@ _SUPPORTED_IMAGE_SUFFIXES = {
     ".tif",
     ".tiff",
 }
+_VECTOR_IMAGE_SUFFIXES = {
+    ".emf",
+    ".wmf",
+}
 _DEFAULT_BG_GRAY = 192
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers\..*",
+    category=FutureWarning,
+)
 
 
 def _clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
@@ -74,6 +90,81 @@ def _normalize_score(value: float, full_score_at: float) -> float:
     if full_score_at <= 0:
         return 0.0
     return _clamp(value / full_score_at)
+
+
+def _is_supported_image_suffix(suffix: str) -> bool:
+    return suffix in _SUPPORTED_IMAGE_SUFFIXES or suffix in _VECTOR_IMAGE_SUFFIXES
+
+
+def _resolve_vector_converter() -> Optional[str]:
+    for candidate in ("soffice", "libreoffice"):
+        found = shutil.which(candidate)
+        if found:
+            return found
+    return None
+
+
+def _rasterize_vector_image_with_cv(image_path: Path, cv2: Any, imread_flag: int) -> Any:
+    converter = _resolve_vector_converter()
+    if not converter:
+        raise RuntimeError("LibreOffice is required to rasterize vector images such as EMF/WMF")
+
+    with tempfile.TemporaryDirectory(prefix="vector_raster_") as tmpdir:
+        tmp_root = Path(tmpdir)
+        staged_input = tmp_root / image_path.name
+        shutil.copy2(image_path, staged_input)
+        proc = subprocess.run(
+            [
+                converter,
+                "--headless",
+                "--convert-to",
+                "png",
+                "--outdir",
+                str(tmp_root),
+                str(staged_input),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                "vector image rasterization failed\n"
+                f"stdout={proc.stdout.strip()}\n"
+                f"stderr={proc.stderr.strip()}"
+            )
+
+        output_path = tmp_root / f"{image_path.stem}.png"
+        if not output_path.exists():
+            pngs = sorted(tmp_root.glob("*.png"))
+            if not pngs:
+                raise RuntimeError(f"vector image rasterization produced no PNG output: {image_path.name}")
+            output_path = pngs[0]
+
+        image = cv2.imread(str(output_path), imread_flag)
+        if image is None:
+            raise RuntimeError(f"failed to read rasterized vector image: {output_path}")
+        return image
+
+
+def _read_image_with_cv(image_path: Path, cv2: Any, imread_flag: int) -> Any:
+    suffix = image_path.suffix.lower()
+    if suffix in _SUPPORTED_IMAGE_SUFFIXES:
+        image = cv2.imread(str(image_path), imread_flag)
+        if image is None:
+            raise ValueError(f"failed to read image: {image_path}")
+        return image
+    if suffix in _VECTOR_IMAGE_SUFFIXES:
+        return _rasterize_vector_image_with_cv(image_path, cv2, imread_flag)
+    raise ValueError(f"unsupported image extension: {suffix or '(none)'}")
+
+
+@contextlib.contextmanager
+def _suppress_external_output() -> Iterator[None]:
+    sink_out = io.StringIO()
+    sink_err = io.StringIO()
+    with contextlib.redirect_stdout(sink_out), contextlib.redirect_stderr(sink_err):
+        yield
 
 
 def _resize_for_analysis(gray: Any, cv2: Any) -> Any:
@@ -357,9 +448,7 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"opencv heuristic classifier unavailable: {type(exc).__name__}: {exc}") from exc
 
-    image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-    if image is None:
-        raise ValueError(f"failed to read image: {image_path}")
+    image = _read_image_with_cv(image_path, cv2, cv2.IMREAD_COLOR)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     gray, binary = _prepare_binary(gray, cv2)
@@ -409,15 +498,15 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         + (long_lines_norm * 0.10)
         + (intersections_norm * 0.16)
         + (rectangles_norm * 0.12)
-        + (repeating_cell_score * 0.10)
-        + (alignment_score * 0.10)
-        + (gap_regularity_score * 0.08)
+        + (repeating_cell_score * 0.06)
+        + (alignment_score * 0.05)
+        + (gap_regularity_score * 0.06)
         + (grid_support * 0.10)
     )
     penalty_score = (
-        (_clamp(diagonal_ratio / 0.35) * 0.12)
-        + (_clamp(irregular_blob_ratio / 0.35) * 0.10)
-        + (chart_score * 0.12)
+        (_clamp(diagonal_ratio / 0.35) * 0.16)
+        + (_clamp(irregular_blob_ratio / 0.35) * 0.18)
+        + (chart_score * 0.22)
     )
     raw_score = positive_score - penalty_score
 
@@ -432,12 +521,29 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
         and rectangle_count < 2
         and (long_horizontal_lines + long_vertical_lines) < 2
     )
+    chart_blob_veto = chart_score >= 0.45 and irregular_blob_ratio >= 0.10
+    diagonal_blob_veto = diagonal_ratio >= 0.20 and irregular_blob_ratio >= 0.15
+    sparse_rect_chart_veto = chart_score >= 0.45 and rectangle_count <= 10
+    weak_grid_chart_veto = (
+        gap_regularity_score < 0.40
+        and chart_score >= 0.12
+        and irregular_blob_ratio >= 0.10
+        and rectangle_count <= 12
+    )
 
     score = _clamp(raw_score)
     if hard_table_signal:
         score = max(score, 0.60)
     if hard_non_table_signal and chart_score >= 0.45:
         score = min(score, 0.20)
+    if chart_blob_veto:
+        score = min(score, 0.20)
+    if diagonal_blob_veto:
+        score = min(score, 0.20)
+    if sparse_rect_chart_veto:
+        score = min(score, 0.25)
+    if weak_grid_chart_veto:
+        score = min(score, 0.30)
 
     return {
         "image_size": {"width": width, "height": height},
@@ -468,6 +574,14 @@ def _compute_features(image_path: Path) -> Dict[str, Any]:
             "raw_score": raw_score,
             "final_score": score,
         },
+        "decision_flags": {
+            "hard_table_signal": hard_table_signal,
+            "hard_non_table_signal": hard_non_table_signal,
+            "chart_blob_veto": chart_blob_veto,
+            "diagonal_blob_veto": diagonal_blob_veto,
+            "sparse_rect_chart_veto": sparse_rect_chart_veto,
+            "weak_grid_chart_veto": weak_grid_chart_veto,
+        },
     }
 
 
@@ -488,7 +602,7 @@ def classify_image(image_path: Path) -> Dict[str, Any]:
         raise FileNotFoundError(f"file not found: {resolved_path}")
 
     suffix = resolved_path.suffix.lower()
-    if suffix not in _SUPPORTED_IMAGE_SUFFIXES:
+    if not _is_supported_image_suffix(suffix):
         raise ValueError(f"unsupported image extension: {suffix or '(none)'}")
 
     features = _compute_features(resolved_path)
@@ -812,36 +926,39 @@ def _load_surya_models() -> Tuple[Any, Any, Any, Any]:
 
 
 def _prepare_image_for_surya(image_path: Path, bg_gray: int = _DEFAULT_BG_GRAY) -> Any:
+    import cv2  # type: ignore
+    import numpy as np  # type: ignore
     from PIL import Image  # type: ignore
 
-    img = Image.open(image_path)
-    has_alpha = (
-        "A" in img.getbands()
-        or img.mode in {"RGBA", "LA"}
-        or (img.mode == "P" and "transparency" in img.info)
-    )
-    if not has_alpha:
-        return img.convert("RGB")
-
-    rgba = img.convert("RGBA")
+    image = _read_image_with_cv(image_path, cv2, cv2.IMREAD_UNCHANGED)
     bg_gray = max(0, min(255, int(bg_gray)))
-    bg = Image.new("RGBA", rgba.size, (bg_gray, bg_gray, bg_gray, 255))
-    composited = Image.alpha_composite(bg, rgba)
-    return composited.convert("RGB")
+
+    if len(image.shape) == 2:
+        return Image.fromarray(image).convert("RGB")
+
+    if len(image.shape) == 3 and image.shape[2] == 4:
+        alpha = image[:, :, 3:4].astype("float32") / 255.0
+        rgb = image[:, :, :3][:, :, ::-1].astype("float32")
+        bg = np.full(rgb.shape, bg_gray, dtype="float32")
+        composited = (rgb * alpha) + (bg * (1.0 - alpha))
+        return Image.fromarray(composited.clip(0, 255).astype("uint8"), mode="RGB")
+
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(rgb)
 
 
 def _run_surya_parsed_tables(image_path: Path) -> List[Dict[str, Any]]:
-    table_predictor, det_predictor, rec_predictor, task_names = _load_surya_models()
-
-    image = _prepare_image_for_surya(image_path)
-    table_preds = table_predictor([image])
-    ocr_preds = rec_predictor(
-        [image],
-        task_names=[task_names.ocr_with_boxes],
-        det_predictor=det_predictor,
-        highres_images=[image],
-        math_mode=False,
-    )
+    with _suppress_external_output():
+        table_predictor, det_predictor, rec_predictor, task_names = _load_surya_models()
+        image = _prepare_image_for_surya(image_path)
+        table_preds = table_predictor([image])
+        ocr_preds = rec_predictor(
+            [image],
+            task_names=[task_names.ocr_with_boxes],
+            det_predictor=det_predictor,
+            highres_images=[image],
+            math_mode=False,
+        )
 
     raw_tables = _to_builtin(table_preds)
     raw_ocr = _to_builtin(ocr_preds)
@@ -938,7 +1055,7 @@ def extract_table_markdown_from_image(image_path: Path, header_rows: int = 1) ->
         return out
 
     suffix = resolved_path.suffix.lower()
-    if suffix not in _SUPPORTED_IMAGE_SUFFIXES:
+    if not _is_supported_image_suffix(suffix):
         out = {
             "status": "not_table",
             "file": key,

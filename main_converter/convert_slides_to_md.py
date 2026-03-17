@@ -1289,6 +1289,9 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     score_breakdown = classification.get("score_breakdown")
     if not isinstance(score_breakdown, dict):
         score_breakdown = {}
+    decision_flags = classification.get("decision_flags")
+    if not isinstance(decision_flags, dict):
+        decision_flags = {}
 
     score = result.get("score", classification.get("score", score_breakdown.get("final_score")))
     positive_score = score_breakdown.get("positive_score")
@@ -1324,6 +1327,9 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         extras.append(f"reason={reason}")
     if isinstance(error, str) and error.strip():
         extras.append(f"error={error}")
+    active_flags = [name for name, active in decision_flags.items() if active]
+    if active_flags:
+        extras.append("flags=" + ",".join(sorted(active_flags)))
     if extras:
         summary = f"{summary} " + " ".join(extras)
 
