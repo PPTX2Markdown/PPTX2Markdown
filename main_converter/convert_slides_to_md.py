@@ -1559,7 +1559,10 @@ def convert_one_slide(
 
             if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
                 table_md, table_warn, unavailable, table_result = convert_picture_to_table_markdown(img_path)
-                if isinstance(table_result, dict) and bool(table_result.get("surya_attempted")):
+                if isinstance(table_result, dict) and (
+                    bool(table_result.get("surya_attempted"))
+                    or str(table_result.get("status", "")) == "table_skipped"
+                ):
                     copy_debug_image_asset(
                         img_path,
                         debug_dir=surya_debug_dir,
