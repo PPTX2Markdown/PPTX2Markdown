@@ -1278,7 +1278,6 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
     name = Path(image_path).name
     status = str(result.get("status", "error"))
     predicted = str(result.get("predicted_class", "unknown"))
-    low_confidence = bool(result.get("low_confidence"))
 
     classification = result.get("classification")
     if not isinstance(classification, dict):
@@ -1294,8 +1293,6 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         decision_flags = {}
 
     score = result.get("score", classification.get("score", score_breakdown.get("final_score")))
-    positive_score = score_breakdown.get("positive_score")
-    penalty_score = score_breakdown.get("penalty_score")
     table_count = result.get("table_count")
     reason = result.get("reason")
     error = result.get("error")
@@ -1307,19 +1304,15 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         f"status={status} "
         f"pred={predicted} "
         f"score={_fmt_eval_value(score)} "
-        f"pos={_fmt_eval_value(positive_score)} "
-        f"pen={_fmt_eval_value(penalty_score)} "
-        f"low_conf={'yes' if low_confidence else 'no'} "
-        f"h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))} "
-        f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))} "
+        f"grid(h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))},"
+        f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))},"
         f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)} "
-        f"rect={_fmt_eval_value(feature_values.get('rectangle_contour_count'), digits=0)} "
-        f"repeat={_fmt_eval_value(feature_values.get('repeating_cell_structure_score'))} "
-        f"align={_fmt_eval_value(feature_values.get('connected_component_alignment_score'))} "
-        f"gap={_fmt_eval_value(feature_values.get('gap_regularity_score'))} "
-        f"diag={_fmt_eval_value(feature_values.get('diagonal_curve_ratio'))} "
-        f"blob={_fmt_eval_value(feature_values.get('irregular_blob_ratio'))} "
-        f"chart={_fmt_eval_value(feature_values.get('chart_like_structure_score'))}"
+        f"rect={_fmt_eval_value(feature_values.get('rectangle_contour_count'), digits=0)},"
+        f"repeat={_fmt_eval_value(feature_values.get('repeating_cell_structure_score'))},"
+        f"gap={_fmt_eval_value(feature_values.get('gap_regularity_score'))}) "
+        f"penalty(diag={_fmt_eval_value(feature_values.get('diagonal_curve_ratio'))},"
+        f"blob={_fmt_eval_value(feature_values.get('irregular_blob_ratio'))},"
+        f"chart={_fmt_eval_value(feature_values.get('chart_like_structure_score'))})"
     )
 
     extras: List[str] = []
