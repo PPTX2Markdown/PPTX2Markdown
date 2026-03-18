@@ -1366,7 +1366,8 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
 
     geometry_score = score_breakdown.get("geometry_score") if isinstance(score_breakdown, dict) else None
     structure_score = score_breakdown.get("structure_score") if isinstance(score_breakdown, dict) else None
-    area_score = score_breakdown.get("area_score") if isinstance(score_breakdown, dict) else None
+    width_score = score_breakdown.get("width_score") if isinstance(score_breakdown, dict) else None
+    height_score = score_breakdown.get("height_score") if isinstance(score_breakdown, dict) else None
     iou_score = score_breakdown.get("iou_score") if isinstance(score_breakdown, dict) else None
     center_score = score_breakdown.get("center_score") if isinstance(score_breakdown, dict) else None
     box_count_score = score_breakdown.get("box_count_score") if isinstance(score_breakdown, dict) else None
@@ -1378,12 +1379,15 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         f"score={_fmt_eval_value(score)} "
         f"det(geom={_fmt_eval_value(geometry_score)},"
         f"struct={_fmt_eval_value(structure_score)},"
-        f"area={_fmt_eval_value(area_score)},"
+        f"w={_fmt_eval_value(width_score)},"
+        f"h={_fmt_eval_value(height_score)},"
         f"iou={_fmt_eval_value(iou_score)},"
         f"center={_fmt_eval_value(center_score)},"
         f"boxes={_fmt_eval_value(box_count_score)}) "
         f"bbox(area_ratio={_fmt_eval_value(feature_values.get('table_union_area_ratio') if isinstance(feature_values, dict) else None)},"
         f"bbox_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_area_ratio') if isinstance(feature_values, dict) else None)},"
+        f"w_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_width_ratio') if isinstance(feature_values, dict) else None)},"
+        f"h_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_height_ratio') if isinstance(feature_values, dict) else None)},"
         f"iou={_fmt_eval_value(feature_values.get('table_union_bbox_iou') if isinstance(feature_values, dict) else None)},"
         f"offset={_fmt_eval_value(feature_values.get('table_union_center_offset') if isinstance(feature_values, dict) else None)}) "
         f"count(tbl={_fmt_eval_value(feature_values.get('detected_table_count') if isinstance(feature_values, dict) else None, digits=0)},"
