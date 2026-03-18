@@ -24,11 +24,10 @@ RUN python -m pip install --upgrade pip && \
     pip install torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install surya-ocr --no-deps && \
     pip install "pillow>=10.2.0,<11" && \
-    pip install click einops filetype numpy opencv-python-headless platformdirs pre-commit pydantic-settings pypdfium2==4.30.0 python-dotenv requests
+    pip install click einops filetype numpy platformdirs pre-commit pydantic-settings pypdfium2==4.30.0 python-dotenv requests
 
 RUN python -c "import torch; print(torch.__version__)" && \
     python -c "import transformers; print(transformers.__version__)" && \
-    python -c "import cv2; print(cv2.__version__)" && \
     python -c "from PIL import Image; print('PIL ok')" && \
     python -c "from surya.table_rec import TableRecPredictor; print('surya ok')"
 

@@ -27,7 +27,7 @@ PPTX(또는 PPTX 추출 패키지)를 Markdown으로 변환하는 파이프라�
   - 역할: 테이블 XML을 JSON으로 파싱하고 Markdown/HTML/CSV 렌더링
   - 상세: `table_parser/README.md`
 - `image_pipeline`
-  - 역할: OpenCV 휴리스틱 기반 이미지 테이블 이진 분류 + 표 이미지 Surya 추출
+  - 역할: Surya 검출 bbox/행·열·셀 수 기반 이미지 테이블 이진 분류 + 표 이미지 Surya 추출
   - 상세: `image_pipeline/service.py`
 
 ## 입력/출력 요약
@@ -59,7 +59,7 @@ cd main_converter
 python3 convert_slides_to_md.py --reading-order xml
 ```
 
-(OpenCV 휴리스틱 기반 테이블 이진 분류 + 표 이미지 Surya 추출...)
+(Surya bbox 기반 테이블 이진 분류 + 표 이미지 Surya 추출...)
 ```bash
 cd main_converter
 python3 convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
@@ -102,7 +102,7 @@ python3 table_parser/tableMaker.py
 ## 참고
 
 - Python 3.10+ 권장
-- `image_pipeline` 사용 시 `opencv-python` 또는 `opencv-python-headless`, `numpy` 필요
+- `image_pipeline` 사용 시 `surya-ocr`, `Pillow`, `numpy` 필요
 - 경로는 상대경로 기준으로 작성되어 있습니다.
 - `surya_pipeline` 관련 옵션/흐름은 이 README 범위에서 제외했습니다.
 
@@ -169,7 +169,28 @@ Notes:
 export IMAGE_TABLE_HIDE_SURYA_LOGS=1
 ```
 
-터미널에서 이미지가 휴리스틱 알고리즘에서 무슨 수치를 내뱉는지 알 수 있습니다.
+터미널에서 bbox 기반 분류기가 무슨 수치를 내뱉는지 알 수 있습니다.
+
+JSONL 한 줄 디버그를 같이 보고 싶으면:
+
+```bash
+export IMAGE_TABLE_DEBUG_JSON=1
+python3 main_converter/convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline
+```
+
+파일로 같이 남기려면:
+
+```bash
+export IMAGE_TABLE_DEBUG_JSON=1
+python3 main_converter/convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline | tee debug.jsonl
+```
+
+JSONL만 후처리하려면:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --raw --reading-order xml --image-table-pipeline \
+  | jq -c 'select(.kind=="image_table_debug")'
+```
 
 ### 이미지 저장
 /workspace/main_converter/output/xml/<package>/surya_run_images/
@@ -181,4 +202,21 @@ export IMAGE_TABLE_HIDE_SURYA_LOGS=1
 ### surya 끄는 코드
 ```
 export IMAGE_TABLE_DISABLE_SURYA=1
+```
+
+### native 구조 우선 적용 가능성 점검
+
+PPTX native `<a:tbl>` 와 `pic` 오버레이 관계를 먼저 조사해서,
+이미지 verifier 대상으로 남는 그림만 추릴 수 있는지 확인할 수 있습니다.
+
+```bash
+python3 structure_analyzer/check_native_table_support.py \
+  --ppt-root /path/to/extracted_package
+```
+
+또는 raw PPTX 바로 검사:
+
+```bash
+python3 structure_analyzer/check_native_table_support.py \
+  --pptx-path /path/to/file.pptx
 ```

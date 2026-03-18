@@ -56,6 +56,7 @@ REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
 _IMAGE_TABLE_PIPELINE_MODULE: Optional[object] = None
 _IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
+_IMAGE_TABLE_DEBUG_JSON = os.getenv("IMAGE_TABLE_DEBUG_JSON", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def run_structure_analysis_stage(
@@ -1322,6 +1323,10 @@ def _fmt_eval_value(value: object, digits: int = 3) -> str:
     return "n/a"
 
 
+def _to_jsonable_copy(value: object) -> object:
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
 def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> None:
     name = Path(image_path).name
     status = str(result.get("status", "error"))
@@ -1332,60 +1337,60 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         classification = {}
     feature_values = classification.get("feature_values")
     if not isinstance(feature_values, dict):
-        feature_values = {}
+        feature_values = None
     score_breakdown = classification.get("score_breakdown")
     if not isinstance(score_breakdown, dict):
-        score_breakdown = {}
-    veto_breakdown = classification.get("veto_breakdown")
-    if not isinstance(veto_breakdown, dict):
-        veto_breakdown = {}
+        score_breakdown = None
     decision_flags = classification.get("decision_flags")
     if not isinstance(decision_flags, dict):
-        decision_flags = {}
+        decision_flags = None
+    feature_details = classification.get("feature_details")
+    if not isinstance(feature_details, dict):
+        feature_details = None
+    thresholds = classification.get("thresholds")
+    if not isinstance(thresholds, dict):
+        thresholds = None
+    image_size = classification.get("image_size")
+    if not isinstance(image_size, dict):
+        image_size = None
+    visible_image = classification.get("visible_image")
+    if not isinstance(visible_image, dict):
+        visible_image = None
 
-    score = result.get("score", classification.get("score", score_breakdown.get("final_score")))
+    score = result.get("score", classification.get("score", score_breakdown.get("final_score") if isinstance(score_breakdown, dict) else None))
     table_count = result.get("table_count")
     reason = result.get("reason")
     error = result.get("error")
     surya_attempted = bool(result.get("surya_attempted"))
     surya_quality_ok = result.get("surya_quality_ok")
 
-    grid_score = score_breakdown.get("grid_score")
-    alignment_score = score_breakdown.get("alignment_score")
-    dense_score = score_breakdown.get("dense_score")
-    pre_veto_score = score_breakdown.get("final_table_score")
-    detector_coherence_score = score_breakdown.get("detector_coherence_score")
-    strongest_veto_score = score_breakdown.get("strongest_veto_score")
+    geometry_score = score_breakdown.get("geometry_score") if isinstance(score_breakdown, dict) else None
+    structure_score = score_breakdown.get("structure_score") if isinstance(score_breakdown, dict) else None
+    area_score = score_breakdown.get("area_score") if isinstance(score_breakdown, dict) else None
+    iou_score = score_breakdown.get("iou_score") if isinstance(score_breakdown, dict) else None
+    center_score = score_breakdown.get("center_score") if isinstance(score_breakdown, dict) else None
+    box_count_score = score_breakdown.get("box_count_score") if isinstance(score_breakdown, dict) else None
 
     summary = (
         f"[image-table] {name} "
         f"status={status} "
         f"pred={predicted} "
         f"score={_fmt_eval_value(score)} "
-        f"det(grid={_fmt_eval_value(grid_score)},"
-        f"align={_fmt_eval_value(alignment_score)},"
-        f"dense={_fmt_eval_value(dense_score)},"
-        f"pre={_fmt_eval_value(pre_veto_score)},"
-        f"coh={_fmt_eval_value(detector_coherence_score)}) "
-        f"grid(h={_fmt_eval_value(feature_values.get('horizontal_line_ratio'))},"
-        f"v={_fmt_eval_value(feature_values.get('vertical_line_ratio'))},"
-        f"inter={_fmt_eval_value(feature_values.get('intersection_count'), digits=0)},"
-        f"rect={_fmt_eval_value(feature_values.get('rectangle_contour_count'), digits=0)},"
-        f"bbox={_fmt_eval_value(feature_values.get('dominant_grid_bbox_score'))}) "
-        f"align(rows={_fmt_eval_value(feature_values.get('meaningful_row_count'), digits=0)},"
-        f"cols={_fmt_eval_value(feature_values.get('meaningful_col_count'), digits=0)},"
-        f"anchor={_fmt_eval_value(feature_values.get('best_anchor_score'))},"
-        f"stable={_fmt_eval_value(feature_values.get('row_component_stability_score'))},"
-        f"gate={_fmt_eval_value(feature_values.get('alignment_row_gate'))}) "
-        f"dense(comp={_fmt_eval_value(feature_values.get('text_component_count'), digits=0)},"
-        f"area={_fmt_eval_value(feature_values.get('text_component_area_ratio'))},"
-        f"compact={_fmt_eval_value(feature_values.get('compact_component_ratio'))},"
-        f"header={_fmt_eval_value(feature_values.get('header_body_transition_score'))},"
-        f"gate={_fmt_eval_value(feature_values.get('dense_row_gate'))}) "
-        f"veto(chart={_fmt_eval_value(veto_breakdown.get('chart', {}).get('score') if isinstance(veto_breakdown.get('chart'), dict) else None)},"
-        f"diagram={_fmt_eval_value(veto_breakdown.get('diagram', {}).get('score') if isinstance(veto_breakdown.get('diagram'), dict) else None)},"
-        f"photo={_fmt_eval_value(veto_breakdown.get('photo', {}).get('score') if isinstance(veto_breakdown.get('photo'), dict) else None)},"
-        f"max={_fmt_eval_value(strongest_veto_score)})"
+        f"det(geom={_fmt_eval_value(geometry_score)},"
+        f"struct={_fmt_eval_value(structure_score)},"
+        f"area={_fmt_eval_value(area_score)},"
+        f"iou={_fmt_eval_value(iou_score)},"
+        f"center={_fmt_eval_value(center_score)},"
+        f"boxes={_fmt_eval_value(box_count_score)}) "
+        f"bbox(area_ratio={_fmt_eval_value(feature_values.get('table_union_area_ratio') if isinstance(feature_values, dict) else None)},"
+        f"bbox_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_area_ratio') if isinstance(feature_values, dict) else None)},"
+        f"iou={_fmt_eval_value(feature_values.get('table_union_bbox_iou') if isinstance(feature_values, dict) else None)},"
+        f"offset={_fmt_eval_value(feature_values.get('table_union_center_offset') if isinstance(feature_values, dict) else None)}) "
+        f"count(tbl={_fmt_eval_value(feature_values.get('detected_table_count') if isinstance(feature_values, dict) else None, digits=0)},"
+        f"rows={_fmt_eval_value(feature_values.get('detected_row_count') if isinstance(feature_values, dict) else None, digits=0)},"
+        f"cols={_fmt_eval_value(feature_values.get('detected_col_count') if isinstance(feature_values, dict) else None, digits=0)},"
+        f"cells={_fmt_eval_value(feature_values.get('detected_cell_count') if isinstance(feature_values, dict) else None, digits=0)},"
+        f"box={_fmt_eval_value(feature_values.get('detected_box_count') if isinstance(feature_values, dict) else None, digits=0)})"
     )
 
     extras: List[str] = []
@@ -1398,13 +1403,46 @@ def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> N
         extras.append(f"reason={reason}")
     if isinstance(error, str) and error.strip():
         extras.append(f"error={error}")
-    active_flags = [name for name, active in decision_flags.items() if active]
+    active_flags = [name for name, active in decision_flags.items() if active] if isinstance(decision_flags, dict) else []
     if active_flags:
         extras.append("flags=" + ",".join(sorted(active_flags)))
     if extras:
         summary = f"{summary} " + " ".join(extras)
 
     print(summary)
+    if _IMAGE_TABLE_DEBUG_JSON:
+        feature_details_payload = {
+            "visible_image_bbox": feature_details.get("visible_image_bbox") if isinstance(feature_details, dict) else None,
+            "detected_table_union_bbox": (
+                feature_details.get("detected_table_union_bbox") if isinstance(feature_details, dict) else None
+            ),
+            "detected_tables": feature_details.get("detected_tables") if isinstance(feature_details, dict) else None,
+        }
+        if isinstance(feature_details, dict):
+            feature_details_payload.update(feature_details)
+
+        debug_payload = {
+            "kind": "image_table_debug",
+            "file": str(Path(str(result.get("file", image_path))).expanduser().resolve()),
+            "image_name": name,
+            "status": status,
+            "predicted_class": result.get("predicted_class"),
+            "score": score,
+            "low_confidence": result.get("low_confidence"),
+            "surya_attempted": surya_attempted,
+            "surya_quality_ok": surya_quality_ok if isinstance(surya_quality_ok, bool) else None,
+            "table_count": table_count if isinstance(table_count, int) else None,
+            "reason": reason if isinstance(reason, str) and reason.strip() else None,
+            "error": error if isinstance(error, str) and error.strip() else None,
+            "thresholds": thresholds,
+            "image_size": image_size,
+            "visible_image": visible_image,
+            "feature_values": feature_values,
+            "score_breakdown": score_breakdown,
+            "decision_flags": decision_flags,
+            "feature_details": feature_details_payload,
+        }
+        print(json.dumps(_to_jsonable_copy(debug_payload), ensure_ascii=False, separators=(",", ":")))
 
 
 def convert_one_slide(
@@ -1780,7 +1818,7 @@ def main() -> int:
     parser.add_argument(
         "--image-table-pipeline",
         action="store_true",
-        help="Classify image blocks with OpenCV heuristics and parse detected table images with Surya.",
+        help="Classify image blocks with Surya bbox/box-count signals and parse detected table images with Surya.",
     )
     parser.add_argument(
         "--output-file",
