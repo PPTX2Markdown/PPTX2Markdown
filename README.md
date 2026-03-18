@@ -102,7 +102,8 @@ python3 table_parser/tableMaker.py
 ## 참고
 
 - Python 3.10+ 권장
-- `image_pipeline` 사용 시 `surya-ocr`, `Pillow`, `numpy` 필요
+- `image_pipeline` 사용 시 `surya-ocr`, `Pillow`, `numpy`, `opencv-python-headless` 필요
+- OpenCV는 분류 휴리스틱용이 아니라 Surya 내부 의존성으로 필요합니다.
 - 경로는 상대경로 기준으로 작성되어 있습니다.
 - `surya_pipeline` 관련 옵션/흐름은 이 README 범위에서 제외했습니다.
 
