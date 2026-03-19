@@ -32,14 +32,15 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 
-TABLE_HIGH_THRESHOLD = 0.64
-TABLE_LOW_THRESHOLD = 0.36
-MID_BAND_STRUCTURE_THRESHOLD = 0.58
-MID_BAND_GEOMETRY_THRESHOLD = 0.24
+TABLE_HIGH_THRESHOLD = 0.90
+TABLE_LOW_THRESHOLD = 0.78
+FULL_IMAGE_MIN_WIDTH_RATIO = 0.85
+FULL_IMAGE_MIN_HEIGHT_RATIO = 0.85
+FULL_IMAGE_MIN_IOU = 0.80
+FULL_IMAGE_MAX_CENTER_OFFSET = 0.05
 MIN_ROW_COUNT = 2
 MIN_COL_COUNT = 2
 MIN_CELL_COUNT = 4
-MID_BAND_MIN_CELL_COUNT = 6
 
 _SURYA_MODELS: Optional[Tuple[Any, Any, Any, Any]] = None
 _CLASSIFY_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -285,6 +286,18 @@ def _merge_bboxes(bboxes: Sequence[List[float]]) -> Optional[List[float]]:
     return [min(xs1), min(ys1), max(xs2), max(ys2)]
 
 
+def _clip_bbox_to_bbox(bbox: Optional[List[float]], clip_bbox: Optional[List[float]]) -> Optional[List[float]]:
+    if bbox is None or clip_bbox is None:
+        return None
+    x1 = max(bbox[0], clip_bbox[0])
+    y1 = max(bbox[1], clip_bbox[1])
+    x2 = min(bbox[2], clip_bbox[2])
+    y2 = min(bbox[3], clip_bbox[3])
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
 def _intersection_area(a: Optional[List[float]], b: Optional[List[float]]) -> float:
     if a is None or b is None:
         return 0.0
@@ -418,7 +431,8 @@ def _summarize_table_predictions(
     for idx, pred_table in enumerate(raw_tables, start=1):
         if not isinstance(pred_table, dict):
             continue
-        bbox = _table_bbox_from_prediction(pred_table)
+        raw_bbox = _table_bbox_from_prediction(pred_table)
+        bbox = _clip_bbox_to_bbox(raw_bbox, visible_bbox)
         row_count = _count_valid_boxes(pred_table.get("rows"))
         col_count = _count_valid_boxes(pred_table.get("cols"))
         cell_count = _count_valid_boxes(pred_table.get("cells"))
@@ -438,6 +452,7 @@ def _summarize_table_predictions(
         table_summaries.append(
             {
                 "table_idx": idx,
+                "raw_bbox": raw_bbox,
                 "bbox": bbox,
                 "bbox_area": _bbox_area(bbox),
                 "bbox_area_ratio": _safe_ratio(_bbox_area(bbox), visible_area),
@@ -455,49 +470,47 @@ def _summarize_table_predictions(
     union_bbox_area_ratio = _safe_ratio(union_bbox_area, visible_area)
     bbox_iou = _bbox_iou(union_bbox, visible_bbox)
     center_offset = _normalized_center_offset(union_bbox, visible_bbox)
+    visible_width = max(1.0, visible_bbox[2] - visible_bbox[0])
+    visible_height = max(1.0, visible_bbox[3] - visible_bbox[1])
+    union_width = max(0.0, union_bbox[2] - union_bbox[0]) if union_bbox is not None else 0.0
+    union_height = max(0.0, union_bbox[3] - union_bbox[1]) if union_bbox is not None else 0.0
+    width_ratio = _safe_ratio(union_width, visible_width)
+    height_ratio = _safe_ratio(union_height, visible_height)
 
-    area_score = _normalize_score(area_ratio, 0.18)
-    bbox_area_score = _normalize_score(union_bbox_area_ratio, 0.22)
-    iou_score = _normalize_score(bbox_iou, 0.75)
-    center_score = 1.0 - _clamp(center_offset / 0.45)
-    row_score = _normalize_score(max_rows, 4.0)
+    width_score = _normalize_score(width_ratio, FULL_IMAGE_MIN_WIDTH_RATIO)
+    height_score = _normalize_score(height_ratio, FULL_IMAGE_MIN_HEIGHT_RATIO)
+    iou_score = _normalize_score(bbox_iou, FULL_IMAGE_MIN_IOU)
+    center_score = 1.0 - _clamp(center_offset / FULL_IMAGE_MAX_CENTER_OFFSET)
+    row_score = _normalize_score(max_rows, 3.0)
     col_score = _normalize_score(max_cols, 3.0)
-    cell_score = _normalize_score(max(total_cells, max_cells), 12.0)
+    cell_score = _normalize_score(max(total_cells, max_cells), 8.0)
     box_count = total_rows + total_cols + total_cells
-    box_count_score = _normalize_score(box_count, 18.0)
-    table_count_score = _normalize_score(len(table_summaries), 2.0)
+    box_count_score = _normalize_score(box_count, 12.0)
 
     geometry_score = _clamp(
-        (area_score * 0.34)
-        + (bbox_area_score * 0.16)
-        + (iou_score * 0.30)
-        + (center_score * 0.20)
+        (width_score * 0.30)
+        + (height_score * 0.30)
+        + (iou_score * 0.25)
+        + (center_score * 0.15)
     )
     structure_score = _clamp(
-        (row_score * 0.18)
-        + (col_score * 0.16)
-        + (cell_score * 0.38)
-        + (box_count_score * 0.18)
-        + (table_count_score * 0.10)
+        (row_score * 0.25)
+        + (col_score * 0.25)
+        + (cell_score * 0.35)
+        + (box_count_score * 0.15)
     )
-    final_score = _clamp((geometry_score * 0.55) + (structure_score * 0.45))
+    final_score = _clamp((geometry_score * 0.85) + (structure_score * 0.15))
 
     has_detection = bool(table_summaries and union_bbox is not None)
     has_min_structure = max_rows >= MIN_ROW_COUNT and max_cols >= MIN_COL_COUNT and total_cells >= MIN_CELL_COUNT
-    mid_band_structure_ok = (
-        structure_score >= MID_BAND_STRUCTURE_THRESHOLD
-        and max_rows >= MIN_ROW_COUNT
-        and max_cols >= MIN_COL_COUNT
-        and total_cells >= MID_BAND_MIN_CELL_COUNT
-    )
-    mid_band_geometry_ok = (
-        geometry_score >= MID_BAND_GEOMETRY_THRESHOLD
-        and center_offset <= 0.38
-        and (area_ratio >= 0.04 or union_bbox_area_ratio >= 0.06 or bbox_iou >= 0.16)
-    )
-    high_confidence_table = has_min_structure and final_score >= TABLE_HIGH_THRESHOLD
+    full_image_width_ok = width_ratio >= FULL_IMAGE_MIN_WIDTH_RATIO
+    full_image_height_ok = height_ratio >= FULL_IMAGE_MIN_HEIGHT_RATIO
+    full_image_iou_ok = bbox_iou >= FULL_IMAGE_MIN_IOU
+    full_image_center_ok = center_offset <= FULL_IMAGE_MAX_CENTER_OFFSET
+    full_image_match = full_image_width_ok and full_image_height_ok and full_image_iou_ok and full_image_center_ok
+    high_confidence_table = has_detection and has_min_structure and full_image_match and final_score >= TABLE_HIGH_THRESHOLD
     mid_band = TABLE_LOW_THRESHOLD <= final_score < TABLE_HIGH_THRESHOLD
-    mid_band_accept = mid_band and has_detection and mid_band_structure_ok and mid_band_geometry_ok
+    mid_band_accept = mid_band and has_detection and has_min_structure and full_image_match
     predicted_table = high_confidence_table or mid_band_accept
     predicted_class = "table" if predicted_table else "non-table"
     low_confidence = mid_band
@@ -520,6 +533,8 @@ def _summarize_table_predictions(
             "visible_image_area": visible_area,
             "table_union_area_ratio": area_ratio,
             "table_union_bbox_area_ratio": union_bbox_area_ratio,
+            "table_union_bbox_width_ratio": width_ratio,
+            "table_union_bbox_height_ratio": height_ratio,
             "table_union_bbox_iou": bbox_iou,
             "table_union_center_offset": center_offset,
         },
@@ -531,23 +546,25 @@ def _summarize_table_predictions(
         "score_breakdown": {
             "geometry_score": geometry_score,
             "structure_score": structure_score,
-            "area_score": area_score,
-            "bbox_area_score": bbox_area_score,
+            "width_score": width_score,
+            "height_score": height_score,
             "iou_score": iou_score,
             "center_score": center_score,
             "row_score": row_score,
             "col_score": col_score,
             "cell_score": cell_score,
             "box_count_score": box_count_score,
-            "table_count_score": table_count_score,
             "final_score": final_score,
         },
         "decision_flags": {
             "has_detection": has_detection,
             "has_min_structure": has_min_structure,
             "mid_band": mid_band,
-            "mid_band_structure_ok": mid_band_structure_ok,
-            "mid_band_geometry_ok": mid_band_geometry_ok,
+            "full_image_width_ok": full_image_width_ok,
+            "full_image_height_ok": full_image_height_ok,
+            "full_image_iou_ok": full_image_iou_ok,
+            "full_image_center_ok": full_image_center_ok,
+            "full_image_match": full_image_match,
             "mid_band_accept": mid_band_accept,
             "high_confidence_table": high_confidence_table,
         },
@@ -609,8 +626,10 @@ def classify_image(image_path: Path) -> Dict[str, Any]:
         "thresholds": {
             "table_high": TABLE_HIGH_THRESHOLD,
             "table_low": TABLE_LOW_THRESHOLD,
-            "mid_band_structure": MID_BAND_STRUCTURE_THRESHOLD,
-            "mid_band_geometry": MID_BAND_GEOMETRY_THRESHOLD,
+            "full_image_min_width_ratio": FULL_IMAGE_MIN_WIDTH_RATIO,
+            "full_image_min_height_ratio": FULL_IMAGE_MIN_HEIGHT_RATIO,
+            "full_image_min_iou": FULL_IMAGE_MIN_IOU,
+            "full_image_max_center_offset": FULL_IMAGE_MAX_CENTER_OFFSET,
         },
         **features,
     }
