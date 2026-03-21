@@ -5,11 +5,13 @@
 ## 현재 입력 정책
 
 1. 인자를 주면
+
 - `.pptx` 입력은 자동으로 `target_slides/<stem>/`으로 추출 후 처리
 - 패키지 선택자(`sample1`)는 `target_slides/sample1` 패키지를 처리
 - 여러 개 혼합 입력 가능
 
 2. 인자를 주지 않으면
+
 - `target_pptx/*.pptx` 전체를 자동 추출/처리
 
 ## 출력
@@ -35,7 +37,7 @@ python3 main_converter/convert_slides_to_md.py
 python3 main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
 ```
 
-## Reading Order 모드
+# Reading Order 모드
 
 XML 모드(기본):
 
