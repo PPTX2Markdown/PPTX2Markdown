@@ -24,7 +24,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +56,7 @@ _IMAGE_TABLE_DEBUG_JSON = os.getenv("IMAGE_TABLE_DEBUG_JSON", "").strip().lower(
 
 def run_structure_analysis_stage(
     repo_root: Path,
+    package_name: str,
     slide_xmls: Sequence[Path],
     strict: bool = False,
 ) -> Tuple[Dict[str, Path], Path]:
@@ -64,7 +64,11 @@ def run_structure_analysis_stage(
     if not ro_script.exists():
         raise FileNotFoundError(f"structure_analyzer script not found: {ro_script}")
 
-    ro_output = Path(tempfile.mkdtemp(prefix="struct_analysis_xml_", dir="/tmp"))
+    # Keep XML-stage artifacts as persistent package-scoped outputs for debugging/reuse.
+    ro_output = repo_root / "structure_analyzer" / "output" / package_name
+    if ro_output.exists():
+        shutil.rmtree(ro_output)
+    ro_output.mkdir(parents=True, exist_ok=True)
     cmd = [
         "python3",
         str(ro_script),
@@ -1954,6 +1958,7 @@ def main() -> int:
             try:
                 ro_map, ro_output = run_structure_analysis_stage(
                     repo_root=repo_root,
+                    package_name=pkg_name,
                     slide_xmls=slide_xmls,
                     strict=args.strict,
                 )

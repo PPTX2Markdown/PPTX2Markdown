@@ -966,6 +966,11 @@ def write_outputs(
     }
 
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Keep reordered XML human-readable for debugging and diffs.
+    try:
+        ET.indent(tree, space="  ")
+    except AttributeError:
+        pass
     tree.write(xml_path, encoding="utf-8", xml_declaration=True)
 
     return {
