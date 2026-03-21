@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Build reordered slide XML + structure-analysis sidecars from normalized Surya output.
+Build reordered slide XML from normalized Surya output.
+Reading-order matching is the only ranking objective.
 """
 
 from __future__ import annotations
@@ -8,7 +9,6 @@ from __future__ import annotations
 import argparse
 from difflib import SequenceMatcher
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -23,8 +23,7 @@ NS = {
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
-REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
-
+REL_NS = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
 REORDERABLE = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
 TITLE_TYPES = {"title", "ctrTitle", "subTitle"}
 
@@ -88,39 +87,6 @@ def extract_pptx_to_temp_root(pptx_path: Path) -> Tuple[Path, Path]:
     return temp_dir, extracted_root
 
 
-def copy_slide_relationship_bundle(slide_xml: Path, output_dir: Path) -> Optional[Path]:
-    rels_src = slide_xml.parent / "_rels" / f"{slide_xml.name}.rels"
-    if not rels_src.exists() or not rels_src.is_file():
-        return None
-
-    ppt_root = slide_xml.parent.parent
-    rels_dst_dir = output_dir / "_rels"
-    rels_dst_dir.mkdir(parents=True, exist_ok=True)
-    rels_dst = rels_dst_dir / f"{slide_xml.name}.rels"
-
-    tree = ET.parse(rels_src)
-    root = tree.getroot()
-    for rel in root.findall("rel:Relationship", REL_NS):
-        target = rel.attrib.get("Target")
-        target_mode = rel.attrib.get("TargetMode")
-        if not target or target_mode == "External":
-            continue
-        resolved = Path(os.path.normpath(str(slide_xml.parent / target)))
-        if not resolved.exists() or not resolved.is_file():
-            continue
-        try:
-            asset_rel = resolved.relative_to(ppt_root)
-        except ValueError:
-            asset_rel = Path(resolved.name)
-        copied_asset = output_dir / asset_rel
-        copied_asset.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(resolved, copied_asset)
-        rel.attrib["Target"] = asset_rel.as_posix()
-
-    tree.write(rels_dst, encoding="utf-8", xml_declaration=True)
-    return rels_dst
-
-
 def get_nvpr_paths(tag: str) -> Tuple[str, str]:
     if tag == "sp":
         return "./p:nvSpPr/p:cNvPr", "./p:nvSpPr/p:nvPr/p:ph"
@@ -175,6 +141,94 @@ def extract_bbox(elem: ET.Element) -> Optional[List[float]]:
     return [x, y, x + w, y + h]
 
 
+def _resolve_related_part(source_xml: Path, rel_target: str) -> Path:
+    return (source_xml.parent / rel_target).resolve()
+
+
+def _relationship_target(source_xml: Path, rel_type_suffix: str) -> Optional[Path]:
+    rels_path = source_xml.parent / "_rels" / f"{source_xml.name}.rels"
+    if not rels_path.exists():
+        return None
+    root = ET.parse(rels_path).getroot()
+    for rel in root.findall("r:Relationship", REL_NS):
+        rel_type = str(rel.attrib.get("Type", ""))
+        if not rel_type.endswith(rel_type_suffix):
+            continue
+        target = rel.attrib.get("Target")
+        if not target:
+            continue
+        return _resolve_related_part(source_xml, target)
+    return None
+
+
+def _ph_type_match(a: Optional[str], b: Optional[str]) -> bool:
+    if a == b:
+        return True
+    if a in TITLE_TYPES and b in TITLE_TYPES:
+        return True
+    return False
+
+
+def _find_placeholder_bbox_in_part(part_xml: Path, ph_type: Optional[str], ph_idx: Optional[str]) -> Optional[List[float]]:
+    if not part_xml.exists():
+        return None
+    root = ET.parse(part_xml).getroot()
+    sp_tree = root.find("p:cSld/p:spTree", NS)
+    if sp_tree is None:
+        return None
+
+    best_bbox: Optional[List[float]] = None
+    best_score = -1
+    for ch in list(sp_tree):
+        tag = local_name(ch.tag)
+        if tag not in REORDERABLE:
+            continue
+        _, ph_path = get_nvpr_paths(tag)
+        ph = ch.find(ph_path, NS)
+        if ph is None:
+            continue
+        cand_type = ph.attrib.get("type")
+        cand_idx = ph.attrib.get("idx")
+        bbox = extract_bbox(ch)
+        if bbox is None:
+            continue
+
+        if ph_idx is not None:
+            if cand_idx != ph_idx:
+                continue
+            score = 4
+        else:
+            score = 1 if cand_idx is None else 0
+
+        if ph_type is not None:
+            if not _ph_type_match(ph_type, cand_type):
+                continue
+            score += 2
+        else:
+            score += 1 if cand_type is None else 0
+
+        if score > best_score:
+            best_score = score
+            best_bbox = bbox
+    return best_bbox
+
+
+def find_inherited_placeholder_bbox(slide_xml: Path, ph_type: Optional[str], ph_idx: Optional[str]) -> Optional[List[float]]:
+    if ph_type is None and ph_idx is None:
+        return None
+    layout_xml = _relationship_target(slide_xml, "/slideLayout")
+    if layout_xml is not None:
+        bbox = _find_placeholder_bbox_in_part(layout_xml, ph_type, ph_idx)
+        if bbox is not None:
+            return bbox
+        master_xml = _relationship_target(layout_xml, "/slideMaster")
+        if master_xml is not None:
+            bbox = _find_placeholder_bbox_in_part(master_xml, ph_type, ph_idx)
+            if bbox is not None:
+                return bbox
+    return None
+
+
 def extract_shape_text(elem: ET.Element) -> str:
     parts: List[str] = []
     for t in elem.findall(".//a:t", NS):
@@ -215,6 +269,8 @@ def parse_slide_xml_objects(slide_xml: Path) -> List[Dict[str, Any]]:
         c_nv_pr = ch.find(c_nv_path, NS)
         ph = ch.find(ph_path, NS)
         bbox = extract_bbox(ch)
+        if bbox is None and ph is not None:
+            bbox = find_inherited_placeholder_bbox(slide_xml, ph.attrib.get("type"), ph.attrib.get("idx"))
         off = first_off(ch)
         x = parse_int(off.attrib.get("x")) if off is not None else parse_int(bbox[0] if bbox else None)
         y = parse_int(off.attrib.get("y")) if off is not None else parse_int(bbox[1] if bbox else None)
@@ -268,27 +324,6 @@ def choose_unique_shape_matches(reading_order: Sequence[Dict[str, Any]]) -> List
     return out
 
 
-def heading_fields_from_surya(row: Dict[str, Any]) -> Dict[str, Any]:
-    decision = row.get("heading_decision")
-    if not isinstance(decision, dict):
-        return {
-            "is_heading": False,
-            "is_heading_candidate": False,
-            "heading_score": 0.0,
-            "heading_depth_hint": None,
-            "reason": "Surya heading decision unavailable",
-        }
-    is_heading = bool(decision.get("is_heading", False))
-    level = parse_int(decision.get("level"), 0)
-    return {
-        "is_heading": is_heading,
-        "is_heading_candidate": is_heading,
-        "heading_score": float(decision.get("score", 0.0)),
-        "heading_depth_hint": (level if is_heading and level > 0 else None),
-        "reason": "Surya heading decision",
-    }
-
-
 def find_alias_anchor(
     obj: Dict[str, Any],
     structure_rows: Sequence[Dict[str, Any]],
@@ -308,8 +343,6 @@ def find_alias_anchor(
         if not row_text:
             continue
         score = text_similarity(obj_text, row_text)
-        if obj_is_title and bool(row.get("is_heading_candidate")):
-            score += 0.15
         if obj_text_len <= 8 and len(canonical_text(row_text)) <= 8:
             score += 0.10
         if parse_int(obj.get("y"), 10**18) != 10**18 and parse_int(row.get("y"), 10**18) != 10**18:
@@ -328,17 +361,11 @@ def find_alias_anchor(
     return best
 
 
-def bucket_for_object(obj: Dict[str, Any], heading_fields: Dict[str, Any]) -> int:
+def bucket_for_object(obj: Dict[str, Any]) -> int:
     if obj.get("is_footer"):
         return 4
     if obj.get("is_decorative"):
         return 5
-    depth = heading_fields.get("heading_depth_hint")
-    text = str(obj.get("text", ""))
-    if isinstance(depth, int) and depth > 1 and re.match(r"^\d+(?:[.)]|\.\d+)", text):
-        return 0
-    if heading_fields.get("is_heading_candidate"):
-        return 1
     return 2
 
 
@@ -359,7 +386,6 @@ def build_ordered_xml_indexes(
         if obj is None:
             continue
         matched_ids.append(shape_id)
-        heading_fields = heading_fields_from_surya(row)
         matched_rows.append(
             {
                 "shape_id": obj["shape_id"],
@@ -378,7 +404,7 @@ def build_ordered_xml_indexes(
                 "is_footer": bool(obj.get("is_footer")),
                 "is_decorative": bool(obj.get("is_decorative")),
                 "is_title_placeholder": bool(obj.get("is_title_placeholder")),
-                **heading_fields,
+                "reason": "Matched by normalized reading_order",
             }
         )
 
@@ -398,13 +424,6 @@ def build_ordered_xml_indexes(
         if alias_anchor is not None:
             matched_ids.append(shape_id)
             alias_count += 1
-            heading_fields = {
-                "is_heading": bool(alias_anchor.get("is_heading", False)),
-                "is_heading_candidate": bool(alias_anchor.get("is_heading_candidate", False)),
-                "heading_score": float(alias_anchor.get("heading_score", 0.0)),
-                "heading_depth_hint": alias_anchor.get("heading_depth_hint"),
-                "reason": "Alias match to Surya-ordered text block",
-            }
             alias_rows_by_anchor.setdefault(str(alias_anchor.get("shape_id", "")), []).append(
                 {
                     "shape_id": obj["shape_id"],
@@ -423,18 +442,11 @@ def build_ordered_xml_indexes(
                     "is_footer": bool(obj.get("is_footer")),
                     "is_decorative": bool(obj.get("is_decorative")),
                     "is_title_placeholder": bool(obj.get("is_title_placeholder")),
-                    **heading_fields,
+                    "reason": "Alias match to reading_order text block",
                 }
             )
             continue
         unmatched_count += 1
-        heading_fields = {
-            "is_heading": False,
-            "is_heading_candidate": False,
-            "heading_score": 0.0,
-            "heading_depth_hint": None,
-            "reason": "Unmatched XML object appended after Surya-ordered shapes",
-        }
         unmatched_rows.append(
             {
                 "shape_id": obj["shape_id"],
@@ -453,7 +465,7 @@ def build_ordered_xml_indexes(
                 "is_footer": bool(obj.get("is_footer")),
                 "is_decorative": bool(obj.get("is_decorative")),
                 "is_title_placeholder": bool(obj.get("is_title_placeholder")),
-                **heading_fields,
+                "reason": "Unmatched XML object appended after reading_order matches",
             }
         )
 
@@ -477,7 +489,7 @@ def build_ordered_xml_indexes(
     structure_rows.extend(unmatched_rows)
 
     for row in structure_rows:
-        row["bucket"] = bucket_for_object(row, row)
+        row["bucket"] = bucket_for_object(row)
 
     ordered_xml_indexes = [int(row["xml_index"]) for row in structure_rows]
     stats = {
@@ -519,74 +531,11 @@ def reorder_tree_by_indexes(tree: ET.ElementTree, ordered_xml_indexes: Sequence[
     sp_tree[:] = new_children
 
 
-def confidence_label(stats: Dict[str, int], total: int) -> str:
-    if total <= 0:
-        return "low"
-    ratio = stats["unmatched_shapes"] / total
-    if ratio >= 0.3:
-        return "low"
-    if ratio >= 0.1:
-        return "medium"
-    return "high"
-
-
-def build_structure_analysis_sidecar(
-    slide_xml: Path,
-    output_xml: Path,
-    xml_objects: Sequence[Dict[str, Any]],
-    structure_rows: Sequence[Dict[str, Any]],
-    ordered_xml_indexes: Sequence[int],
-    page_payload: Dict[str, Any],
-    stats: Dict[str, int],
-) -> Dict[str, Any]:
-    tables = page_payload.get("tables", [])
-    reading_order = page_payload.get("reading_order", [])
-    total = len(xml_objects)
-    headings = sum(1 for row in structure_rows if bool(row.get("is_heading_candidate")))
-    return {
-        "input_xml": str(slide_xml),
-        "output_xml": str(output_xml),
-        "mode": "surya",
-        "reading_order_source": "surya_pipeline/normalized",
-        "confidence": confidence_label(stats, total),
-        "counts": {
-            "total": total,
-            "text": sum(1 for obj in xml_objects if normalize_text(str(obj.get("text", "")))),
-            "graphicFrame": sum(1 for obj in xml_objects if obj.get("tag") == "graphicFrame"),
-            "pic": sum(1 for obj in xml_objects if obj.get("tag") == "pic"),
-            "footer": sum(1 for obj in xml_objects if obj.get("is_footer")),
-            "decorative": sum(1 for obj in xml_objects if obj.get("is_decorative")),
-            "surya_reading_blocks": len(reading_order) if isinstance(reading_order, list) else 0,
-            "matched_shapes": stats["matched_shapes"],
-            "unmatched_shapes": stats["unmatched_shapes"],
-            "alias_matches": stats.get("alias_matches", 0),
-            "duplicate_shape_matches": stats["duplicate_shape_matches"],
-            "headings": headings,
-            "tables": len(tables) if isinstance(tables, list) else 0,
-        },
-        "ordered_xml_indexes": list(ordered_xml_indexes),
-        "structure_order": list(structure_rows),
-        "raw_xml_order": [
-            {
-                "shape_id": obj["shape_id"],
-                "xml_index": obj["xml_index"],
-                "tag": obj["tag"],
-                "name": obj["name"],
-                "ph_type": obj["ph_type"],
-                "ph_idx": obj["ph_idx"],
-                "x": obj["x"],
-                "y": obj["y"],
-                "text": obj["text"],
-                "bbox": obj["bbox"],
-            }
-            for obj in xml_objects
-        ],
-        "surya_page": {
-            "page": page_payload.get("page"),
-            "image_bbox": page_payload.get("image_bbox"),
-        },
-        "tables": tables if isinstance(tables, list) else [],
-    }
+def write_xml_pretty(tree: ET.ElementTree, output_xml: Path) -> None:
+    # Keep reordered XML human-readable for debugging and diff reviews.
+    if hasattr(ET, "indent"):
+        ET.indent(tree, space="  ")
+    tree.write(output_xml, encoding="utf-8", xml_declaration=True)
 
 
 def write_structure_ready_outputs(
@@ -599,50 +548,39 @@ def write_structure_ready_outputs(
     reading_order = page_payload.get("reading_order", [])
     if not isinstance(reading_order, list):
         reading_order = []
-    ordered_xml_indexes, structure_rows, stats = build_ordered_xml_indexes(xml_objects, reading_order)
+    ordered_xml_indexes, _, stats = build_ordered_xml_indexes(xml_objects, reading_order)
 
     tree = ET.parse(slide_xml)
     reorder_tree_by_indexes(tree, ordered_xml_indexes)
 
     stem = slide_xml.stem
     output_xml = output_dir / f"{stem}.reordered.xml"
-    output_json = output_dir / f"{stem}.structure_analysis.json"
-    sidecar = build_structure_analysis_sidecar(
-        slide_xml=slide_xml,
-        output_xml=output_xml,
-        xml_objects=xml_objects,
-        structure_rows=structure_rows,
-        ordered_xml_indexes=ordered_xml_indexes,
-        page_payload=page_payload,
-        stats=stats,
-    )
-    tree.write(output_xml, encoding="utf-8", xml_declaration=True)
-    rels_dst = copy_slide_relationship_bundle(slide_xml, output_dir)
-    if rels_dst is not None:
-        sidecar["output_rels"] = str(rels_dst)
-    output_json.write_text(json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_xml_pretty(tree, output_xml)
     return {
         "page": page_payload.get("page"),
         "input_xml": str(slide_xml),
         "output_xml": str(output_xml),
-        "output_json": str(output_json),
-        "output_rels": str(rels_dst) if rels_dst is not None else None,
         "matched_shapes": stats["matched_shapes"],
         "unmatched_shapes": stats["unmatched_shapes"],
-        "confidence": sidecar["confidence"],
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build reordered XML + sidecars from normalized Surya output.")
+    parser = argparse.ArgumentParser(description="Build reordered XML from normalized Surya output.")
     parser.add_argument("--normalized-json", required=True, help="Path to normalized Surya output JSON.")
     parser.add_argument("--ppt-root", default=None, help="Extracted PPT root directory containing ppt/slides.")
     parser.add_argument("--pptx-path", default=None, help="Optional source PPTX path. Used if --ppt-root is absent.")
-    parser.add_argument("--output-dir", required=True, help="Output directory for reordered XML and sidecars.")
+    parser.add_argument("--output-dir", required=True, help="Output directory for reordered XML files.")
     args = parser.parse_args()
 
     normalized_json = Path(args.normalized_json).resolve()
     output_dir = Path(args.output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Clean up legacy analysis artifacts from earlier pipeline versions.
+    for stale in output_dir.glob("*.structure_analysis.json"):
+        stale.unlink(missing_ok=True)
+    (output_dir / "structure_analysis_manifest.json").unlink(missing_ok=True)
+
     temp_ppt_dir: Optional[Path] = None
     if args.ppt_root:
         ppt_root = Path(args.ppt_root).resolve()
@@ -652,16 +590,8 @@ def main() -> int:
         raise ValueError("either --ppt-root or --pptx-path is required")
 
     pages = load_normalized_pages(normalized_json)
-    manifest: Dict[str, Any] = {
-        "mode": "surya",
-        "source": {
-            "normalized_json": str(normalized_json),
-            "ppt_root": str(ppt_root),
-            "pptx_path": str(Path(args.pptx_path).resolve()) if args.pptx_path else None,
-        },
-        "processed": [],
-        "failed": [],
-    }
+    processed: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
 
     ET.register_namespace("a", NS["a"])
     ET.register_namespace("p", NS["p"])
@@ -670,23 +600,20 @@ def main() -> int:
     for page_no in sorted(pages.keys()):
         slide_xml = ppt_root / "ppt" / "slides" / f"slide{page_no}.xml"
         if not slide_xml.exists():
-            manifest["failed"].append({"page": page_no, "error": f"slide xml not found: {slide_xml}"})
+            failed.append({"page": page_no, "error": f"slide xml not found: {slide_xml}"})
             continue
         try:
             row = write_structure_ready_outputs(slide_xml, pages[page_no], output_dir)
-            manifest["processed"].append(row)
+            processed.append(row)
             print(f"Processed: slide{page_no}.xml")
         except Exception as exc:  # noqa: BLE001
-            manifest["failed"].append({"page": page_no, "input_xml": str(slide_xml), "error": str(exc)})
+            failed.append({"page": page_no, "input_xml": str(slide_xml), "error": str(exc)})
             print(f"Failed: slide{page_no}.xml -> {exc}")
-
-    manifest_path = output_dir / "structure_analysis_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Wrote manifest: {manifest_path}")
+    print(f"Completed: processed={len(processed)} failed={len(failed)}")
 
     if temp_ppt_dir is not None and temp_ppt_dir.exists():
         shutil.rmtree(temp_ppt_dir, ignore_errors=True)
-    return 1 if manifest["failed"] else 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
