@@ -3,16 +3,12 @@
 Convert extracted PPTX package(s) to markdown.
 
 Usage:
-  python convert_slides_to_md.py [ppt_root_dir|file.pptx ...]
-  python convert_slides_to_md.py --raw
-  python convert_slides_to_md.py --raw [sample1|sample1.pptx|raw_pptx/sample1.pptx ...]
+  python convert_slides_to_md.py [package_name|file.pptx ...]
 
 Rules:
-  - If no positional args are provided, process all package roots in ./target_pptx.
-  - Package root example: ./target_pptx/sample1
-  - If a .pptx file is provided, it is extracted automatically into ./target_pptx/<stem>/.
-  - If --raw is provided, process all .pptx files in ./raw_pptx.
-    If positional args are also provided, only those raw .pptx files are processed.
+  - If no positional args are provided, process all package roots in ./target_slides.
+  - Package root example: ./target_slides/sample1
+  - If a .pptx file is provided, it is extracted into ./target_slides/<stem>/ first.
   - Each package must contain: ./ppt/slides
   - Output is always written to ./output (created automatically).
   - Input slide XML order is assumed to be the final reading order.
@@ -129,7 +125,20 @@ def ensure_imports(repo_root: Path) -> None:
 
 
 def default_target_dirs(cwd: Path) -> List[Path]:
-    # Prefer local main_converter/target_pptx. Create it when absent.
+    # Prefer local main_converter/target_slides. Create it when absent.
+    local_target = cwd / "target_slides"
+    if local_target.exists() and not local_target.is_dir():
+        raise NotADirectoryError(f"target_slides path exists but is not a directory: {local_target}")
+    local_target.mkdir(parents=True, exist_ok=True)
+
+    out: List[Path] = [local_target]
+    parent_target = cwd.parent / "target_slides"
+    if parent_target.exists() and parent_target.is_dir() and parent_target != local_target:
+        out.append(parent_target)
+    return out
+
+
+def default_pptx_input_dirs(cwd: Path) -> List[Path]:
     local_target = cwd / "target_pptx"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
@@ -204,11 +213,14 @@ def preferred_target_dir(cwd: Path) -> Path:
     cands = default_target_dirs(cwd)
     if cands:
         return cands[0]
+    return cwd / "target_slides"
+
+
+def preferred_pptx_input_dir(cwd: Path) -> Path:
+    cands = default_pptx_input_dirs(cwd)
+    if cands:
+        return cands[0]
     return cwd / "target_pptx"
-
-
-def raw_pptx_dir(cwd: Path) -> Path:
-    return cwd / "raw_pptx"
 
 
 def package_marker_path(pkg_dir: Path) -> Path:
@@ -251,6 +263,7 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 def extract_pptx_to_target(
     pptx_path: Path,
     extraction_root: Path,
+    staged_pptx_root: Path,
     allow_replace_unmanaged: bool = False,
 ) -> Path:
     stat = pptx_path.stat()
@@ -281,6 +294,10 @@ def extract_pptx_to_target(
                 raise
 
     if package_marker_matches(pkg_dir, pptx_path):
+        staged_pptx_root.mkdir(parents=True, exist_ok=True)
+        staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
+        if staged_pptx.resolve() != pptx_path.resolve():
+            shutil.copy2(pptx_path, staged_pptx)
         return pkg_dir.resolve()
 
     marker = package_marker_path(pkg_dir)
@@ -314,6 +331,12 @@ def extract_pptx_to_target(
         ),
         encoding="utf-8",
     )
+
+    staged_pptx_root.mkdir(parents=True, exist_ok=True)
+    staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
+    if staged_pptx.resolve() != pptx_path.resolve():
+        shutil.copy2(pptx_path, staged_pptx)
+
     return pkg_dir.resolve()
 
 
@@ -332,7 +355,11 @@ def prepare_package_inputs(
 
     prepared: List[str] = []
     extraction_root = preferred_target_dir(cwd)
+    staged_pptx_root = preferred_pptx_input_dir(cwd)
     search_roots = [cwd]
+    for root in default_pptx_input_dirs(cwd):
+        if root not in search_roots:
+            search_roots.append(root)
     for root in default_target_dirs(cwd):
         if root not in search_roots:
             search_roots.append(root)
@@ -349,67 +376,34 @@ def prepare_package_inputs(
                     continue
                 picked_file = cand.resolve()
                 break
+            # raw-like convenience: allow "sample1" -> "<root>/sample1.pptx"
+            if cand.suffix.lower() != ".pptx":
+                cand_pptx = cand.with_suffix(".pptx")
+                if cand_pptx.exists() and cand_pptx.is_file() and not is_ignored_pptx_file(cand_pptx):
+                    picked_file = cand_pptx.resolve()
+                    break
         if picked_file is None:
             prepared.append(item)
             continue
         pkg_dir = extract_pptx_to_target(
             picked_file,
             extraction_root,
+            staged_pptx_root=staged_pptx_root,
             allow_replace_unmanaged=force_extract,
         )
         prepared.append(str(pkg_dir))
     return prepared
 
 
-def collect_raw_pptx_inputs(cwd: Path) -> List[str]:
-    raw_dir = raw_pptx_dir(cwd)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    files = sorted(
-        [
-            path.resolve()
-            for path in raw_dir.glob("*.pptx")
-            if path.is_file() and not is_ignored_pptx_file(path)
-        ],
-        key=lambda path: natural_key(path.name),
-    )
-    return [str(path) for path in files]
-
-
-def resolve_selected_raw_inputs(cwd: Path, selections: Sequence[str]) -> List[str]:
-    raw_dir = raw_pptx_dir(cwd)
-    resolved: List[str] = []
-    missing: List[str] = []
-
-    for item in selections:
-        token = item.strip()
-        if not token:
-            continue
-        as_path = Path(token)
-        candidates: List[Path] = [as_path, cwd / as_path, raw_dir / as_path]
-        if as_path.suffix.lower() != ".pptx":
-            candidates.append(raw_dir / f"{token}.pptx")
-
-        picked: Optional[Path] = None
-        for cand in candidates:
-            if not cand.exists() or not cand.is_file():
-                continue
-            if cand.suffix.lower() != ".pptx" or is_ignored_pptx_file(cand):
-                continue
-            picked = cand.resolve()
-            break
-
-        if picked is None:
-            missing.append(item)
-            continue
-        resolved.append(str(picked))
-
-    if missing:
-        msg = ", ".join(missing)
-        raise FileNotFoundError(
-            "Raw selection did not match any .pptx file in ./raw_pptx (or provided path): "
-            f"{msg}"
-        )
-    return resolved
+def collect_target_pptx_inputs(cwd: Path) -> List[str]:
+    files: List[Path] = []
+    for root in default_pptx_input_dirs(cwd):
+        for path in root.glob("*.pptx"):
+            if path.is_file() and not is_ignored_pptx_file(path):
+                files.append(path.resolve())
+    files = sorted(files, key=lambda p: natural_key(p.name))
+    uniq: Dict[str, Path] = {str(p): p for p in files}
+    return [str(p) for p in uniq.values()]
 
 
 def parse_slide_number(filename: str, default_idx: int) -> int:
@@ -582,7 +576,7 @@ def resolve_image_path(
         pkg_name = None
     if pkg_name:
         target_name = Path(target).name
-        remapped = (repo_root / "main_converter" / "target_pptx" / pkg_name / "ppt" / "media" / target_name)
+        remapped = (repo_root / "main_converter" / "target_slides" / pkg_name / "ppt" / "media" / target_name)
         if remapped.exists():
             abs_path = remapped.absolute()
     return str(abs_path), None
@@ -1682,38 +1676,65 @@ def convert_one_slide(
 
 
 def resolve_surya_structure_dir(surya_root: Path, package_name: str) -> Path:
+    def has_reordered_xmls(root: Path) -> bool:
+        return root.exists() and root.is_dir() and any(root.glob("slide*.reordered.xml"))
+
     manifest_here = surya_root / "structure_analysis_manifest.json"
     if manifest_here.exists():
         return surya_root
+
+    if has_reordered_xmls(surya_root):
+        return surya_root
+
     candidate = surya_root / package_name
+    if has_reordered_xmls(candidate):
+        return candidate
+
     manifest_there = candidate / "structure_analysis_manifest.json"
     if manifest_there.exists():
         return candidate
+
     raise FileNotFoundError(
         f"surya structure-ready output not found for package '{package_name}' under {surya_root}"
     )
 
 
 def run_surya_pipeline_stage(
-    repo_root: Path,
     surya_root: Path,
     force: bool = False,
+    targets: Optional[Sequence[str]] = None,
+    target_pptx_dir: Optional[Path] = None,
+    target_slides_dir: Optional[Path] = None,
 ) -> Path:
-    run_script = repo_root / "surya_pipeline" / "run_surya_pipeline.py"
+    def choose_python_for_surya() -> str:
+        # Prefer project venv when available so `surya` import resolves reliably.
+        repo_root = Path(__file__).resolve().parent.parent
+        venv_py = repo_root / ".venv" / "bin" / "python"
+        if venv_py.exists() and venv_py.is_file():
+            return str(venv_py)
+        return sys.executable
+
+    run_script = surya_root / "run_surya_pipeline.py"
     if not run_script.exists():
         raise FileNotFoundError(f"surya pipeline script not found: {run_script}")
 
+    py_exe = choose_python_for_surya()
     cmd = [
-        sys.executable,
+        py_exe,
         str(run_script),
-        "--surya-dir",
-        str(surya_root),
     ]
+    if target_pptx_dir is not None:
+        cmd.extend(["--target-pptx-dir", str(target_pptx_dir)])
+    if target_slides_dir is not None:
+        cmd.extend(["--target-slides-dir", str(target_slides_dir)])
+        cmd.append("--prefer-existing-target-slides")
     if force:
         cmd.append("--force")
+    if targets:
+        cmd.extend(str(t) for t in targets if str(t).strip())
 
     print(f"[surya] Running pipeline: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, text=True, cwd=str(repo_root))
+    proc = subprocess.run(cmd, text=True, cwd=str(surya_root))
     if proc.returncode != 0:
         raise RuntimeError(
             "surya pipeline failed\n"
@@ -1726,11 +1747,14 @@ def run_surya_pipeline_stage(
 
 
 def prepare_surya_structure_root(
-    repo_root: Path,
     raw_surya_dir: Optional[Path],
     force: bool = False,
     use_existing_output: bool = False,
+    targets: Optional[Sequence[str]] = None,
+    target_pptx_dir: Optional[Path] = None,
+    target_slides_dir: Optional[Path] = None,
 ) -> Path:
+    repo_root = Path(__file__).resolve().parent.parent
     if raw_surya_dir is None:
         candidate = repo_root / "surya_pipeline"
     else:
@@ -1749,7 +1773,13 @@ def prepare_surya_structure_root(
 
     # Surya pipeline root passed in or inferred.
     if (candidate / "run_surya_pipeline.py").exists():
-        return run_surya_pipeline_stage(repo_root=repo_root, surya_root=candidate, force=force)
+        return run_surya_pipeline_stage(
+            surya_root=candidate,
+            force=force,
+            targets=targets,
+            target_pptx_dir=target_pptx_dir,
+            target_slides_dir=target_slides_dir,
+        )
 
     if use_existing_output:
         structure_root = candidate / "output" / "structure_ready"
@@ -1771,16 +1801,8 @@ def main() -> int:
         "inputs",
         nargs="*",
         help=(
-            "Package root dir(s) or .pptx file(s). "
-            "If --raw is used, these are treated as raw selections."
-        ),
-    )
-    parser.add_argument(
-        "--raw",
-        action="store_true",
-        help=(
-            "Process .pptx files in ./raw_pptx by extracting into ./target_pptx first. "
-            "With positional args, process only selected raw files."
+            "Optional .pptx selections (e.g., sample3.pptx sample4.pptx). "
+            "If omitted, all .pptx files under ./target_pptx are extracted/processed."
         ),
     )
     parser.add_argument(
@@ -1839,27 +1861,21 @@ def main() -> int:
     debug_output_dir = repo_root / "main_converter" / "output" / args.reading_order
     debug_output_dir.mkdir(parents=True, exist_ok=True)
     ensure_imports(repo_root)
-    if args.raw:
-        raw_inputs = (
-            resolve_selected_raw_inputs(cwd, args.inputs) if args.inputs else collect_raw_pptx_inputs(cwd)
-        )
-        if not raw_inputs:
-            print(f"No .pptx files found in: {raw_pptx_dir(cwd).resolve()}")
-            return 0
-        prepared_inputs = prepare_package_inputs(cwd, raw_inputs, force_extract=True)
+    if args.inputs:
+        non_pptx_inputs = [x for x in args.inputs if Path(x).suffix.lower() != ".pptx"]
+        if non_pptx_inputs:
+            print("Only .pptx inputs are allowed.")
+            print("Provide files like: sample1.pptx sample2.pptx")
+            for item in non_pptx_inputs:
+                print(f"- {item}")
+            return 1
+        prepared_inputs = prepare_package_inputs(cwd, args.inputs, force_extract=True)
     else:
-        prepared_inputs = prepare_package_inputs(cwd, args.inputs)
-    surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
-    surya_structure_root: Optional[Path] = None
-    if args.reading_order == "surya":
-        if args.strict:
-            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
-        surya_structure_root = prepare_surya_structure_root(
-            repo_root=repo_root,
-            raw_surya_dir=surya_dir,
-            force=(not args.reuse_surya_cache) or args.force_surya_pipeline,
-            use_existing_output=args.use_existing_surya_output,
-        )
+        auto_pptx_inputs = collect_target_pptx_inputs(cwd)
+        if not auto_pptx_inputs:
+            print(f"No .pptx files found in: {preferred_pptx_input_dir(cwd).resolve()}")
+            return 0
+        prepared_inputs = prepare_package_inputs(cwd, auto_pptx_inputs, force_extract=True)
 
     target_dirs = default_target_dirs(cwd)
     packages = pick_packages(target_dirs, prepared_inputs)
@@ -1870,8 +1886,24 @@ def main() -> int:
             for d in target_dirs:
                 print(f"- {d.resolve()}")
         else:
-            print("Checked default directories: none found (expected ./target_pptx).")
+            print("Checked default directories: none found (expected ./target_slides).")
         return 0
+
+    surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
+    surya_structure_root: Optional[Path] = None
+    if args.reading_order == "surya":
+        if args.strict:
+            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
+        shared_target_slides_dir = preferred_target_dir(cwd).resolve()
+        shared_target_pptx_dir = preferred_pptx_input_dir(cwd).resolve()
+        surya_structure_root = prepare_surya_structure_root(
+            raw_surya_dir=surya_dir,
+            force=(not args.reuse_surya_cache) or args.force_surya_pipeline,
+            use_existing_output=args.use_existing_surya_output,
+            targets=[pkg.name for pkg in packages],
+            target_pptx_dir=shared_target_pptx_dir,
+            target_slides_dir=shared_target_slides_dir,
+        )
 
     manifest = {
         "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
