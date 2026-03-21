@@ -1241,20 +1241,17 @@ def convert_table_to_markdown(
     import parse_table  # type: ignore
     import tableMaker  # type: ignore
 
-    with tempfile.NamedTemporaryFile("wb", suffix=".xml", delete=True) as tmp:
-        tmp.write(ET.tostring(tbl, encoding="utf-8"))
-        tmp.flush()
-        parsed = parse_table.parse_table_xml(Path(tmp.name))
-        parsed = inject_table_overlay_links(
-            parsed,
-            graphic_frame,
-            overlays or [],
-            output_dir,
-            media_dir=media_dir,
-            copied_media=copied_media,
-        )
-        dense = tableMaker._dense_grid_from_parsed_table(parsed, fill_merged=tableMaker.FILL_BOTH)
-        md = tableMaker._render_markdown_flat(dense=dense, header_rows=1, use_header_rows=True)
+    parsed = parse_table.parse_table_element(tbl, source="<slide_table>")
+    parsed = inject_table_overlay_links(
+        parsed,
+        graphic_frame,
+        overlays or [],
+        output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+    )
+    dense = tableMaker._dense_grid_from_parsed_table(parsed, fill_merged=tableMaker.FILL_BOTH)
+    md = tableMaker._render_markdown_flat(dense=dense, header_rows=1, use_header_rows=True)
     return md, None
 
 

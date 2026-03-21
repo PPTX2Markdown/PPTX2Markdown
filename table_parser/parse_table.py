@@ -59,9 +59,7 @@ def _find_table(root: ET.Element) -> ET.Element | None:
     return root.find(".//a:tbl", NS)
 
 
-def parse_table_xml(input_path: Path) -> dict[str, object]:
-    tree = ET.parse(input_path)
-    root = tree.getroot()
+def parse_table_root(root: ET.Element, source: str = "<in-memory>") -> dict[str, object]:
     table = _find_table(root)
     if table is None:
         raise ValueError("No <a:tbl> found in input XML.")
@@ -168,13 +166,23 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
         rows_out.append(row_cells)
 
     return {
-        "source": str(input_path),
+        "source": source,
         "n_rows": n_rows,
         "n_cols": n_cols,
         "column_widths": col_widths,
         "rows": rows_out,
         "origin_cells": origin_cells,
     }
+
+
+def parse_table_element(table_elem: ET.Element, source: str = "<in-memory>") -> dict[str, object]:
+    return parse_table_root(table_elem, source=source)
+
+
+def parse_table_xml(input_path: Path) -> dict[str, object]:
+    tree = ET.parse(input_path)
+    root = tree.getroot()
+    return parse_table_root(root, source=str(input_path))
 
 
 def _collect_default_inputs(base_dir: Path) -> list[Path]:
