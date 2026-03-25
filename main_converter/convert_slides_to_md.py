@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from heading_rules import (
     HeadingPolicy,
     clean_heading_text_for_render as hr_clean_heading_text_for_render,
@@ -116,43 +118,31 @@ def run_structure_analysis_stage(
 
 
 def ensure_imports(repo_root: Path) -> None:
-    # Support both new and legacy repository layouts.
+    # Ensure project root is importable for local packages.
     candidates = [
         repo_root,
-        repo_root / "table_parser",
-        repo_root / "pptx_table_parser" / "table_parser",
-        repo_root / "pptx_table_parser",
     ]
     for cand in candidates:
         if cand.exists() and cand.is_dir() and str(cand) not in sys.path:
             sys.path.insert(0, str(cand))
 
 
-def default_target_dirs(cwd: Path) -> List[Path]:
-    # Prefer local main_converter/target_slides. Create it when absent.
-    local_target = cwd / "target_slides"
+def default_target_dirs(base_dir: Path) -> List[Path]:
+    # Always anchor under main_converter/.
+    local_target = base_dir / "target_slides"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_slides path exists but is not a directory: {local_target}")
     local_target.mkdir(parents=True, exist_ok=True)
-
-    out: List[Path] = [local_target]
-    parent_target = cwd.parent / "target_slides"
-    if parent_target.exists() and parent_target.is_dir() and parent_target != local_target:
-        out.append(parent_target)
-    return out
+    return [local_target]
 
 
-def default_pptx_input_dirs(cwd: Path) -> List[Path]:
-    local_target = cwd / "target_pptx"
+def default_pptx_input_dirs(base_dir: Path) -> List[Path]:
+    # Always anchor under main_converter/.
+    local_target = base_dir / "target_pptx"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
     local_target.mkdir(parents=True, exist_ok=True)
-
-    out: List[Path] = [local_target]
-    parent_target = cwd.parent / "target_pptx"
-    if parent_target.exists() and parent_target.is_dir() and parent_target != local_target:
-        out.append(parent_target)
-    return out
+    return [local_target]
 
 
 def natural_key(name: str) -> Tuple:
@@ -213,18 +203,18 @@ def sanitize_package_name(name: str) -> str:
     return cleaned or "package"
 
 
-def preferred_target_dir(cwd: Path) -> Path:
-    cands = default_target_dirs(cwd)
+def preferred_target_dir(base_dir: Path) -> Path:
+    cands = default_target_dirs(base_dir)
     if cands:
         return cands[0]
-    return cwd / "target_slides"
+    return base_dir / "target_slides"
 
 
-def preferred_pptx_input_dir(cwd: Path) -> Path:
-    cands = default_pptx_input_dirs(cwd)
+def preferred_pptx_input_dir(base_dir: Path) -> Path:
+    cands = default_pptx_input_dirs(base_dir)
     if cands:
         return cands[0]
-    return cwd / "target_pptx"
+    return base_dir / "target_pptx"
 
 
 def package_marker_path(pkg_dir: Path) -> Path:
@@ -555,7 +545,6 @@ def choose_rels_in_package(
 
 
 def resolve_image_path(
-    slide_xml: Path,
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
     r_embed: Optional[str],
@@ -593,6 +582,11 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return os.path.relpath(path, start=str(output_dir))
     except Exception:
         return path
+
+
+def _rewrite_markdown_for_per_slide(md_text: str) -> str:
+    # Per-slide markdown lives in <package>/per_slide, so media links move one level up.
+    return re.sub(r"\]\((media/)", r"](../\1", md_text)
 
 
 def copy_media_asset(
@@ -814,10 +808,6 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
     return "\n".join(rendered).strip()
 
 
-def extract_shape_text(shape_elem: ET.Element) -> str:
-    return render_shape_blocks(extract_shape_blocks(shape_elem))
-
-
 def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     graphic_data = graphic_frame.find("./a:graphic/a:graphicData", NS)
     if graphic_data is None:
@@ -939,12 +929,6 @@ def split_triangle_bullets(text: str) -> List[str]:
     return rendered_lines
 
 
-def infer_heading_depth_fallback_strict(text: str, text_block_index: int) -> Optional[int]:
-    # Strict mode keeps fallback conservative; rely on structure_analyzer hints first.
-    # TODO: Add stricter lexical and position-aware fallback heuristics for xml-only mode.
-    return None
-
-
 def shape_id_of(elem: ET.Element) -> str:
     c_nv_pr = elem.find(".//p:cNvPr", NS)
     if c_nv_pr is None:
@@ -1060,7 +1044,7 @@ def collect_table_overlay_pictures(
                 continue
             blip = child.find(".//a:blip", NS)
             embed = blip.attrib.get(f"{{{NS['r']}}}embed") if blip is not None else None
-            path, warn = resolve_image_path(slide_xml, rels_map, rels_path, embed)
+            path, warn = resolve_image_path(rels_map, rels_path, embed)
             picture_infos.append(
                 {
                     "shape_id": sid,
@@ -1223,10 +1207,6 @@ def inject_table_overlay_links(
     return parsed_table
 
 
-def table_overlay_picture_ids(sp_tree: ET.Element) -> set:
-    return set()
-
-
 def convert_table_to_markdown(
     graphic_frame: ET.Element,
     overlays: Optional[Sequence[Dict[str, object]]] = None,
@@ -1238,10 +1218,10 @@ def convert_table_to_markdown(
     if tbl is None:
         return None, "graphicFrame without a:tbl"
 
-    import parse_table  # type: ignore
-    import tableMaker  # type: ignore
+    from table_pipeline import parse as table_parse  # type: ignore
+    from table_pipeline import render as table_render  # type: ignore
 
-    parsed = parse_table.parse_table_element(tbl, source="<slide_table>")
+    parsed = table_parse.parse_table_element(tbl, source="<slide_table>")
     parsed = inject_table_overlay_links(
         parsed,
         graphic_frame,
@@ -1250,8 +1230,11 @@ def convert_table_to_markdown(
         media_dir=media_dir,
         copied_media=copied_media,
     )
-    dense = tableMaker._dense_grid_from_parsed_table(parsed, fill_merged=tableMaker.FILL_BOTH)
-    md = tableMaker._render_markdown_flat(dense=dense, header_rows=1, use_header_rows=True)
+    md = table_render.render_parsed_table_to_markdown(
+        parsed_table=parsed,
+        header_rows=1,
+        fill_merged=table_render.FILL_BOTH,
+    )
     return md, None
 
 
@@ -1589,7 +1572,7 @@ def convert_one_slide(
                 continue
             blip = child.find(".//a:blip", NS)
             embed = blip.attrib.get(f"{{{NS['r']}}}embed") if blip is not None else None
-            img_path, warn = resolve_image_path(slide_xml, rels_map, rels_path, embed)
+            img_path, warn = resolve_image_path(rels_map, rels_path, embed)
             if warn:
                 stats["unresolved_images"] += 1
                 stats["warnings"].append(warn)
@@ -1748,25 +1731,17 @@ def run_surya_pipeline_stage(
 
 
 def prepare_surya_structure_root(
-    raw_surya_dir: Optional[Path],
     force: bool = False,
-    use_existing_output: bool = False,
+    reuse_existing_output: bool = False,
     targets: Optional[Sequence[str]] = None,
     target_pptx_dir: Optional[Path] = None,
     target_slides_dir: Optional[Path] = None,
 ) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
-    if raw_surya_dir is None:
-        candidate = repo_root / "surya_pipeline"
-    else:
-        candidate = raw_surya_dir
+    candidate = repo_root / "surya_pipeline"
 
-    if use_existing_output:
-        # Structure-ready dir passed directly.
+    if reuse_existing_output:
         if (candidate / "structure_analysis_manifest.json").exists():
-            return candidate
-        # Package subdirs under structure_ready root.
-        if candidate.name == "structure_ready" and candidate.exists() and candidate.is_dir():
             return candidate
         structure_root = candidate / "output" / "structure_ready"
         if structure_root.exists() and structure_root.is_dir():
@@ -1782,19 +1757,32 @@ def prepare_surya_structure_root(
             target_slides_dir=target_slides_dir,
         )
 
-    if use_existing_output:
+    if reuse_existing_output:
         structure_root = candidate / "output" / "structure_ready"
         if structure_root.exists() and structure_root.is_dir():
             return structure_root
 
     raise FileNotFoundError(
-        "valid surya input not found. Pass surya_pipeline root, or use --use-existing-surya-output "
-        "with output/structure_ready: "
-        f"{candidate}"
+        f"valid surya input not found under fixed surya_pipeline path: {candidate}"
     )
 
 
-def main() -> int:
+class ConverterConfig(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    cwd: Path
+    repo_root: Path
+    output_dir: Path
+    debug_output_dir: Path
+    inputs: List[str] = Field(default_factory=list)
+    per_slide: bool = False
+    reading_order: str = "xml"
+    strict: bool = False
+    reuse_surya_cache: bool = False
+    image_table_pipeline: bool = False
+
+
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert extracted PPTX package(s) to markdown."
     )
@@ -1803,13 +1791,13 @@ def main() -> int:
         nargs="*",
         help=(
             "Optional .pptx selections (e.g., sample3.pptx sample4.pptx). "
-            "If omitted, all .pptx files under ./target_pptx are extracted/processed."
+            "If omitted, all .pptx files under main_converter/target_pptx are extracted/processed."
         ),
     )
     parser.add_argument(
         "--per-slide",
         action="store_true",
-        help="Also write per-slide markdown files under ./output/.../<package>/per_slide.",
+        help="Also write per-slide markdown files under main_converter/output/.../<package>/per_slide.",
     )
     parser.add_argument(
         "--reading-order",
@@ -1823,62 +1811,55 @@ def main() -> int:
         help="Use strict heading detection in xml reading-order mode only.",
     )
     parser.add_argument(
-        "--surya-dir",
-        default=None,
-        help="Path to surya_pipeline root. If omitted, defaults to ../surya_pipeline.",
-    )
-    parser.add_argument(
-        "--force-surya-pipeline",
-        action="store_true",
-        help="Deprecated alias. Surya mode now re-runs the pipeline by default.",
-    )
-    parser.add_argument(
         "--reuse-surya-cache",
         action="store_true",
-        help="Reuse existing Surya outputs instead of re-running the pipeline.",
-    )
-    parser.add_argument(
-        "--use-existing-surya-output",
-        action="store_true",
-        help="Use existing output/structure_ready instead of running the Surya pipeline.",
+        help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
     )
     parser.add_argument(
         "--image-table-pipeline",
         action="store_true",
         help="Classify image blocks with Surya bbox/box-count signals and parse detected table images with Surya.",
     )
-    parser.add_argument(
-        "--output-file",
-        default=None,
-        help="Optional single markdown output path merged from processed package result(s).",
-    )
-    args = parser.parse_args()
-    cwd = Path.cwd()
-    output_root = cwd / "output"
-    output_dir = output_root / args.reading_order
-    output_dir.mkdir(parents=True, exist_ok=True)
+    return parser.parse_args()
 
+
+def _build_config(args: argparse.Namespace) -> ConverterConfig:
     repo_root = Path(__file__).resolve().parent.parent
-    debug_output_dir = repo_root / "main_converter" / "output" / args.reading_order
-    debug_output_dir.mkdir(parents=True, exist_ok=True)
-    ensure_imports(repo_root)
-    if args.inputs:
-        non_pptx_inputs = [x for x in args.inputs if Path(x).suffix.lower() != ".pptx"]
+    main_converter_root = repo_root / "main_converter"
+    return ConverterConfig(
+        cwd=main_converter_root,
+        repo_root=repo_root,
+        output_dir=main_converter_root / "output" / args.reading_order,
+        debug_output_dir=main_converter_root / "output" / args.reading_order,
+        inputs=list(args.inputs),
+        per_slide=bool(args.per_slide),
+        reading_order=str(args.reading_order),
+        strict=bool(args.strict),
+        reuse_surya_cache=bool(args.reuse_surya_cache),
+        image_table_pipeline=bool(args.image_table_pipeline),
+    )
+
+
+def _resolve_prepared_inputs(config: ConverterConfig) -> Tuple[Optional[List[str]], Optional[int]]:
+    if config.inputs:
+        non_pptx_inputs = [x for x in config.inputs if Path(x).suffix.lower() != ".pptx"]
         if non_pptx_inputs:
             print("Only .pptx inputs are allowed.")
             print("Provide files like: sample1.pptx sample2.pptx")
             for item in non_pptx_inputs:
                 print(f"- {item}")
-            return 1
-        prepared_inputs = prepare_package_inputs(cwd, args.inputs, force_extract=True)
-    else:
-        auto_pptx_inputs = collect_target_pptx_inputs(cwd)
-        if not auto_pptx_inputs:
-            print(f"No .pptx files found in: {preferred_pptx_input_dir(cwd).resolve()}")
-            return 0
-        prepared_inputs = prepare_package_inputs(cwd, auto_pptx_inputs, force_extract=True)
+            return None, 1
+        return prepare_package_inputs(config.cwd, config.inputs, force_extract=True), None
 
-    target_dirs = default_target_dirs(cwd)
+    auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
+    if not auto_pptx_inputs:
+        print(f"No .pptx files found in: {preferred_pptx_input_dir(config.cwd).resolve()}")
+        return None, 0
+    return prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True), None
+
+
+def _resolve_packages(config: ConverterConfig, prepared_inputs: Sequence[str]) -> List[Path]:
+    target_dirs = default_target_dirs(config.cwd)
     packages = pick_packages(target_dirs, prepared_inputs)
     if not packages:
         print("No valid PPTX package directories found.")
@@ -1888,25 +1869,27 @@ def main() -> int:
                 print(f"- {d.resolve()}")
         else:
             print("Checked default directories: none found (expected ./target_slides).")
-        return 0
+    return packages
 
-    surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
-    surya_structure_root: Optional[Path] = None
-    if args.reading_order == "surya":
-        if args.strict:
-            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
-        shared_target_slides_dir = preferred_target_dir(cwd).resolve()
-        shared_target_pptx_dir = preferred_pptx_input_dir(cwd).resolve()
-        surya_structure_root = prepare_surya_structure_root(
-            raw_surya_dir=surya_dir,
-            force=(not args.reuse_surya_cache) or args.force_surya_pipeline,
-            use_existing_output=args.use_existing_surya_output,
-            targets=[pkg.name for pkg in packages],
-            target_pptx_dir=shared_target_pptx_dir,
-            target_slides_dir=shared_target_slides_dir,
-        )
 
-    manifest = {
+def _prepare_surya_context(config: ConverterConfig, packages: Sequence[Path]) -> Optional[Path]:
+    if config.reading_order != "surya":
+        return None
+    if config.strict:
+        print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
+    shared_target_slides_dir = preferred_target_dir(config.cwd).resolve()
+    shared_target_pptx_dir = preferred_pptx_input_dir(config.cwd).resolve()
+    return prepare_surya_structure_root(
+        force=not config.reuse_surya_cache,
+        reuse_existing_output=config.reuse_surya_cache,
+        targets=[pkg.name for pkg in packages],
+        target_pptx_dir=shared_target_pptx_dir,
+        target_slides_dir=shared_target_slides_dir,
+    )
+
+
+def _new_manifest() -> Dict[str, object]:
+    return {
         "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "packages": [],
         "summary": {
@@ -1919,191 +1902,217 @@ def main() -> int:
             "table_skipped_blocks": 0,
         },
     }
-    merged_packages: List[Tuple[str, str]] = []
 
-    for pkg in packages:
-        pkg_name = pkg.name
-        slides_dir = pkg / "ppt" / "slides"
-        slide_xmls = sorted(
-            [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
-            key=lambda p: natural_key(p.name),
-        )
-        pkg_out = output_dir / pkg_name
-        per_slide_dir = pkg_out / "per_slide"
-        media_dir = pkg_out / "media"
-        surya_debug_dir = debug_output_dir / pkg_name / "surya_run_images"
-        copied_media: Dict[str, Path] = {}
-        copied_surya_debug_images: Dict[str, Path] = {}
-        pkg_out.mkdir(parents=True, exist_ok=True)
-        if args.per_slide:
-            per_slide_dir.mkdir(parents=True, exist_ok=True)
-        elif per_slide_dir.exists():
-            shutil.rmtree(per_slide_dir)
 
-        pkg_row = {
-            "package": str(pkg),
-            "name": pkg_name,
-            "slides": [],
-            "result_md": str(pkg_out / "result.md"),
-            "pipeline_mode": args.reading_order,
+def _append_package_stage_failure(
+    pkg_row: Dict[str, object],
+    slide_xmls: Sequence[Path],
+    error_message: str,
+    manifest: Dict[str, object],
+    package_name: str,
+    stage_label: str,
+) -> None:
+    summary = manifest.get("summary")
+    if not isinstance(summary, dict):
+        return
+    for slide_xml in slide_xmls:
+        row = {
+            "page": parse_slide_number(slide_xml.name, 0),
+            "source_xml": str(slide_xml),
+            "status": "failed",
+            "error": error_message,
+            "warnings": [],
         }
+        slides = pkg_row.get("slides")
+        if isinstance(slides, list):
+            slides.append(row)
+        summary["failed"] = int(summary.get("failed", 0)) + 1
+    packages = manifest.get("packages")
+    if isinstance(packages, list):
+        packages.append(pkg_row)
+    print(f"[{package_name}] {stage_label} failed: {error_message}")
 
-        all_chunks: List[str] = []
-        ro_map: Dict[str, Path] = {}
-        structure_output_dir: Optional[Path] = None
-        if args.reading_order == "xml":
-            try:
-                ro_map, ro_output = run_structure_analysis_stage(
-                    repo_root=repo_root,
-                    package_name=pkg_name,
-                    slide_xmls=slide_xmls,
-                    strict=args.strict,
-                )
-                pkg_row["structure_analysis_output_dir"] = str(ro_output)
-            except Exception as e:  # noqa: BLE001
-                for slide_xml in slide_xmls:
-                    row = {
-                        "page": parse_slide_number(slide_xml.name, 0),
-                        "source_xml": str(slide_xml),
-                        "status": "failed",
-                        "error": f"structure_analysis stage failed: {e}",
-                        "warnings": [],
-                    }
-                    pkg_row["slides"].append(row)
-                    manifest["summary"]["failed"] += 1
-                manifest["packages"].append(pkg_row)
-                print(f"[{pkg_name}] structure_analysis failed: {e}")
-                continue
-        else:
-            try:
-                structure_output_dir = (
-                    resolve_surya_structure_dir(surya_structure_root, pkg_name) if surya_structure_root else None
-                )
-                pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
-            except Exception as e:  # noqa: BLE001
-                for slide_xml in slide_xmls:
-                    row = {
-                        "page": parse_slide_number(slide_xml.name, 0),
-                        "source_xml": str(slide_xml),
-                        "status": "failed",
-                        "error": f"surya structure-ready stage failed: {e}",
-                        "warnings": [],
-                    }
-                    pkg_row["slides"].append(row)
-                    manifest["summary"]["failed"] += 1
-                manifest["packages"].append(pkg_row)
-                print(f"[{pkg_name}] surya structure-ready failed: {e}")
-                continue
 
-        for i, slide_xml in enumerate(slide_xmls, 1):
-            page_no = parse_slide_number(slide_xml.name, i)
-            ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
-            if args.reading_order == "surya" and structure_output_dir is not None:
-                ordered_slide_xml = structure_output_dir / f"{slide_xml.stem}.reordered.xml"
-            row = {
-                "page": page_no,
-                "source_xml": str(slide_xml),
-                "structure_analysis_xml": str(ordered_slide_xml),
-                "status": "ok",
-                "warnings": [],
-            }
-            try:
-                if not ordered_slide_xml.exists():
-                    raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
-                merged_md_text, stats = convert_one_slide(
-                    ordered_slide_xml,
-                    page_no,
-                    source_slide_xml=(slide_xml if args.reading_order == "surya" else None),
-                    output_dir=pkg_out,
-                    media_dir=media_dir,
-                    copied_media=copied_media,
-                    surya_debug_dir=surya_debug_dir,
-                    copied_surya_debug_images=copied_surya_debug_images,
-                    enable_image_table_pipeline=args.image_table_pipeline,
-                    strict_headings=(args.reading_order == "xml" and args.strict),
-                )
-                if args.reading_order == "surya":
-                    row["surya_source"] = str(structure_output_dir)
-                if args.per_slide:
-                    md_text, _ = convert_one_slide(
-                        ordered_slide_xml,
-                        page_no,
-                        source_slide_xml=(slide_xml if args.reading_order == "surya" else None),
-                        output_dir=per_slide_dir,
-                        media_dir=media_dir,
-                        copied_media=copied_media,
-                        surya_debug_dir=surya_debug_dir,
-                        copied_surya_debug_images=copied_surya_debug_images,
-                        enable_image_table_pipeline=args.image_table_pipeline,
-                        strict_headings=(args.reading_order == "xml" and args.strict),
-                    )
-                    out_md = per_slide_dir / f"{slide_xml.stem}.md"
-                    out_md.write_text(md_text, encoding="utf-8")
-                all_chunks.append(merged_md_text.rstrip())
+def _convert_package(
+    config: ConverterConfig,
+    pkg: Path,
+    surya_structure_root: Optional[Path],
+    manifest: Dict[str, object],
+) -> None:
+    summary = manifest.get("summary")
+    packages = manifest.get("packages")
+    if not isinstance(summary, dict) or not isinstance(packages, list):
+        raise ValueError("invalid manifest payload shape")
 
-                row.update(
-                    {
-                        "status": "ok",
-                        "blocks_total": stats["blocks_total"],
-                        "text_blocks": stats["text_blocks"],
-                        "image_blocks": stats["image_blocks"],
-                        "table_blocks": stats["table_blocks"],
-                        "table_skipped_blocks": stats["table_skipped_blocks"],
-                        "unsupported_blocks": stats["unsupported_blocks"],
-                        "skipped_blocks": stats["skipped_blocks"],
-                        "rels_path": stats["rels_path"],
-                        "warnings": stats["warnings"],
-                    }
-                )
-                if args.per_slide:
-                    row["output_md"] = str(out_md)
-                manifest["summary"]["processed_slides"] += 1
-                manifest["summary"]["resolved_images"] += stats["resolved_images"]
-                manifest["summary"]["unresolved_images"] += stats["unresolved_images"]
-                manifest["summary"]["table_blocks"] += stats["table_blocks"]
-                manifest["summary"]["table_skipped_blocks"] += stats["table_skipped_blocks"]
-                print(f"[{pkg_name}] Processed: {slide_xml.name}")
-            except Exception as e:  # noqa: BLE001
-                row.update({"status": "failed", "error": str(e)})
-                manifest["summary"]["failed"] += 1
-                print(f"[{pkg_name}] Failed: {slide_xml.name} -> {e}")
-            pkg_row["slides"].append(row)
+    pkg_name = pkg.name
+    slides_dir = pkg / "ppt" / "slides"
+    slide_xmls = sorted(
+        [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
+        key=lambda p: natural_key(p.name),
+    )
+    pkg_out = config.output_dir / pkg_name
+    per_slide_dir = pkg_out / "per_slide"
+    media_dir = pkg_out / "media"
+    surya_debug_dir = config.debug_output_dir / pkg_name / "surya_run_images"
+    copied_media: Dict[str, Path] = {}
+    copied_surya_debug_images: Dict[str, Path] = {}
+    pkg_out.mkdir(parents=True, exist_ok=True)
+    if config.per_slide:
+        per_slide_dir.mkdir(parents=True, exist_ok=True)
+    elif per_slide_dir.exists():
+        shutil.rmtree(per_slide_dir)
 
-        merged = "\n\n".join(all_chunks).strip()
-        if merged:
-            merged += "\n"
-        merged_path = pkg_out / "result.md"
-        merged_path.write_text(merged, encoding="utf-8")
-        merged_packages.append((pkg_name, merged))
-        manifest["summary"]["processed_packages"] += 1
-        manifest["packages"].append(pkg_row)
+    pkg_row: Dict[str, object] = {
+        "package": str(pkg),
+        "name": pkg_name,
+        "slides": [],
+        "result_md": str(pkg_out / "result.md"),
+        "pipeline_mode": config.reading_order,
+    }
 
+    all_chunks: List[str] = []
+    ro_map: Dict[str, Path] = {}
+    structure_output_dir: Optional[Path] = None
+    if config.reading_order == "xml":
+        try:
+            ro_map, ro_output = run_structure_analysis_stage(
+                repo_root=config.repo_root,
+                package_name=pkg_name,
+                slide_xmls=slide_xmls,
+                strict=config.strict,
+            )
+            pkg_row["structure_analysis_output_dir"] = str(ro_output)
+        except Exception as e:  # noqa: BLE001
+            _append_package_stage_failure(
+                pkg_row=pkg_row,
+                slide_xmls=slide_xmls,
+                error_message=f"structure_analysis stage failed: {e}",
+                manifest=manifest,
+                package_name=pkg_name,
+                stage_label="structure_analysis",
+            )
+            return
+    else:
+        try:
+            structure_output_dir = resolve_surya_structure_dir(surya_structure_root, pkg_name) if surya_structure_root else None
+            pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
+        except Exception as e:  # noqa: BLE001
+            _append_package_stage_failure(
+                pkg_row=pkg_row,
+                slide_xmls=slide_xmls,
+                error_message=f"surya structure-ready stage failed: {e}",
+                manifest=manifest,
+                package_name=pkg_name,
+                stage_label="surya structure-ready",
+            )
+            return
+
+    for i, slide_xml in enumerate(slide_xmls, 1):
+        page_no = parse_slide_number(slide_xml.name, i)
+        ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
+        if config.reading_order == "surya" and structure_output_dir is not None:
+            ordered_slide_xml = structure_output_dir / f"{slide_xml.stem}.reordered.xml"
+        row: Dict[str, object] = {
+            "page": page_no,
+            "source_xml": str(slide_xml),
+            "structure_analysis_xml": str(ordered_slide_xml),
+            "status": "ok",
+            "warnings": [],
+        }
+        try:
+            if not ordered_slide_xml.exists():
+                raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
+            merged_md_text, stats = convert_one_slide(
+                ordered_slide_xml,
+                page_no,
+                source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
+                output_dir=pkg_out,
+                media_dir=media_dir,
+                copied_media=copied_media,
+                surya_debug_dir=surya_debug_dir,
+                copied_surya_debug_images=copied_surya_debug_images,
+                enable_image_table_pipeline=config.image_table_pipeline,
+                strict_headings=(config.reading_order == "xml" and config.strict),
+            )
+            if config.reading_order == "surya":
+                row["surya_source"] = str(structure_output_dir)
+            if config.per_slide:
+                out_md = per_slide_dir / f"{slide_xml.stem}.md"
+                out_md.write_text(_rewrite_markdown_for_per_slide(merged_md_text), encoding="utf-8")
+                row["output_md"] = str(out_md)
+            all_chunks.append(merged_md_text.rstrip())
+
+            row.update(
+                {
+                    "status": "ok",
+                    "blocks_total": stats["blocks_total"],
+                    "text_blocks": stats["text_blocks"],
+                    "image_blocks": stats["image_blocks"],
+                    "table_blocks": stats["table_blocks"],
+                    "table_skipped_blocks": stats["table_skipped_blocks"],
+                    "unsupported_blocks": stats["unsupported_blocks"],
+                    "skipped_blocks": stats["skipped_blocks"],
+                    "rels_path": stats["rels_path"],
+                    "warnings": stats["warnings"],
+                }
+            )
+            summary["processed_slides"] = int(summary.get("processed_slides", 0)) + 1
+            summary["resolved_images"] = int(summary.get("resolved_images", 0)) + int(stats["resolved_images"])
+            summary["unresolved_images"] = int(summary.get("unresolved_images", 0)) + int(stats["unresolved_images"])
+            summary["table_blocks"] = int(summary.get("table_blocks", 0)) + int(stats["table_blocks"])
+            summary["table_skipped_blocks"] = int(summary.get("table_skipped_blocks", 0)) + int(
+                stats["table_skipped_blocks"]
+            )
+            print(f"[{pkg_name}] Processed: {slide_xml.name}")
+        except Exception as e:  # noqa: BLE001
+            row.update({"status": "failed", "error": str(e)})
+            summary["failed"] = int(summary.get("failed", 0)) + 1
+            print(f"[{pkg_name}] Failed: {slide_xml.name} -> {e}")
+        slides = pkg_row.get("slides")
+        if isinstance(slides, list):
+            slides.append(row)
+
+    merged = "\n\n".join(all_chunks).strip()
+    if merged:
+        merged += "\n"
+    merged_path = pkg_out / "result.md"
+    merged_path.write_text(merged, encoding="utf-8")
+    summary["processed_packages"] = int(summary.get("processed_packages", 0)) + 1
+    packages.append(pkg_row)
+
+
+def _write_manifest(output_dir: Path, manifest: Dict[str, object]) -> Path:
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     manifest_path = output_dir / "convert_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return manifest_path
 
-    if args.output_file:
-        out_path = Path(args.output_file).expanduser()
-        if not out_path.is_absolute():
-            out_path = (cwd / out_path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if len(merged_packages) <= 1:
-            merged_text = merged_packages[0][1] if merged_packages else ""
-        else:
-            blocks: List[str] = []
-            for pkg_name, pkg_md in merged_packages:
-                block = f"## Package: {pkg_name}\n\n{pkg_md.strip()}".strip()
-                if block:
-                    blocks.append(block)
-            merged_text = "\n\n".join(blocks)
-            if merged_text:
-                merged_text += "\n"
+def main() -> int:
+    args = _parse_args()
+    config = _build_config(args)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    config.debug_output_dir.mkdir(parents=True, exist_ok=True)
 
-        out_path.write_text(merged_text, encoding="utf-8")
-        print(f"Wrote combined markdown: {out_path.resolve()}")
+    ensure_imports(config.repo_root)
+    prepared_inputs, early_exit_code = _resolve_prepared_inputs(config)
+    if early_exit_code is not None:
+        return early_exit_code
+    if prepared_inputs is None:
+        return 0
 
-    print(f"Wrote package outputs under: {output_dir.resolve()}")
+    packages = _resolve_packages(config, prepared_inputs)
+    if not packages:
+        return 0
+
+    surya_structure_root = _prepare_surya_context(config, packages)
+    manifest = _new_manifest()
+    for pkg in packages:
+        _convert_package(config, pkg, surya_structure_root, manifest)
+
+    manifest_path = _write_manifest(config.output_dir, manifest)
+
+    print(f"Wrote package outputs under: {config.output_dir.resolve()}")
     print(f"Wrote: {manifest_path.resolve()}")
     print(
         "Summary: "

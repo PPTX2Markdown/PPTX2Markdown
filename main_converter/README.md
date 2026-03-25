@@ -28,13 +28,19 @@
 저장소 루트 기준:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py
+python main_converter/convert_slides_to_md.py
+```
+
+`main_converter` 디렉토리에서 바로 실행:
+
+```bash
+python convert_slides_to_md.py
 ```
 
 특정 `.pptx`:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
+python main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
 ```
 
 # Reading Order 모드
@@ -42,19 +48,19 @@ python3 main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
 XML 모드(기본):
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order xml
+python main_converter/convert_slides_to_md.py --reading-order xml
 ```
 
 Surya 모드:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order surya
+python main_converter/convert_slides_to_md.py --reading-order surya
 ```
 
 Surya 모드에서 특정 입력:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
+python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
 ```
 
 ## Surya 연동 동작
@@ -72,8 +78,5 @@ python3 main_converter/convert_slides_to_md.py --reading-order surya sample3.ppt
 - `--per-slide`
 - `--reading-order {xml|surya}`
 - `--strict` (xml 모드 전용)
-- `--surya-dir <path>`
 - `--reuse-surya-cache`
-- `--use-existing-surya-output`
 - `--image-table-pipeline`
-- `--output-file <path>`
