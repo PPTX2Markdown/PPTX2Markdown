@@ -1,4 +1,4 @@
-# Core dependencies for pptx2markdown (tested on Python 3.11)
+# Core dependencies for pptx2markdown (tested on Python 3.10/3.11)
 #
 # Notes:
 # - `torch` wheel selection can differ by CPU/GPU platform.
@@ -17,4 +17,3 @@ pillow==10.4.0
 opencv-python-headless==4.11.0.86
 pypdfium2==4.30.0
 numpy==2.4.2
-
