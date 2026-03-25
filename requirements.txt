@@ -1,0 +1,20 @@
+# Core dependencies for pptx2markdown (tested on Python 3.11)
+#
+# Notes:
+# - `torch` wheel selection can differ by CPU/GPU platform.
+# - If needed, install a platform-specific torch first, then install this file.
+#
+#   CPU example:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.10.0
+#
+#   Then:
+#   pip install -r requirements.txt
+
+surya-ocr==0.17.1
+torch==2.10.0
+transformers==4.57.6
+pillow==10.4.0
+opencv-python-headless==4.11.0.86
+pypdfium2==4.30.0
+numpy==2.4.2
+

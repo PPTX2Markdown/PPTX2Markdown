@@ -7,7 +7,7 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 - `main_converter`: 메인 엔드투엔드 실행기
 - `surya_pipeline`: Surya reading-order 재정렬 파이프라인
 - `structure_analyzer`: XML 기반 reading-order 분석기
-- `table_extractor`, `table_parser`: 테이블 추출/파싱/렌더링
+- `table_pipeline`: 테이블 추출/파싱/렌더링 통합 모듈
 - `image_pipeline`: 이미지 테이블 분류 + Surya 기반 표 인식 보조
 
 ## 현재 실행 정책 (중요)
@@ -18,7 +18,7 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 
 간단한 명령어 사용 규칙은 다음과 같습니다.
 ```bash
-python3 convert_slides [--per-slide] [--reading-order {xml(default) | surya}] [--strict] [INPUT_PPTX ...]
+python main_converter/convert_slides_to_md.py [--per-slide] [--reading-order {xml(default) | surya}] [--strict] [INPUT_PPTX ...]
 ``` 
 - `[INPUT_PPTX]`
   - *.pptx 파일을 0개 이상 전달할 수 있습니다.
@@ -41,37 +41,83 @@ python3 convert_slides [--per-slide] [--reading-order {xml(default) | surya}] [-
 기본 실행(default):
 
 ```bash
-python3 main_converter/convert_slides_to_md.py
+python main_converter/convert_slides_to_md.py
 ```
 - 이 동작은 `main_converter/target_pptx/*` 의 모든 `.pptx` 파일을 대상으로 `--reading-order xml` 방식으로 수행
 - 즉, 다음 동작과 같음
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order xml [none_target == target/pptx/* ]
+python main_converter/convert_slides_to_md.py --reading-order xml [none_target == target/pptx/* ]
 ```
 
 
 특정 PPTX만 변환 수행:
 ```bash
-python3 main_converter/convert_slides_to_md.py [*targets]
+python main_converter/convert_slides_to_md.py [*targets]
 ```
 
 예시(Example) 
 ```bash
-python3 main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
+python main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
 ```
 
 Surya reading order:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
+python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
 ```
 
 슬라이드별 파일도 생성:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --per-slide
+python main_converter/convert_slides_to_md.py --per-slide
 ```
+
+## 환경 재현 (의존성 설치)
+
+다른 환경에서 동일하게 실행하려면, Python 3.11 + 프로젝트 루트 `.venv` + 시스템 패키지(특히 LibreOffice)가 필요합니다.
+
+1) 시스템 의존성 설치
+
+- macOS (Homebrew):
+```bash
+brew install libreoffice
+```
+
+- Ubuntu/Debian:
+```bash
+sudo apt-get update
+sudo apt-get install -y libreoffice libreoffice-impress fonts-dejavu-core libglib2.0-0 libgl1 libgomp1 libsm6 libxext6
+```
+
+- Windows (PowerShell):
+  - LibreOffice 설치: [LibreOffice Download](https://www.libreoffice.org/download/download-libreoffice/)
+  - 기본 설치 경로: `C:\Program Files\LibreOffice\program\soffice.exe`
+  - 필요 시 환경변수 지정:
+```powershell
+$env:SOFFICE_PATH="C:\Program Files\LibreOffice\program\soffice.exe"
+```
+
+2) 가상환경 생성/활성화 + Python 의존성 설치 (프로젝트 루트)
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install -r requirements.txt
+```
+
+3) 실행
+
+```bash
+python main_converter/convert_slides_to_md.py --help
+```
+
+추가 참고:
+- `requirements.txt`: 프로젝트 표준 의존성 단일 소스
+- `surya-ocr`, `torch`, `transformers`, `opencv-python-headless`, `pillow`, `pypdfium2`가 핵심 런타임입니다.
+- `soffice`(LibreOffice)가 없으면 PPTX->PDF 변환 및 일부 이미지 처리(EMF/WMF)가 실패할 수 있습니다.
+- Windows에서는 `SOFFICE_PATH`를 지정하면 PATH 설정 없이도 LibreOffice를 찾을 수 있습니다.
 
 ## 출력 경로
 
