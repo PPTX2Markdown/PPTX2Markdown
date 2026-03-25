@@ -92,10 +92,25 @@ def _is_supported_image_suffix(suffix: str) -> bool:
 
 
 def _resolve_vector_converter() -> Optional[str]:
+    env_path = os.getenv("SOFFICE_PATH", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path
+
+    if os.name == "nt":
+        for candidate in (
+            "C:/Program Files/LibreOffice/program/soffice.exe",
+            "C:/Program Files (x86)/LibreOffice/program/soffice.exe",
+        ):
+            if Path(candidate).exists():
+                return candidate
+
     for candidate in ("soffice", "libreoffice"):
         found = shutil.which(candidate)
         if found:
             return found
+    soffice_exe = shutil.which("soffice.exe")
+    if soffice_exe:
+        return soffice_exe
     return None
 
 
@@ -937,18 +952,14 @@ def _get_surya_table_bundle(image_path: Path) -> Dict[str, Any]:
 
 
 def _render_markdown_from_parsed_tables(parsed_tables: Sequence[Dict[str, Any]], header_rows: int = 1) -> str:
-    try:
-        import tableMaker  # type: ignore
-    except Exception:
-        from table_parser import tableMaker  # type: ignore
+    from table_pipeline import render as table_render  # type: ignore
 
     blocks: List[str] = []
     for table in parsed_tables:
-        dense = tableMaker._dense_grid_from_parsed_table(table, fill_merged=tableMaker.FILL_BOTH)
-        md = tableMaker._render_markdown_flat(
-            dense=dense,
+        md = table_render.render_parsed_table_to_markdown(
+            parsed_table=table,
             header_rows=max(0, int(header_rows)),
-            use_header_rows=header_rows > 0,
+            fill_merged=table_render.FILL_BOTH,
         )
         if md.strip():
             blocks.append(md.strip())
