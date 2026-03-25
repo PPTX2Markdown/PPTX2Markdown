@@ -2,12 +2,12 @@
 """Render table JSON into markdown/html/csv.
 
 Supports:
-1) Parsed table JSON produced by parse_table.py
+1) Parsed table JSON produced by parse.py
 2) Generic dense JSON rows (list[list[str]])
 
 Batch mode:
-- If no input path is provided, converts all ./parsing_results/*.json into
-  markdown tables and writes them to ./tables/*.md.
+- If no input path is provided, converts all ./artifacts/parsing_results/*.json into
+  markdown tables and writes them to ./artifacts/tables/*.md.
 """
 
 from __future__ import annotations
@@ -178,6 +178,20 @@ def _render_markdown_flat(
     return "\n".join(lines) + "\n"
 
 
+def render_parsed_table_to_markdown(
+    parsed_table: dict[str, Any],
+    header_rows: int = 1,
+    fill_merged: str = FILL_BOTH,
+) -> str:
+    """Public API for rendering parsed-table payload into markdown."""
+    dense = _dense_grid_from_parsed_table(parsed_table, fill_merged=fill_merged)
+    return _render_markdown_flat(
+        dense=dense,
+        header_rows=max(0, int(header_rows)),
+        use_header_rows=header_rows > 0,
+    )
+
+
 def _render_html(
     payload: dict[str, Any] | list[Any], dense: list[list[str]], header_rows: int, use_header_rows: bool
 ) -> str:
@@ -272,8 +286,8 @@ def main(argv: list[str]) -> int:
     # Batch mode: no input argument.
     if not args.input_json:
         base_dir = Path(__file__).resolve().parent
-        parsing_dir = base_dir / "parsing_results"
-        tables_dir = base_dir / "tables"
+        parsing_dir = base_dir / "artifacts" / "parsing_results"
+        tables_dir = base_dir / "artifacts" / "tables"
         parsing_dir.mkdir(parents=True, exist_ok=True)
         tables_dir.mkdir(parents=True, exist_ok=True)
 
@@ -281,11 +295,11 @@ def main(argv: list[str]) -> int:
             p for p in parsing_dir.glob("*.json") if p.is_file() and p.name != "manifest.json"
         )
         if not json_files:
-            print("[ERROR] no .json files found in ./parsing_results.", file=sys.stderr)
+            print("[ERROR] no .json files found in ./artifacts/parsing_results.", file=sys.stderr)
             return 1
 
         if args.mode != MODE_MARKDOWN:
-            print("[INFO] no-input mode forces markdown-flat output into ./tables.")
+            print("[INFO] no-input mode forces markdown-flat output into ./artifacts/tables.")
 
         ok_count = 0
         fail_count = 0
@@ -363,4 +377,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    print(
+        "[INFO] render.py is an internal pipeline module.\n"
+        "Use `python3 run.py` from table_pipeline/ as the entrypoint."
+    )
+    raise SystemExit(1)

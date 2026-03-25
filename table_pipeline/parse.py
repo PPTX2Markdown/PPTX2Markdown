@@ -2,12 +2,12 @@
 """Parse OpenXML table XML (<a:tbl>) into a 2D grid JSON.
 
 Usage:
-    ./parse_table.py [input_table.xml ...]
+    ./parse.py [input_table.xml ...]
 
 Behavior:
-    - Creates ./parsing_results if missing.
-    - Writes parsed JSON to ./parsing_results/<input_stem>_grid.json.
-    - If input is omitted, scans ../table_extractor/extract_results for all *.xml files.
+    - Creates ./artifacts/parsing_results if missing.
+    - Writes parsed JSON to ./artifacts/parsing_results/<input_stem>_grid.json.
+    - If input is omitted, scans ./artifacts/extract_results for all *.xml files.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ NS = {"a": A_NS}
 
 
 def _usage() -> str:
-    return "Usage: ./parse_table.py [input_table.xml ...]"
+    return "Usage: ./parse.py [input_table.xml ...]"
 
 
 def _int_attr(elem: ET.Element, name: str, default: int = 0) -> int:
@@ -186,7 +186,7 @@ def parse_table_xml(input_path: Path) -> dict[str, object]:
 
 
 def _collect_default_inputs(base_dir: Path) -> list[Path]:
-    input_dir = base_dir.parent / "table_extractor" / "extract_results"
+    input_dir = base_dir / "artifacts" / "extract_results"
     input_dir.mkdir(parents=True, exist_ok=True)
     return sorted(path.resolve() for path in input_dir.glob("*.xml") if path.is_file())
 
@@ -270,7 +270,7 @@ def _run_with_spinner(label: str, action: Callable[[], T]) -> T:
 
 def main(argv: list[str]) -> int:
     base_dir = Path(__file__).resolve().parent
-    output_dir = base_dir / "parsing_results"
+    output_dir = base_dir / "artifacts" / "parsing_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_paths: list[Path] = []
@@ -284,7 +284,7 @@ def main(argv: list[str]) -> int:
     else:
         input_paths = _collect_default_inputs(base_dir)
         if not input_paths:
-            print("[ERROR] no input XML files found in ../table_extractor/extract_results.", file=sys.stderr)
+            print("[ERROR] no input XML files found in ./artifacts/extract_results.", file=sys.stderr)
             return 1
 
     manifest: dict[str, object] = {
@@ -384,4 +384,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    print(
+        "[INFO] parse.py is an internal pipeline module.\n"
+        "Use `python3 run.py` from table_pipeline/ as the entrypoint."
+    )
+    raise SystemExit(1)

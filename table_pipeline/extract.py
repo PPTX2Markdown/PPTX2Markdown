@@ -2,13 +2,13 @@
 """Extract OpenXML table nodes (<a:tbl>) from slide XML files.
 
 Usage:
-    ./extract_table.py [input_slide.xml ...]
+    ./extract.py [input_slide.xml ...]
 
 Behavior:
-    - Creates ./extract_results if missing.
-    - Writes extracted table XML files to ./extract_results.
+    - Creates ./artifacts/extract_results if missing.
+    - Writes extracted table XML files to ./artifacts/extract_results.
     - Output name format: <slide_stem>_0001.xml, <slide_stem>_0002.xml, ...
-    - Writes manifest.json to ./extract_results.
+    - Writes manifest.json to ./artifacts/extract_results.
     - If input is omitted, scans ./target_slides for slide*.xml files.
 """
 
@@ -39,7 +39,7 @@ for prefix, uri in NSMAP.items():
 
 
 def _usage() -> str:
-    return "Usage: ./extract_table.py [input_slide.xml ...]"
+    return "Usage: ./extract.py [input_slide.xml ...]"
 
 
 def _pretty_xml_bytes(elem: ET.Element) -> bytes:
@@ -151,7 +151,7 @@ def _run_with_spinner(label: str, action: Callable[[], T]) -> T:
 
 def main(argv: list[str]) -> int:
     base_dir = Path(__file__).resolve().parent
-    output_dir = base_dir / "extract_results"
+    output_dir = base_dir / "artifacts" / "extract_results"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     input_paths: list[Path] = []
@@ -236,4 +236,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    print(
+        "[INFO] extract.py is an internal pipeline module.\n"
+        "Use `python3 run.py` from table_pipeline/ as the entrypoint."
+    )
+    raise SystemExit(1)
