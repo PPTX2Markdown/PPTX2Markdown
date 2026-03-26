@@ -29,6 +29,7 @@ DEFAULT_PROMPT = (
 )
 
 DEFAULT_MAX_NEW_TOKENS = 1024
+DEFAULT_TRANSPARENT_BG_GRAY = 192
 
 _SUPPORTED_IMAGE_SUFFIXES = {
     ".png",
@@ -135,17 +136,50 @@ def _rasterize_vector_image(image_path: Path) -> Path:
         return persisted_output
 
 
+def _flatten_transparent_image(image_path: Path, bg_gray: int = DEFAULT_TRANSPARENT_BG_GRAY) -> Optional[Path]:
+    from PIL import Image, ImageOps
+
+    with Image.open(image_path) as loaded:
+        image = ImageOps.exif_transpose(loaded)
+        try:
+            image.seek(0)
+        except Exception:
+            pass
+
+        has_alpha = image.mode in {"RGBA", "LA"} or "transparency" in image.info
+        if not has_alpha:
+            return None
+
+        rgba = image.convert("RGBA")
+        bg_gray = max(0, min(255, int(bg_gray)))
+        background = Image.new("RGBA", rgba.size, (bg_gray, bg_gray, bg_gray, 255))
+        composited = Image.alpha_composite(background, rgba).convert("RGB")
+
+        persisted_output = Path(tempfile.mkdtemp(prefix="prepared_image_png_")) / f"{image_path.stem}.png"
+        composited.save(persisted_output, format="PNG")
+        return persisted_output
+
+
 @contextmanager
 def _prepared_image_path(image_path: Path) -> Iterator[Path]:
     suffix = image_path.suffix.lower()
+    raster_path: Optional[Path] = None
+    flattened_path: Optional[Path] = None
+
     if suffix in _VECTOR_IMAGE_SUFFIXES:
         raster_path = _rasterize_vector_image(image_path)
-        try:
-            yield raster_path
-        finally:
+
+    source_path = raster_path or image_path
+    flattened_path = _flatten_transparent_image(source_path)
+    prepared_path = flattened_path or source_path
+
+    try:
+        yield prepared_path
+    finally:
+        if flattened_path is not None:
+            shutil.rmtree(flattened_path.parent, ignore_errors=True)
+        if raster_path is not None:
             shutil.rmtree(raster_path.parent, ignore_errors=True)
-        return
-    yield image_path
 
 
 def _pick_torch_dtype(torch: Any) -> Any:

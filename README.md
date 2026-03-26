@@ -15,6 +15,7 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 - `graphicFrame/a:tbl` 형태의 실제 PPT 표는 기존 `table_pipeline`으로 그대로 Markdown 표로 변환합니다.
 - `pic` 이미지 블록은 `--image-vlm-model` 옵션을 주면 분류 없이 전부 로컬 Qwen2.5-VL 모델로 보내 Markdown으로 변환합니다.
 - `--image-vlm-model`을 주지 않으면 이미지는 기존처럼 Markdown 이미지 링크(`![](...)`)로 남깁니다.
+- 투명 배경 이미지가 들어오면 OCR/VLM 가독성을 위해 `RGB(192, 192, 192)` 배경에 합성한 뒤 처리합니다.
 - 이미지 VLM 변환이 실패한 경우에는 경고를 남기고 원본 이미지 링크로 폴백합니다.
 
 ## 실행 명령
@@ -30,6 +31,12 @@ python3 main_converter/convert_slides_to_md.py [--per-slide] [--reading-order {x
 - `[INPUT_PPTX]`
   - `*.pptx` 파일을 0개 이상 전달할 수 있습니다.
   - 생략하면 `main_converter/target_pptx/*.pptx` 전체를 자동 처리합니다.
+  - 개별 입력은 아래 순서로 찾습니다.
+    - 전달한 경로 그대로
+    - `main_converter/<INPUT_PPTX>`
+    - `main_converter/target_pptx/<INPUT_PPTX>`
+    - `main_converter/target_slides/<INPUT_PPTX>`
+  - 파일이 없으면 즉시 종료하고, 어떤 경로들을 확인했는지 출력합니다.
 - `--per-slide`
   - 패키지 통합 결과(`result.md`)와 함께 슬라이드별 Markdown(`per_slide/slideN.md`)을 생성합니다.
 - `--reading-order {xml,surya}`
@@ -61,25 +68,25 @@ python3 main_converter/convert_slides_to_md.py
 특정 PPTX만 변환:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
+python3 main_converter/convert_slides_to_md.py sample1.pptx sample2.pptx
 ```
 
 Surya reading order 사용:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx
+python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
 ```
 
 모든 이미지를 Qwen2.5-VL 3B로 Markdown 변환:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample3.pptx
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample1.pptx
 ```
 
 모든 이미지를 Qwen2.5-VL 7B로 Markdown 변환:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --image-vlm-model 7b sample3.pptx
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 7b sample1.pptx
 ```
 
 프롬프트와 토큰 수를 직접 지정:
@@ -89,7 +96,45 @@ python3 main_converter/convert_slides_to_md.py \
   --image-vlm-model 3b \
   --image-vlm-prompt "Convert this image into concise Markdown. Return Markdown only." \
   --image-vlm-max-new-tokens 768 \
-  sample3.pptx
+  sample1.pptx
+```
+
+### 입력 파일 규칙
+
+- 가장 단순한 방법은 `.pptx` 파일을 `main_converter/target_pptx/`에 넣고 파일명만 넘기는 것입니다.
+- 절대경로나 상대경로를 직접 넘겨도 됩니다.
+- 입력을 하나라도 명시하면 자동 전체 탐색은 하지 않습니다.
+  - 예: `sample3.pptx`만 넘기면 `sample1.pptx`, `sample2.pptx`가 있어도 처리하지 않습니다.
+
+예시:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample1.pptx
+```
+
+또는:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b /workspace/main_converter/target_pptx/sample1.pptx
+```
+
+입력이 없으면 전체 처리:
+
+```bash
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b
+```
+
+입력 파일이 없으면 이런 식으로 즉시 종료합니다:
+
+```text
+Input .pptx file not found.
+- requested: sample3.pptx
+  checked: /workspace/main_converter/sample3.pptx
+  checked: /workspace/main_converter/target_pptx/sample3.pptx
+...
+Available .pptx files under main_converter/target_pptx:
+- sample1.pptx
+- sample2.pptx
 ```
 
 ## 환경 재현

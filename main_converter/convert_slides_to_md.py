@@ -348,17 +348,7 @@ def is_ignored_pptx_file(path: Path) -> bool:
     return path.name.startswith("~$")
 
 
-def prepare_package_inputs(
-    cwd: Path,
-    raw_inputs: Sequence[str],
-    force_extract: bool = False,
-) -> List[str]:
-    if not raw_inputs:
-        return list(raw_inputs)
-
-    prepared: List[str] = []
-    extraction_root = preferred_target_dir(cwd)
-    staged_pptx_root = preferred_pptx_input_dir(cwd)
+def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
     search_roots = [cwd]
     for root in default_pptx_input_dirs(cwd):
         if root not in search_roots:
@@ -367,26 +357,54 @@ def prepare_package_inputs(
         if root not in search_roots:
             search_roots.append(root)
 
+    candidates: List[Path] = []
+    seen: set[str] = set()
+
+    def add_candidate(path: Path) -> None:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(path)
+
+    raw_path = Path(item)
+    add_candidate(raw_path)
+    for root in search_roots:
+        add_candidate(root / item)
+
+    for cand in candidates:
+        if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
+            if is_ignored_pptx_file(cand):
+                continue
+            return cand.resolve(), candidates
+        if cand.suffix.lower() != ".pptx":
+            cand_pptx = cand.with_suffix(".pptx")
+            if cand_pptx.exists() and cand_pptx.is_file() and not is_ignored_pptx_file(cand_pptx):
+                return cand_pptx.resolve(), candidates
+    return None, candidates
+
+
+def prepare_package_inputs(
+    cwd: Path,
+    raw_inputs: Sequence[str],
+    force_extract: bool = False,
+) -> Tuple[List[str], List[Dict[str, object]]]:
+    if not raw_inputs:
+        return list(raw_inputs), []
+
+    prepared: List[str] = []
+    missing_inputs: List[Dict[str, object]] = []
+    extraction_root = preferred_target_dir(cwd)
+    staged_pptx_root = preferred_pptx_input_dir(cwd)
+
     for item in raw_inputs:
-        p = Path(item)
-        candidates = [p]
-        for root in search_roots:
-            candidates.append(root / item)
-        picked_file: Optional[Path] = None
-        for cand in candidates:
-            if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
-                if is_ignored_pptx_file(cand):
-                    continue
-                picked_file = cand.resolve()
-                break
-            # raw-like convenience: allow "sample1" -> "<root>/sample1.pptx"
-            if cand.suffix.lower() != ".pptx":
-                cand_pptx = cand.with_suffix(".pptx")
-                if cand_pptx.exists() and cand_pptx.is_file() and not is_ignored_pptx_file(cand_pptx):
-                    picked_file = cand_pptx.resolve()
-                    break
+        picked_file, candidates = resolve_input_pptx_path(cwd, item)
         if picked_file is None:
-            prepared.append(item)
+            missing_inputs.append(
+                {
+                    "input": item,
+                    "checked": [str(path.resolve()) if path.is_absolute() else str((cwd / path).resolve()) for path in candidates],
+                }
+            )
             continue
         pkg_dir = extract_pptx_to_target(
             picked_file,
@@ -395,7 +413,7 @@ def prepare_package_inputs(
             allow_replace_unmanaged=force_extract,
         )
         prepared.append(str(pkg_dir))
-    return prepared
+    return prepared, missing_inputs
 
 
 def collect_target_pptx_inputs(cwd: Path) -> List[str]:
@@ -1783,13 +1801,34 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> Tuple[Optional[List[str
             for item in non_pptx_inputs:
                 print(f"- {item}")
             return None, 1
-        return prepare_package_inputs(config.cwd, config.inputs, force_extract=True), None
+        prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, config.inputs, force_extract=True)
+        if missing_inputs:
+            print("Input .pptx file not found.")
+            for row in missing_inputs:
+                if not isinstance(row, dict):
+                    continue
+                item = str(row.get("input", "")).strip()
+                checked = row.get("checked")
+                print(f"- requested: {item or '(unknown)'}")
+                if isinstance(checked, list):
+                    for cand in checked:
+                        print(f"  checked: {cand}")
+            available_inputs = collect_target_pptx_inputs(config.cwd)
+            if available_inputs:
+                print("Available .pptx files under main_converter/target_pptx:")
+                for path in available_inputs:
+                    print(f"- {Path(path).name}")
+            else:
+                print(f"No .pptx files found in: {preferred_pptx_input_dir(config.cwd).resolve()}")
+            return None, 1
+        return prepared_inputs, None
 
     auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
     if not auto_pptx_inputs:
         print(f"No .pptx files found in: {preferred_pptx_input_dir(config.cwd).resolve()}")
         return None, 0
-    return prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True), None
+    prepared_inputs, _ = prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
+    return prepared_inputs, None
 
 
 def _resolve_packages(config: ConverterConfig, prepared_inputs: Sequence[str]) -> List[Path]:
