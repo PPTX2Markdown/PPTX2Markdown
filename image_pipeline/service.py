@@ -334,11 +334,12 @@ def extract_markdown_from_image(
 
     if not markdown.strip():
         out = {
-            "status": "error",
+            "status": "no_markdown",
             "file": str(resolved_path),
             "model_alias": runtime["model_alias"],
             "model_id": runtime["model_id"],
-            "error": "model returned empty markdown",
+            "reason": "not_document_worthy",
+            "fallback": "image_link",
             "elapsed_sec": round(time.perf_counter() - started_at, 3),
         }
         _RESULT_CACHE[cache_key] = out

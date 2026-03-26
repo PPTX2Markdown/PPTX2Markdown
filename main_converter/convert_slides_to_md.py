@@ -1064,29 +1064,32 @@ def overlay_content_text(
     image_vlm_model: Optional[str] = None,
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-) -> Tuple[str, Optional[str], bool, bool]:
+) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
-        return path, None, False, False
+        return path, None, False, False, False
 
     if image_vlm_model:
-        image_md, image_warn, unavailable, _ = convert_picture_to_markdown(
+        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
             model_spec=image_vlm_model,
             prompt=image_vlm_prompt,
             max_new_tokens=image_vlm_max_new_tokens,
         )
         if image_md is not None:
-            return annotate_generated_image_markdown(image_md, path), None, unavailable, True
+            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         return (
             overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
             image_warn,
             unavailable,
             False,
+            skipped_no_markdown,
         )
 
     return (
         overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
         None,
+        False,
         False,
         False,
     )
@@ -1241,6 +1244,7 @@ def inject_table_overlay_content(
 ) -> Tuple[Dict[str, object], Dict[str, object]]:
     overlay_stats: Dict[str, object] = {
         "image_markdown_blocks": 0,
+        "image_markdown_skipped_blocks": 0,
         "image_markdown_failed_blocks": 0,
         "warnings": [],
         "pipeline_unavailable": False,
@@ -1276,7 +1280,7 @@ def inject_table_overlay_content(
         if not isinstance(cell, dict):
             continue
         existing = normalize_text(str(cell.get("text", "")))
-        content_text, content_warn, unavailable, converted = overlay_content_text(
+        content_text, content_warn, unavailable, converted, skipped_no_markdown = overlay_content_text(
             str(overlay.get("path", "")),
             output_dir,
             media_dir=media_dir,
@@ -1289,6 +1293,10 @@ def inject_table_overlay_content(
         cell["text"] = updated
         if converted:
             overlay_stats["image_markdown_blocks"] = int(overlay_stats.get("image_markdown_blocks", 0)) + 1
+        elif skipped_no_markdown:
+            overlay_stats["image_markdown_skipped_blocks"] = int(
+                overlay_stats.get("image_markdown_skipped_blocks", 0)
+            ) + 1
         elif image_vlm_model and not str(overlay.get("path", "")).startswith("[unresolved-image"):
             overlay_stats["image_markdown_failed_blocks"] = int(
                 overlay_stats.get("image_markdown_failed_blocks", 0)
@@ -1317,6 +1325,7 @@ def convert_table_to_markdown(
     if tbl is None:
         return None, "graphicFrame without a:tbl", {
             "image_markdown_blocks": 0,
+            "image_markdown_skipped_blocks": 0,
             "image_markdown_failed_blocks": 0,
             "warnings": [],
             "pipeline_unavailable": False,
@@ -1400,6 +1409,8 @@ def convert_picture_to_markdown(
         if isinstance(markdown, str) and markdown.strip():
             return markdown, None, False, result
         return None, f"image markdown pipeline rendered empty markdown: {Path(image_path).name}", False, result
+    if status == "no_markdown":
+        return None, None, False, result
 
     error = result.get("error")
     if not isinstance(error, str) or not error.strip():
@@ -1418,6 +1429,8 @@ def _log_image_markdown_result(image_path: str, result: Dict[str, object]) -> No
     model_id = result.get("model_id")
     elapsed_sec = result.get("elapsed_sec")
     error = result.get("error")
+    reason = result.get("reason")
+    fallback = result.get("fallback")
     markdown = result.get("markdown")
     markdown_chars = len(markdown.strip()) if isinstance(markdown, str) else 0
     elapsed_label = f"{float(elapsed_sec):.3f}s" if isinstance(elapsed_sec, (int, float)) else "n/a"
@@ -1431,6 +1444,10 @@ def _log_image_markdown_result(image_path: str, result: Dict[str, object]) -> No
     )
     if isinstance(error, str) and error.strip():
         summary = f"{summary} error={error}"
+    elif isinstance(reason, str) and reason.strip():
+        summary = f"{summary} reason={reason}"
+        if isinstance(fallback, str) and fallback.strip():
+            summary = f"{summary} fallback={fallback}"
     print(summary, flush=True)
 
     if _IMAGE_VLM_DEBUG_JSON:
@@ -1444,6 +1461,8 @@ def _log_image_markdown_result(image_path: str, result: Dict[str, object]) -> No
             "elapsed_sec": elapsed_sec if isinstance(elapsed_sec, (int, float)) else None,
             "max_new_tokens": result.get("max_new_tokens"),
             "error": error if isinstance(error, str) and error.strip() else None,
+            "reason": reason if isinstance(reason, str) and reason.strip() else None,
+            "fallback": fallback if isinstance(fallback, str) and fallback.strip() else None,
             "markdown_chars": markdown_chars,
         }
         print(json.dumps(_to_jsonable_copy(debug_payload), ensure_ascii=False, separators=(",", ":")))
@@ -1483,6 +1502,7 @@ def convert_one_slide(
         "text_blocks": 0,
         "image_blocks": 0,
         "image_markdown_blocks": 0,
+        "image_markdown_skipped_blocks": 0,
         "image_markdown_failed_blocks": 0,
         "table_blocks": 0,
         "unsupported_blocks": 0,
@@ -1603,7 +1623,7 @@ def convert_one_slide(
                 stats["resolved_images"] += 1
 
             if image_vlm_model and not warn and not img_path.startswith("[unresolved-image"):
-                image_md, image_warn, unavailable, _ = convert_picture_to_markdown(
+                image_md, image_warn, unavailable, image_result = convert_picture_to_markdown(
                     img_path,
                     model_spec=image_vlm_model,
                     prompt=image_vlm_prompt,
@@ -1614,7 +1634,10 @@ def convert_one_slide(
                     lines.append("")
                     stats["image_markdown_blocks"] += 1
                     continue
-                stats["image_markdown_failed_blocks"] += 1
+                if isinstance(image_result, dict) and str(image_result.get("status", "")) == "no_markdown":
+                    stats["image_markdown_skipped_blocks"] += 1
+                else:
+                    stats["image_markdown_failed_blocks"] += 1
                 if image_warn:
                     if unavailable:
                         if not image_pipeline_unavailable_reported:
@@ -1647,6 +1670,7 @@ def convert_one_slide(
                 image_vlm_max_new_tokens=image_vlm_max_new_tokens,
             )
             stats["image_markdown_blocks"] += int(overlay_stats.get("image_markdown_blocks", 0))
+            stats["image_markdown_skipped_blocks"] += int(overlay_stats.get("image_markdown_skipped_blocks", 0))
             stats["image_markdown_failed_blocks"] += int(overlay_stats.get("image_markdown_failed_blocks", 0))
             overlay_pipeline_unavailable = bool(overlay_stats.get("pipeline_unavailable"))
             overlay_warnings_list = overlay_stats.get("warnings")
@@ -1970,6 +1994,7 @@ def _new_manifest() -> Dict[str, object]:
             "resolved_images": 0,
             "unresolved_images": 0,
             "image_markdown_blocks": 0,
+            "image_markdown_skipped_blocks": 0,
             "image_markdown_failed_blocks": 0,
             "table_blocks": 0,
             "elapsed_sec": 0.0,
@@ -2124,6 +2149,7 @@ def _convert_package(
                     "text_blocks": stats["text_blocks"],
                     "image_blocks": stats["image_blocks"],
                     "image_markdown_blocks": stats["image_markdown_blocks"],
+                    "image_markdown_skipped_blocks": stats["image_markdown_skipped_blocks"],
                     "image_markdown_failed_blocks": stats["image_markdown_failed_blocks"],
                     "table_blocks": stats["table_blocks"],
                     "unsupported_blocks": stats["unsupported_blocks"],
@@ -2138,6 +2164,9 @@ def _convert_package(
             summary["image_markdown_blocks"] = int(summary.get("image_markdown_blocks", 0)) + int(
                 stats["image_markdown_blocks"]
             )
+            summary["image_markdown_skipped_blocks"] = int(summary.get("image_markdown_skipped_blocks", 0)) + int(
+                stats["image_markdown_skipped_blocks"]
+            )
             summary["image_markdown_failed_blocks"] = int(summary.get("image_markdown_failed_blocks", 0)) + int(
                 stats["image_markdown_failed_blocks"]
             )
@@ -2146,6 +2175,7 @@ def _convert_package(
                 f"[{pkg_name}] Processed: {slide_xml.name} "
                 f"elapsed={row['elapsed_sec']:.3f}s "
                 f"image_md={stats['image_markdown_blocks']} "
+                f"image_md_skipped={stats['image_markdown_skipped_blocks']} "
                 f"image_md_failed={stats['image_markdown_failed_blocks']} "
                 f"tables={stats['table_blocks']}",
                 flush=True,
@@ -2215,6 +2245,7 @@ def main() -> int:
         f"slides={manifest['summary']['processed_slides']} "
         f"failed={manifest['summary']['failed']} "
         f"image_md={manifest['summary']['image_markdown_blocks']} "
+        f"image_md_skipped={manifest['summary']['image_markdown_skipped_blocks']} "
         f"image_md_failed={manifest['summary']['image_markdown_failed_blocks']} "
         f"tables={manifest['summary']['table_blocks']} "
         f"images_resolved={manifest['summary']['resolved_images']} "

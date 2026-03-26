@@ -234,7 +234,8 @@ Available .pptx files under main_converter/target_pptx:
 - VLM이 변환한 Markdown 앞에는 임시 디버깅용으로 `[image-vlm-source: image6.png]` 같은 source marker를 남깁니다.
 - `--image-vlm-model`을 주지 않으면 이미지는 Markdown 이미지 링크(`![](...)`)로 남깁니다.
 - 투명 배경 이미지는 OCR/VLM 가독성을 위해 `RGB(192, 192, 192)` 배경에 합성한 뒤 처리합니다.
-- VLM 변환 실패 시 경고를 남기고 이미지 링크로 폴백합니다.
+- VLM이 Markdown을 비워서 반환하면 오류로 보지 않고 `status=no_markdown`으로 기록한 뒤 이미지 링크로 폴백합니다. 이런 경우는 RAG 문서화 가치가 낮은 이미지로 간주합니다.
+- 실제 VLM 오류일 때만 경고를 남기고 이미지 링크로 폴백합니다.
 
 ## Docker 사용
 
