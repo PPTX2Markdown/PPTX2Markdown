@@ -30,6 +30,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from asset_utils import copy_debug_image_asset, copy_media_asset
 from converter_models import ConversionManifest, ConverterConfig, SlideStats
 from reading_order_pipeline import (
@@ -38,6 +42,15 @@ from reading_order_pipeline import (
     run_structure_analysis_stage,
 )
 from heading_rules import normalize_single_heading_to_h1
+from image_pipeline.service import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
+    DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
+    extract_markdown_from_image,
+    normalize_provider,
+)
 from image_table_pipeline_adapter import convert_picture_to_table_markdown
 from slide_converter import SlideConversionDeps, convert_one_slide as convert_one_slide_core
 from table_overlay import (
@@ -548,18 +561,100 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
+def convert_picture_to_markdown(
+    image_path: str,
+    *,
+    provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    model_spec: Optional[str] = None,
+    prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
+    def is_pipeline_unavailable(message: str) -> bool:
+        normalized = str(message or "").strip().lower()
+        return (
+            "api key not found" in normalized
+            or "modulenotfounderror" in normalized
+            or "importerror" in normalized
+        )
+
+    normalized_provider = normalize_provider(provider)
+    effective_model = model_spec
+    if normalized_provider == "gemini" and not effective_model:
+        effective_model = DEFAULT_GEMINI_MODEL
+    if not effective_model:
+        return None, None, False, None
+
+    try:
+        result = extract_markdown_from_image(
+            Path(image_path),
+            provider=normalized_provider,
+            model_spec=effective_model,
+            prompt=prompt,
+            max_new_tokens=max(1, int(max_new_tokens)),
+            gemini_api_key_env=gemini_api_key_env,
+        )
+    except Exception as exc:  # noqa: BLE001
+        error_message = f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
+        return (
+            None,
+            error_message,
+            is_pipeline_unavailable(error_message),
+            None,
+        )
+
+    if not isinstance(result, dict):
+        return None, f"image pipeline returned invalid payload: {type(result).__name__}", False, None
+
+    status = str(result.get("status", "")).strip().lower()
+    if status == "markdown":
+        markdown = str(result.get("markdown", "")).strip()
+        if markdown:
+            return markdown, None, False, result
+        return None, f"image pipeline rendered empty markdown: {Path(image_path).name}", False, result
+    if status == "no_markdown":
+        return None, None, False, result
+
+    error = str(result.get("error", "")).strip() or "unknown image pipeline error"
+    return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
+
+
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],
     alt_text: str = "image",
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-) -> str:
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
-        return path
-    path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
-    path = relativize_markdown_path(path, output_dir)
-    return f"![{alt_text}]({path})"
+        return path, None, False, False, False
+
+    normalized_provider = normalize_provider(image_vlm_provider)
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    if image_vlm_enabled:
+        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
+            path,
+            provider=normalized_provider,
+            model_spec=image_vlm_model,
+            prompt=image_vlm_prompt,
+            max_new_tokens=image_vlm_max_new_tokens,
+            gemini_api_key_env=image_vlm_api_key_env,
+        )
+        if image_md is not None:
+            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+        copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+        relative_path = relativize_markdown_path(copied_path, output_dir)
+        return f"![{alt_text}]({relative_path})", image_warn, unavailable, False, skipped_no_markdown
+
+    copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    relative_path = relativize_markdown_path(copied_path, output_dir)
+    return f"![{alt_text}]({relative_path})", None, False, False, False
 
 
 def paragraph_text(paragraph: ET.Element) -> str:
@@ -910,9 +1005,11 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
     image_vlm_model: Optional[str] = None,
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
     strict_headings: bool = False,
 ) -> Tuple[str, SlideStats]:
     return convert_one_slide_core(
@@ -922,9 +1019,14 @@ def convert_one_slide(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        surya_debug_dir=surya_debug_dir,
-        copied_surya_debug_images=copied_surya_debug_images,
-        enable_image_table_pipeline=enable_image_table_pipeline,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
+        surya_debug_dir=None,
+        copied_surya_debug_images=None,
+        enable_image_table_pipeline=False,
         strict_headings=strict_headings,
         deps=_slide_conversion_deps(),
         ns=NS,
@@ -962,20 +1064,34 @@ def _parse_args() -> argparse.Namespace:
         help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
     )
     parser.add_argument(
+        "--image-vlm-provider",
+        choices=("local", "gemini"),
+        default=DEFAULT_IMAGE_VLM_PROVIDER,
+        help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API.",
+    )
+    parser.add_argument(
         "--image-vlm-model",
-        choices=("3b", "7b"),
-        help="Convert every image block with a local Qwen2.5-VL model instead of leaving raw image links.",
+        help=(
+            "Image VLM model identifier. "
+            "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
+            "or a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini."
+        ),
     )
     parser.add_argument(
         "--image-vlm-prompt",
         default=DEFAULT_IMAGE_VLM_PROMPT,
-        help="Prompt passed to the local image VLM when --image-vlm-model is enabled.",
+        help="Prompt passed to the image VLM when image conversion is enabled.",
     )
     parser.add_argument(
         "--image-vlm-max-new-tokens",
         type=int,
         default=DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-        help="Maximum number of tokens to generate per image when --image-vlm-model is enabled.",
+        help="Maximum number of tokens to generate per image when image conversion is enabled.",
+    )
+    parser.add_argument(
+        "--image-vlm-api-key-env",
+        default=DEFAULT_GEMINI_API_KEY_ENV,
+        help="Environment variable name containing the Gemini API key when --image-vlm-provider gemini is used.",
     )
     parser.add_argument(
         "--verbose",
@@ -996,9 +1112,11 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
         reuse_surya_cache=bool(args.reuse_surya_cache),
-        image_vlm_model=(str(args.image_vlm_model).strip().lower() if args.image_vlm_model else None),
+        image_vlm_provider=normalize_provider(args.image_vlm_provider),
+        image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
         image_vlm_prompt=str(args.image_vlm_prompt),
         image_vlm_max_new_tokens=max(1, int(args.image_vlm_max_new_tokens)),
+        image_vlm_api_key_env=str(args.image_vlm_api_key_env).strip() or DEFAULT_GEMINI_API_KEY_ENV,
     )
 
 
@@ -1101,6 +1219,7 @@ def _convert_package(
         "slides": [],
         "result_md": str(pkg_out / "result.md"),
         "pipeline_mode": config.reading_order,
+        "image_vlm_provider": config.image_vlm_provider,
         "image_vlm_model": config.image_vlm_model,
     }
 
@@ -1164,9 +1283,11 @@ def _convert_package(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                image_vlm_provider=config.image_vlm_provider,
                 image_vlm_model=config.image_vlm_model,
                 image_vlm_prompt=config.image_vlm_prompt,
                 image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
+                image_vlm_api_key_env=config.image_vlm_api_key_env,
                 strict_headings=(config.reading_order == "xml" and config.strict),
             )
             if config.reading_order == "surya":

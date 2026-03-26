@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""Qwen2.5-VL based image-to-markdown service."""
+"""Image-to-markdown service supporting local Qwen2.5-VL and Gemini API."""
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Tuple
 
+
+IMAGE_VLM_PROVIDERS = {"local", "gemini"}
+DEFAULT_PROVIDER = "local"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_API_KEY_ENV = "GEMINI_API_KEY"
 
 QWEN_VL_MODELS = {
     "3b": "Qwen/Qwen2.5-VL-3B-Instruct",
@@ -46,6 +56,12 @@ _VECTOR_IMAGE_SUFFIXES = {
     ".emf",
     ".wmf",
 }
+_GEMINI_MIME_BY_SUFFIX = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 
 _MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 _RESULT_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -57,22 +73,41 @@ warnings.filterwarnings(
 )
 
 
-def resolve_model_id(model_spec: str) -> Tuple[str, str]:
+def normalize_provider(provider: Optional[str]) -> str:
+    normalized = str(provider or DEFAULT_PROVIDER).strip().lower()
+    if normalized not in IMAGE_VLM_PROVIDERS:
+        raise ValueError(
+            f"unsupported image VLM provider: {provider}. "
+            f"Expected one of: {', '.join(sorted(IMAGE_VLM_PROVIDERS))}"
+        )
+    return normalized
+
+
+def resolve_model_id(model_spec: Optional[str], *, provider: str = DEFAULT_PROVIDER) -> Tuple[str, str]:
+    normalized_provider = normalize_provider(provider)
     normalized = str(model_spec or "").strip()
+
+    if normalized_provider == "local":
+        if not normalized:
+            raise ValueError("image VLM model is required for local provider")
+
+        alias = normalized.lower()
+        if alias in QWEN_VL_MODELS:
+            return alias, QWEN_VL_MODELS[alias]
+
+        if "/" in normalized:
+            return normalized, normalized
+
+        raise ValueError(
+            f"unsupported image VLM model: {model_spec}. "
+            f"Expected one of: {', '.join(sorted(QWEN_VL_MODELS))} or a Hugging Face model id"
+        )
+
+    if normalized.startswith("models/"):
+        normalized = normalized.split("/", 1)[1].strip()
     if not normalized:
-        raise ValueError("image VLM model is required")
-
-    alias = normalized.lower()
-    if alias in QWEN_VL_MODELS:
-        return alias, QWEN_VL_MODELS[alias]
-
-    if "/" in normalized:
-        return normalized, normalized
-
-    raise ValueError(
-        f"unsupported image VLM model: {model_spec}. "
-        f"Expected one of: {', '.join(sorted(QWEN_VL_MODELS))}"
-    )
+        normalized = DEFAULT_GEMINI_MODEL
+    return normalized, normalized
 
 
 def _is_supported_image_suffix(suffix: str) -> bool:
@@ -189,6 +224,35 @@ def _prepared_image_path(image_path: Path) -> Iterator[Path]:
             shutil.rmtree(raster_path.parent, ignore_errors=True)
 
 
+@contextmanager
+def _gemini_ready_image_path(image_path: Path) -> Iterator[Tuple[Path, str]]:
+    suffix = image_path.suffix.lower()
+    mime_type = _GEMINI_MIME_BY_SUFFIX.get(suffix)
+    if mime_type:
+        yield image_path, mime_type
+        return
+
+    from PIL import Image, ImageOps
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="gemini_image_png_"))
+    output_path = tmp_root / f"{image_path.stem}.png"
+    try:
+        with Image.open(image_path) as loaded:
+            image = ImageOps.exif_transpose(loaded)
+            try:
+                image.seek(0)
+            except Exception:
+                pass
+
+            if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+                image.convert("RGBA").save(output_path, format="PNG")
+            else:
+                image.convert("RGB").save(output_path, format="PNG")
+        yield output_path, "image/png"
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+
+
 def _pick_torch_dtype(torch: Any) -> Any:
     if torch.cuda.is_available():
         try:
@@ -200,8 +264,8 @@ def _pick_torch_dtype(torch: Any) -> Any:
     return torch.float32
 
 
-def _load_runtime(model_spec: str) -> Dict[str, Any]:
-    model_alias, model_id = resolve_model_id(model_spec)
+def _load_runtime(model_spec: Optional[str]) -> Dict[str, Any]:
+    model_alias, model_id = resolve_model_id(model_spec, provider="local")
     cache_key = model_id
     cached = _MODEL_CACHE.get(cache_key)
     if cached is not None:
@@ -292,20 +356,181 @@ def _normalize_markdown(text: str) -> str:
     return normalized.rstrip() + "\n" if normalized else ""
 
 
+def _gemini_api_key(api_key: Optional[str], env_name: str) -> str:
+    direct = str(api_key or "").strip()
+    if direct:
+        return direct
+    return os.getenv(env_name, "").strip()
+
+
+def _extract_gemini_text(payload: Dict[str, Any]) -> str:
+    texts = []
+    for candidate in payload.get("candidates", []):
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        if not isinstance(content, dict):
+            continue
+        for part in content.get("parts", []):
+            if not isinstance(part, dict):
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                texts.append(text)
+    return "\n".join(texts).strip()
+
+
+def _extract_gemini_error(payload: Dict[str, Any]) -> Optional[str]:
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return None
+    message = error.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+    return None
+
+
+def _request_gemini_markdown(
+    image_path: Path,
+    *,
+    model_spec: Optional[str],
+    prompt: str,
+    max_new_tokens: int,
+    gemini_api_key: Optional[str],
+    gemini_api_key_env: str,
+) -> Dict[str, Any]:
+    model_alias, model_id = resolve_model_id(model_spec, provider="gemini")
+    api_key = _gemini_api_key(gemini_api_key, gemini_api_key_env)
+    if not api_key:
+        return {
+            "status": "error",
+            "provider": "gemini",
+            "file": str(image_path),
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "error": f"Gemini API key not found. Set {gemini_api_key_env}.",
+        }
+
+    with _gemini_ready_image_path(image_path) as (request_image_path, mime_type):
+        encoded_image = base64.b64encode(request_image_path.read_bytes()).decode("ascii")
+
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type,
+                            "data": encoded_image,
+                        }
+                    },
+                ],
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": max(1, int(max_new_tokens)),
+        },
+    }
+
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{urllib.parse.quote(model_id, safe='')}:generateContent"
+        f"?key={urllib.parse.quote(api_key, safe='')}"
+    )
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        message = body
+        try:
+            parsed = json.loads(body)
+            message = _extract_gemini_error(parsed) or body
+        except Exception:
+            pass
+        return {
+            "status": "error",
+            "provider": "gemini",
+            "file": str(image_path),
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "error": f"HTTP {exc.code}: {message}",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "error",
+            "provider": "gemini",
+            "file": str(image_path),
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    response_error = _extract_gemini_error(response_payload)
+    if response_error:
+        return {
+            "status": "error",
+            "provider": "gemini",
+            "file": str(image_path),
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "error": response_error,
+        }
+
+    markdown = _normalize_markdown(_extract_gemini_text(response_payload))
+    if not markdown.strip():
+        return {
+            "status": "no_markdown",
+            "provider": "gemini",
+            "file": str(image_path),
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "reason": "not_document_worthy",
+            "fallback": "image_link",
+        }
+
+    return {
+        "status": "markdown",
+        "provider": "gemini",
+        "file": str(image_path),
+        "model_alias": model_alias,
+        "model_id": model_id,
+        "prompt": prompt,
+        "max_new_tokens": max(1, int(max_new_tokens)),
+        "markdown": markdown,
+    }
+
+
 def extract_markdown_from_image(
     image_path: Path,
     *,
-    model_spec: str,
+    model_spec: Optional[str],
     prompt: str = DEFAULT_PROMPT,
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
+    provider: str = DEFAULT_PROVIDER,
+    gemini_api_key: Optional[str] = None,
+    gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
 ) -> Dict[str, Any]:
+    normalized_provider = normalize_provider(provider)
     resolved_path = image_path.expanduser().resolve()
     cache_key = "||".join(
         [
             str(resolved_path),
-            str(model_spec),
+            normalized_provider,
+            str(model_spec or ""),
             str(max(1, int(max_new_tokens))),
             prompt,
+            str(gemini_api_key_env if normalized_provider == "gemini" else ""),
         ]
     )
     cached = _RESULT_CACHE.get(cache_key)
@@ -329,70 +554,87 @@ def extract_markdown_from_image(
 
     started_at = time.perf_counter()
     try:
-        runtime = _load_runtime(model_spec)
-        model = runtime["model"]
-        processor = runtime["processor"]
-
         with _prepared_image_path(resolved_path) as prepared_path:
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "path": str(prepared_path)},
-                        {"type": "text", "text": prompt},
-                    ],
+            if normalized_provider == "local":
+                runtime = _load_runtime(model_spec)
+                model = runtime["model"]
+                processor = runtime["processor"]
+
+                messages = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "image", "path": str(prepared_path)},
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ]
+                inputs = processor.apply_chat_template(
+                    messages,
+                    add_generation_prompt=True,
+                    tokenize=True,
+                    return_dict=True,
+                    return_tensors="pt",
+                )
+                inputs = inputs.to(model.device)
+                generated_ids = model.generate(**inputs, max_new_tokens=max(1, int(max_new_tokens)))
+                trimmed_ids = generated_ids[:, inputs.input_ids.shape[1] :]
+                decoded = processor.batch_decode(
+                    trimmed_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+                markdown = _normalize_markdown(decoded[0] if decoded else "")
+                if not markdown.strip():
+                    out = {
+                        "status": "no_markdown",
+                        "provider": "local",
+                        "file": str(resolved_path),
+                        "model_alias": runtime["model_alias"],
+                        "model_id": runtime["model_id"],
+                        "reason": "not_document_worthy",
+                        "fallback": "image_link",
+                        "elapsed_sec": round(time.perf_counter() - started_at, 3),
+                    }
+                    _RESULT_CACHE[cache_key] = out
+                    return out
+
+                out = {
+                    "status": "markdown",
+                    "provider": "local",
+                    "file": str(resolved_path),
+                    "model_alias": runtime["model_alias"],
+                    "model_id": runtime["model_id"],
+                    "prompt": prompt,
+                    "max_new_tokens": max(1, int(max_new_tokens)),
+                    "markdown": markdown,
+                    "elapsed_sec": round(time.perf_counter() - started_at, 3),
                 }
-            ]
-            inputs = processor.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=True,
-                return_dict=True,
-                return_tensors="pt",
+                _RESULT_CACHE[cache_key] = out
+                return out
+
+            out = _request_gemini_markdown(
+                prepared_path,
+                model_spec=model_spec,
+                prompt=prompt,
+                max_new_tokens=max_new_tokens,
+                gemini_api_key=gemini_api_key,
+                gemini_api_key_env=gemini_api_key_env,
             )
-            inputs = inputs.to(model.device)
-            generated_ids = model.generate(**inputs, max_new_tokens=max(1, int(max_new_tokens)))
-            trimmed_ids = generated_ids[:, inputs.input_ids.shape[1] :]
-            decoded = processor.batch_decode(
-                trimmed_ids,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=True,
-            )
-            markdown = _normalize_markdown(decoded[0] if decoded else "")
+            out["file"] = str(resolved_path)
+            out["elapsed_sec"] = round(time.perf_counter() - started_at, 3)
+            _RESULT_CACHE[cache_key] = out
+            return out
     except Exception as exc:  # noqa: BLE001
+        model_alias, model_id = resolve_model_id(model_spec, provider=normalized_provider)
         out = {
             "status": "error",
+            "provider": normalized_provider,
             "file": str(resolved_path),
-            "model_alias": resolve_model_id(model_spec)[0],
-            "model_id": resolve_model_id(model_spec)[1],
+            "model_alias": model_alias,
+            "model_id": model_id,
             "error": f"{type(exc).__name__}: {exc}",
             "elapsed_sec": round(time.perf_counter() - started_at, 3),
         }
         _RESULT_CACHE[cache_key] = out
         return out
-
-    if not markdown.strip():
-        out = {
-            "status": "no_markdown",
-            "file": str(resolved_path),
-            "model_alias": runtime["model_alias"],
-            "model_id": runtime["model_id"],
-            "reason": "not_document_worthy",
-            "fallback": "image_link",
-            "elapsed_sec": round(time.perf_counter() - started_at, 3),
-        }
-        _RESULT_CACHE[cache_key] = out
-        return out
-
-    out = {
-        "status": "markdown",
-        "file": str(resolved_path),
-        "model_alias": runtime["model_alias"],
-        "model_id": runtime["model_id"],
-        "prompt": prompt,
-        "max_new_tokens": max(1, int(max_new_tokens)),
-        "markdown": markdown,
-        "elapsed_sec": round(time.perf_counter() - started_at, 3),
-    }
-    _RESULT_CACHE[cache_key] = out
-    return out

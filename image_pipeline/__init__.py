@@ -1,5 +1,25 @@
-"""Image pipeline package for Qwen2.5-VL based markdown conversion."""
+"""Image pipeline package for image-to-markdown conversion."""
 
-from .service import extract_markdown_from_image, resolve_model_id
+from .service import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_PROMPT,
+    DEFAULT_PROVIDER,
+    IMAGE_VLM_PROVIDERS,
+    extract_markdown_from_image,
+    normalize_provider,
+    resolve_model_id,
+)
 
-__all__ = ["extract_markdown_from_image", "resolve_model_id"]
+__all__ = [
+    "DEFAULT_GEMINI_API_KEY_ENV",
+    "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_MAX_NEW_TOKENS",
+    "DEFAULT_PROMPT",
+    "DEFAULT_PROVIDER",
+    "IMAGE_VLM_PROVIDERS",
+    "extract_markdown_from_image",
+    "normalize_provider",
+    "resolve_model_id",
+]

@@ -72,7 +72,7 @@ class ConversionManifest(BaseModel):
 
 
 class ConverterConfig(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     cwd: Path
     repo_root: Path
@@ -83,3 +83,8 @@ class ConverterConfig(BaseModel):
     strict: bool = False
     reuse_surya_cache: bool = False
     image_table_pipeline: bool = False
+    image_vlm_provider: str = "local"
+    image_vlm_model: Optional[str] = None
+    image_vlm_prompt: str = ""
+    image_vlm_max_new_tokens: int = 1024
+    image_vlm_api_key_env: str = "GEMINI_API_KEY"

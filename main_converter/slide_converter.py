@@ -46,7 +46,7 @@ class SlideConversionDeps:
         Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]],
     ]
     copy_debug_image_asset: Callable[[str, Optional[Path], Optional[Dict[str, Path]]], Optional[str]]
-    format_markdown_image: Callable[..., str]
+    format_markdown_image: Callable[..., Tuple[str, Optional[str], bool, bool, bool]]
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
     diagram_data_path: Callable[[ET.Element, Optional[Path], Dict[str, str]], Optional[Path]]
@@ -163,6 +163,11 @@ def _handle_picture_block(
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
+    image_vlm_provider: str,
+    image_vlm_model: Optional[str],
+    image_vlm_prompt: str,
+    image_vlm_max_new_tokens: int,
+    image_vlm_api_key_env: str,
     surya_debug_dir: Optional[Path],
     copied_surya_debug_images: Optional[Dict[str, Path]],
     enable_image_table_pipeline: bool,
@@ -210,14 +215,26 @@ def _handle_picture_block(
             else:
                 stats.warnings.append(table_warn)
 
-    lines.append(
-        deps.format_markdown_image(
-            img_path,
-            output_dir=output_dir,
-            media_dir=media_dir,
-            copied_media=copied_media,
-        )
+    rendered_image, image_warn, unavailable, _, _ = deps.format_markdown_image(
+        img_path,
+        output_dir=output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
     )
+    if image_warn:
+        if unavailable:
+            if not state.image_pipeline_unavailable_reported:
+                stats.warnings.append(image_warn)
+                state.image_pipeline_unavailable_reported = True
+        else:
+            stats.warnings.append(image_warn)
+
+    lines.append(rendered_image)
     lines.append("")
     stats.image_blocks += 1
 
@@ -281,6 +298,11 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    image_vlm_provider: str = "local",
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = "",
+    image_vlm_max_new_tokens: int = 1024,
+    image_vlm_api_key_env: str = "GEMINI_API_KEY",
     surya_debug_dir: Optional[Path] = None,
     copied_surya_debug_images: Optional[Dict[str, Path]] = None,
     enable_image_table_pipeline: bool = False,
@@ -345,6 +367,11 @@ def convert_one_slide(
                 output_dir=output_dir,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                image_vlm_provider=image_vlm_provider,
+                image_vlm_model=image_vlm_model,
+                image_vlm_prompt=image_vlm_prompt,
+                image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+                image_vlm_api_key_env=image_vlm_api_key_env,
                 surya_debug_dir=surya_debug_dir,
                 copied_surya_debug_images=copied_surya_debug_images,
                 enable_image_table_pipeline=enable_image_table_pipeline,

@@ -3,6 +3,7 @@
 # Notes:
 # - `torch` wheel selection can differ by CPU/GPU platform.
 # - If needed, install a platform-specific torch first, then install this file.
+# - Gemini API mode uses stdlib HTTP calls and does not require extra Python packages.
 #
 #   CPU example:
 #   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.10.0 torchvision==0.25.0
