@@ -1121,6 +1121,19 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
 
 
 def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
+    def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
+        if not missing_inputs:
+            return
+        logger.error("Input .pptx file not found.")
+        for row in missing_inputs:
+            requested = str(row.get("input", "")).strip()
+            if requested:
+                logger.error("- requested: %s", requested)
+            checked = row.get("checked")
+            if isinstance(checked, list):
+                for candidate in checked:
+                    logger.error("  checked: %s", candidate)
+
     if config.inputs:
         non_pptx_inputs = [x for x in config.inputs if Path(x).suffix.lower() != ".pptx"]
         if non_pptx_inputs:
@@ -1129,13 +1142,21 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
             for item in non_pptx_inputs:
                 logger.error("- %s", item)
             raise ValueError("invalid non-pptx inputs")
-        return prepare_package_inputs(config.cwd, config.inputs, force_extract=True)
+        prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, config.inputs, force_extract=True)
+        if missing_inputs:
+            _log_missing_inputs(missing_inputs)
+            raise ValueError("missing pptx inputs")
+        return prepared_inputs
 
     auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
     if not auto_pptx_inputs:
         logger.info("No .pptx files found in: %s", preferred_pptx_input_dir(config.cwd).resolve())
         return []
-    return prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
+    prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
+    if missing_inputs:
+        _log_missing_inputs(missing_inputs)
+        raise ValueError("missing auto-discovered pptx inputs")
+    return prepared_inputs
 
 
 def _resolve_packages(config: ConverterConfig, prepared_inputs: Sequence[str]) -> List[Path]:
