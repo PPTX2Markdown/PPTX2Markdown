@@ -196,6 +196,127 @@ python3 main_converter/convert_slides_to_md.py \
 [image-vlm-source: image6.png]
 ```
 
+## Docker 사용
+
+현재 저장소에는 [Dockerfile](/mnt/c/study/graduation/PPTX2Markdown/Dockerfile)과 [docker-compose.yml](/mnt/c/study/graduation/PPTX2Markdown/docker-compose.yml)이 포함되어 있습니다.
+
+기본 빌드 및 실행:
+
+```bash
+docker compose build
+docker compose up -d
+docker compose exec app python3 main_converter/convert_slides_to_md.py --help
+```
+
+컨테이너 쉘 진입:
+
+```bash
+docker compose exec app bash
+```
+
+볼륨/동작:
+
+- 저장소 루트가 컨테이너의 `/workspace`로 마운트됩니다.
+- Hugging Face / torch / pip 캐시는 compose 볼륨으로 유지됩니다.
+- 기본 이미지는 CPU 기준입니다. 로컬 Qwen `7b`는 매우 느릴 수 있습니다.
+
+### Docker에서 기본 실행
+
+호스트에서 `main_converter/target_pptx/`에 파일을 넣은 뒤:
+
+```bash
+docker compose exec app python3 main_converter/convert_slides_to_md.py
+```
+
+특정 파일만:
+
+```bash
+docker compose exec app python3 main_converter/convert_slides_to_md.py sample1.pptx
+```
+
+Surya reading-order:
+
+```bash
+docker compose exec app python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
+```
+
+### Docker에서 로컬 Qwen 사용
+
+`3b` 예시:
+
+```bash
+docker compose exec app python3 main_converter/convert_slides_to_md.py \
+  --image-vlm-provider local \
+  --image-vlm-model 3b \
+  sample1.pptx
+```
+
+직접 Hugging Face 모델 ID 지정:
+
+```bash
+docker compose exec app python3 main_converter/convert_slides_to_md.py \
+  --image-vlm-provider local \
+  --image-vlm-model Qwen/Qwen2.5-VL-7B-Instruct \
+  sample1.pptx
+```
+
+주의:
+
+- Dockerfile은 CPU용 `torch` wheel을 설치합니다.
+- 큰 로컬 VLM은 GPU 없는 컨테이너에서 비현실적으로 느릴 수 있습니다.
+
+### Docker에서 Gemini API 사용
+
+한 번만 실행할 때:
+
+```bash
+docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
+  python3 main_converter/convert_slides_to_md.py \
+  --image-vlm-provider gemini \
+  sample1.pptx
+```
+
+모델 지정:
+
+```bash
+docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
+  python3 main_converter/convert_slides_to_md.py \
+  --image-vlm-provider gemini \
+  --image-vlm-model gemini-2.5-flash \
+  sample1.pptx
+```
+
+다른 환경변수 이름 사용:
+
+```bash
+docker compose exec -e MY_GEMINI_KEY="$MY_GEMINI_KEY" app \
+  python3 main_converter/convert_slides_to_md.py \
+  --image-vlm-provider gemini \
+  --image-vlm-api-key-env MY_GEMINI_KEY \
+  sample1.pptx
+```
+
+자주 쓸 거면 [docker-compose.yml](/mnt/c/study/graduation/PPTX2Markdown/docker-compose.yml)의 `environment:`에 직접 추가해도 됩니다.
+
+예시:
+
+```yaml
+environment:
+  PYTHONUNBUFFERED: "1"
+  HF_HOME: /root/.cache/huggingface
+  HF_HUB_DISABLE_PROGRESS_BARS: "1"
+  TOKENIZERS_PARALLELISM: "false"
+  GEMINI_API_KEY: ${GEMINI_API_KEY}
+```
+
+그 뒤 실행:
+
+```bash
+export GEMINI_API_KEY="your-api-key"
+docker compose up -d
+docker compose exec app python3 main_converter/convert_slides_to_md.py --image-vlm-provider gemini sample1.pptx
+```
+
 ## 이미지 처리 정책
 
 - 일반 이미지 블록은 이미지 VLM이 켜져 있으면 Markdown 변환을 시도합니다.
