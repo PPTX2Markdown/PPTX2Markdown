@@ -171,7 +171,7 @@ python3 main_converter/convert_slides_to_md.py \
 python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
-  --image-vlm-prompt "Extract only document-worthy information from this image as concise Markdown. If the image is decorative or not useful for document retrieval, answer exactly: 불필요한 정보" \
+  --image-vlm-prompt "Custom prompt here" \
   --image-vlm-max-new-tokens 768 \
   sample1.pptx
 ```
