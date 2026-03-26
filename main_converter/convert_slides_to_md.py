@@ -1238,6 +1238,16 @@ def _append_package_stage_failure(
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
 
+def _log_slide_warnings(package_name: str, slide_xml: Path, page_no: int, warnings: Sequence[str]) -> None:
+    seen: set[str] = set()
+    for warning in warnings:
+        text = str(warning or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        logger.warning("[%s] Warning: %s (page=%s, slide=%s)", package_name, text, page_no, slide_xml.name)
+
+
 def _convert_package(
     config: ConverterConfig,
     pkg: Path,
@@ -1341,6 +1351,8 @@ def _convert_package(
             )
             manifest.summary.add_slide(stats)
             logger.info("[%s] Processed: %s", pkg_name, slide_xml.name)
+            if stats.warnings:
+                _log_slide_warnings(pkg_name, slide_xml, page_no, stats.warnings)
         except Exception as e:  # noqa: BLE001
             row.update({"status": "failed", "error": str(e)})
             manifest.summary.failed += 1
