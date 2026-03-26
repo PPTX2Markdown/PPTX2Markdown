@@ -1340,17 +1340,18 @@ def _log_image_markdown_result(image_path: str, result: Dict[str, object]) -> No
     error = result.get("error")
     markdown = result.get("markdown")
     markdown_chars = len(markdown.strip()) if isinstance(markdown, str) else 0
+    elapsed_label = f"{float(elapsed_sec):.3f}s" if isinstance(elapsed_sec, (int, float)) else "n/a"
 
     summary = (
         f"[image-vlm] {name} "
         f"status={status} "
         f"model={model_alias or model_id or 'unknown'} "
         f"chars={markdown_chars} "
-        f"elapsed={elapsed_sec if isinstance(elapsed_sec, (int, float)) else 'n/a'}"
+        f"elapsed={elapsed_label}"
     )
     if isinstance(error, str) and error.strip():
         summary = f"{summary} error={error}"
-    print(summary)
+    print(summary, flush=True)
 
     if _IMAGE_VLM_DEBUG_JSON:
         debug_payload = {

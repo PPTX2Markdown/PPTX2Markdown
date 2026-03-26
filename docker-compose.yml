@@ -17,7 +17,7 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       HF_HOME: /root/.cache/huggingface
-      TRANSFORMERS_CACHE: /root/.cache/huggingface
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
       TOKENIZERS_PARALLELISM: "false"
 
 volumes:

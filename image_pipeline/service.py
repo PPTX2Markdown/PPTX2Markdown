@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Tuple
@@ -48,6 +49,12 @@ _VECTOR_IMAGE_SUFFIXES = {
 
 _MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 _RESULT_CACHE: Dict[str, Dict[str, Any]] = {}
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers\..*",
+    category=FutureWarning,
+)
 
 
 def resolve_model_id(model_spec: str) -> Tuple[str, str]:
@@ -202,17 +209,31 @@ def _load_runtime(model_spec: str) -> Dict[str, Any]:
 
     import torch
     from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+    from transformers.utils import logging as transformers_logging
+
+    try:
+        transformers_logging.disable_progress_bar()
+    except Exception:
+        pass
+    transformers_logging.set_verbosity_error()
+
+    try:
+        from huggingface_hub.utils import disable_progress_bars
+
+        disable_progress_bars()
+    except Exception:
+        pass
 
     model_kwargs: Dict[str, Any] = {
         "device_map": "auto",
-        "torch_dtype": _pick_torch_dtype(torch),
+        "dtype": _pick_torch_dtype(torch),
         "low_cpu_mem_usage": True,
     }
     if torch.cuda.is_available():
         model_kwargs["attn_implementation"] = "sdpa"
 
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(model_id, **model_kwargs)
-    processor = AutoProcessor.from_pretrained(model_id)
+    processor = AutoProcessor.from_pretrained(model_id, use_fast=False)
     runtime = {
         "model_alias": model_alias,
         "model_id": model_id,
