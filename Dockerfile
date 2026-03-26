@@ -23,10 +23,11 @@ WORKDIR /workspace
 COPY requirements.txt /tmp/requirements.txt
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cpu && \
     pip install -r /tmp/requirements.txt
 
 RUN python -c "import torch; print(torch.__version__)" && \
+    python -c "import torchvision; print(torchvision.__version__)" && \
     python -c "import accelerate; print(accelerate.__version__)" && \
     python -c "import transformers; print(transformers.__version__)" && \
     python -c "import cv2; print(cv2.__version__)" && \
