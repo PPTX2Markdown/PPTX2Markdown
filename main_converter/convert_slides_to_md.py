@@ -56,11 +56,13 @@ _IMAGE_MARKDOWN_PIPELINE_MODULE: Optional[object] = None
 _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR: Optional[str] = None
 _IMAGE_VLM_DEBUG_JSON = os.getenv("IMAGE_VLM_DEBUG_JSON", "").strip().lower() in {"1", "true", "yes", "on"}
 DEFAULT_IMAGE_VLM_PROMPT = (
-    "Convert this image into Markdown.\n"
-    "- Return Markdown only.\n"
-    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, tables, and code-like text.\n"
-    "- If the image is a chart, diagram, infographic, or screenshot, summarize the visible content in clean Markdown.\n"
+    "Convert this image into concise Markdown for RAG ingestion.\n"
+    "- Extract visible text and table content faithfully.\n"
+    "- If the image is mainly a table, recreate it as a Markdown table and keep readable cell text.\n"
+    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, and code-like text.\n"
+    "- If the image is a chart, diagram, infographic, or screenshot, summarize only the useful visible content in Markdown.\n"
     "- If some text is unreadable, omit it instead of guessing.\n"
+    "- If the image does not contain useful documentable information, answer exactly: 불필요한 정보\n"
     "- Do not wrap the answer in triple backticks."
 )
 DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS = 1024

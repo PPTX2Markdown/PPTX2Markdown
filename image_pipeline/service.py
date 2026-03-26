@@ -21,11 +21,13 @@ QWEN_VL_MODELS = {
 }
 
 DEFAULT_PROMPT = (
-    "Convert this image into Markdown.\n"
-    "- Return Markdown only.\n"
-    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, tables, and code-like text.\n"
-    "- If the image is a chart, diagram, infographic, or screenshot, summarize the visible content in clean Markdown.\n"
+    "Convert this image into concise Markdown for RAG ingestion.\n"
+    "- Extract visible text and table content faithfully.\n"
+    "- If the image is mainly a table, recreate it as a Markdown table and keep readable cell text.\n"
+    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, and code-like text.\n"
+    "- If the image is a chart, diagram, infographic, or screenshot, summarize only the useful visible content in Markdown.\n"
     "- If some text is unreadable, omit it instead of guessing.\n"
+    "- If the image does not contain useful documentable information, answer exactly: 불필요한 정보\n"
     "- Do not wrap the answer in triple backticks."
 )
 
@@ -245,11 +247,45 @@ def _load_runtime(model_spec: str) -> Dict[str, Any]:
     return runtime
 
 
+_PROMPT_ECHO_PHRASES = {
+    "return markdown only.",
+    "here is the image converted to markdown:",
+    "converted to markdown:",
+    "convert this image into markdown.",
+    "convert this image into concise markdown for rag ingestion.",
+    "extract visible text and table content faithfully.",
+    "if the image is mainly a table, recreate it as a markdown table and keep readable cell text.",
+    "preserve visible headings, paragraphs, bullet lists, numbered lists, and code-like text.",
+    "if the image is a chart, diagram, infographic, or screenshot, summarize only the useful visible content in markdown.",
+    "if some text is unreadable, omit it instead of guessing.",
+    "if the image does not contain useful documentable information, answer exactly: 불필요한 정보",
+    "do not wrap the answer in triple backticks.",
+}
+
+
+def _unwrap_latex_text_line(line: str) -> str:
+    match = re.fullmatch(r"\$\\text\s*\{\s*(.*?)\s*\}\$", line.strip())
+    if match:
+        return match.group(1).strip()
+    return line
+
+
+def _is_prompt_echo_line(line: str) -> bool:
+    normalized = _unwrap_latex_text_line(line).strip()
+    if not normalized:
+        return False
+    normalized = re.sub(r"^[\-\*\u2022]\s*", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+    return normalized in _PROMPT_ECHO_PHRASES
+
+
 def _normalize_markdown(text: str) -> str:
     normalized = text.strip()
     fence_match = re.fullmatch(r"```(?:markdown|md)?\s*(.*?)```", normalized, flags=re.DOTALL | re.IGNORECASE)
     if fence_match:
         normalized = fence_match.group(1).strip()
+    kept_lines = [line.rstrip() for line in normalized.splitlines() if not _is_prompt_echo_line(line)]
+    normalized = "\n".join(line for line in kept_lines).strip()
     return normalized.rstrip() + "\n" if normalized else ""
 
 

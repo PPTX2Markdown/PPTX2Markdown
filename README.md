@@ -130,10 +130,10 @@ python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.ppt
 python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample1.pptx
 ```
 
-이미지를 Qwen2.5-VL 7B로 Markdown 변환:
+이미지를 Qwen2.5-VL 3B로 Markdown 변환:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --image-vlm-model 7b sample1.pptx
+python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample1.pptx
 ```
 
 프롬프트와 토큰 수를 직접 지정:
@@ -141,7 +141,7 @@ python3 main_converter/convert_slides_to_md.py --image-vlm-model 7b sample1.pptx
 ```bash
 python3 main_converter/convert_slides_to_md.py \
   --image-vlm-model 3b \
-  --image-vlm-prompt "Convert this image into concise Markdown. Return Markdown only." \
+  --image-vlm-prompt "Convert this image into concise Markdown for RAG ingestion. If the image is not useful, answer exactly: 불필요한 정보" \
   --image-vlm-max-new-tokens 768 \
   sample1.pptx
 ```
@@ -163,7 +163,7 @@ python3 main_converter/convert_slides_to_md.py \
 - `--image-vlm-model {3b,7b}`
   - 일반 이미지와 표 overlay 이미지를 로컬 Qwen2.5-VL로 Markdown 변환합니다.
 - `--image-vlm-prompt`
-  - 이미지 VLM 프롬프트를 덮어씁니다.
+  - 이미지 VLM 프롬프트를 덮어씁니다. 기본 프롬프트는 표 이미지를 Markdown 표로 재구성하려고 시도하고, 유의미한 문서 정보가 없으면 `불필요한 정보`를 반환하도록 유도합니다.
 - `--image-vlm-max-new-tokens`
   - 이미지 1장당 최대 생성 토큰 수를 지정합니다.
 
