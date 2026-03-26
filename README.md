@@ -205,7 +205,7 @@ python3 main_converter/convert_slides_to_md.py \
 ```bash
 docker compose build
 docker compose up -d
-docker compose exec app python3 main_converter/convert_slides_to_md.py --help
+docker compose exec app bash
 ```
 
 컨테이너 쉘 진입:
@@ -214,6 +214,8 @@ docker compose exec app python3 main_converter/convert_slides_to_md.py --help
 docker compose exec app bash
 ```
 
+로컬 `venv`처럼 계속 작업하려면, 위처럼 먼저 쉘에 들어간 뒤 그 안에서 `python3 ...` 명령을 반복 실행하면 됩니다. 아래 Docker 예시는 모두 이 셸 기준입니다.
+
 볼륨/동작:
 
 - 저장소 루트가 컨테이너의 `/workspace`로 마운트됩니다.
@@ -221,32 +223,32 @@ docker compose exec app bash
 - 기본 compose 설정은 GPU용 PyTorch wheel(`cu128`)을 설치하고 `gpus: all`로 실행합니다.
 - Docker Host에는 NVIDIA driver와 NVIDIA Container Toolkit이 준비되어 있어야 합니다.
 
-### Docker에서 기본 실행
+### Docker 셸에서 기본 실행
 
 호스트에서 `main_converter/target_pptx/`에 파일을 넣은 뒤:
 
 ```bash
-docker compose exec app python3 main_converter/convert_slides_to_md.py
+python3 main_converter/convert_slides_to_md.py
 ```
 
 특정 파일만:
 
 ```bash
-docker compose exec app python3 main_converter/convert_slides_to_md.py sample1.pptx
+python3 main_converter/convert_slides_to_md.py sample1.pptx
 ```
 
 Surya reading-order:
 
 ```bash
-docker compose exec app python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
+python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
 ```
 
-### Docker에서 로컬 Qwen 사용
+### Docker 셸에서 로컬 Qwen 사용
 
 `3b` 예시:
 
 ```bash
-docker compose exec app python3 main_converter/convert_slides_to_md.py \
+python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider local \
   --image-vlm-model 3b \
   sample1.pptx
@@ -255,7 +257,7 @@ docker compose exec app python3 main_converter/convert_slides_to_md.py \
 직접 Hugging Face 모델 ID 지정:
 
 ```bash
-docker compose exec app python3 main_converter/convert_slides_to_md.py \
+python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider local \
   --image-vlm-model Qwen/Qwen2.5-VL-7B-Instruct \
   sample1.pptx
@@ -270,16 +272,27 @@ docker compose exec app python3 main_converter/convert_slides_to_md.py \
 GPU 사용 여부 확인:
 
 ```bash
-docker compose exec app python3 -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
+python3 -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
 ```
 
-### Docker에서 Gemini API 사용
+### Docker 셸에서 Gemini API 사용
 
-한 번만 실행할 때:
+호스트 셸에 `GEMINI_API_KEY`가 이미 잡혀 있다면, 가장 간단한 방법은 키를 같이 넘겨서 쉘에 들어가는 것입니다.
 
 ```bash
-docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
-  python3 main_converter/convert_slides_to_md.py \
+docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app bash
+```
+
+이미 컨테이너 쉘 안에 들어와 있다면, 먼저 키를 export:
+
+```bash
+export GEMINI_API_KEY="your-api-key"
+```
+
+그 다음 실행:
+
+```bash
+python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   sample1.pptx
 ```
@@ -287,8 +300,7 @@ docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
 모델 지정:
 
 ```bash
-docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
-  python3 main_converter/convert_slides_to_md.py \
+python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
   sample1.pptx
@@ -297,8 +309,8 @@ docker compose exec -e GEMINI_API_KEY="$GEMINI_API_KEY" app \
 다른 환경변수 이름 사용:
 
 ```bash
-docker compose exec -e MY_GEMINI_KEY="$MY_GEMINI_KEY" app \
-  python3 main_converter/convert_slides_to_md.py \
+export MY_GEMINI_KEY="$MY_GEMINI_KEY"
+python3 main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-api-key-env MY_GEMINI_KEY \
   sample1.pptx
@@ -322,7 +334,9 @@ environment:
 ```bash
 export GEMINI_API_KEY="your-api-key"
 docker compose up -d
-docker compose exec app python3 main_converter/convert_slides_to_md.py --image-vlm-provider gemini sample1.pptx
+docker compose exec app bash
+export GEMINI_API_KEY="$GEMINI_API_KEY"
+python3 main_converter/convert_slides_to_md.py --image-vlm-provider gemini sample1.pptx
 ```
 
 ## 이미지 처리 정책
