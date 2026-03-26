@@ -903,19 +903,25 @@ def overlay_content_text(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
     image_vlm_model: Optional[str] = None,
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
 ) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
         return path, None, False, False, False
 
-    if image_vlm_model:
+    normalized_provider = normalize_provider(image_vlm_provider)
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
+            provider=normalized_provider,
             model_spec=image_vlm_model,
             prompt=image_vlm_prompt,
             max_new_tokens=image_vlm_max_new_tokens,
+            gemini_api_key_env=image_vlm_api_key_env,
         )
         if image_md is not None:
             return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
@@ -960,6 +966,13 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    rels_path: Optional[Path] = None,
+    rels_map: Optional[Dict[str, str]] = None,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
 ) -> Tuple[Optional[str], Optional[str]]:
     return convert_table_to_markdown_core(
         graphic_frame,
@@ -967,9 +980,17 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
         ns=NS,
         normalize_text_fn=normalize_text,
-        overlay_link_text_fn=overlay_link_text,
+        overlay_content_text_fn=overlay_content_text,
+        resolve_image_path_fn=resolve_image_path,
     )
 
 

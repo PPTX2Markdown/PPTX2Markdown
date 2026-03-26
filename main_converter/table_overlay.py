@@ -219,30 +219,137 @@ def inject_table_overlay_links(
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
-    overlay_link_text_fn: Callable[[str, Optional[Path], Optional[Path], Optional[Dict[str, Path]]], str],
+    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
-) -> Dict[str, object]:
+    image_vlm_provider: str,
+    image_vlm_model: Optional[str],
+    image_vlm_prompt: str,
+    image_vlm_max_new_tokens: int,
+    image_vlm_api_key_env: str,
+) -> Tuple[Dict[str, object], List[str], bool]:
     if not overlays:
-        return parsed_table
+        return parsed_table, [], False
 
+    return _inject_table_images(
+        parsed_table,
+        graphic_frame,
+        image_entries=overlays,
+        ns=ns,
+        normalize_text_fn=normalize_text_fn,
+        overlay_content_text_fn=overlay_content_text_fn,
+        output_dir=output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
+    )
+
+
+def collect_table_cell_fill_images(
+    graphic_frame: ET.Element,
+    rels_map: Dict[str, str],
+    rels_path: Optional[Path],
+    *,
+    ns: Dict[str, str],
+    resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
+) -> Tuple[List[Dict[str, object]], List[str], int, int]:
+    tbl = graphic_frame.find(".//a:tbl", ns)
+    if tbl is None:
+        return [], [], 0, 0
+
+    items: List[Dict[str, object]] = []
+    warnings: List[str] = []
+    resolved = 0
+    unresolved = 0
+
+    for row_idx, tr in enumerate(tbl.findall("./a:tr", ns)):
+        for col_idx, tc in enumerate(tr.findall("./a:tc", ns)):
+            tcpr = tc.find("./a:tcPr", ns)
+            if tcpr is None:
+                continue
+            blip = tcpr.find(".//a:blip", ns)
+            if blip is None:
+                continue
+            embed = blip.attrib.get(f"{{{ns['r']}}}embed")
+            path, warn = resolve_image_path_fn(rels_map, rels_path, embed)
+            item = {
+                "row_idx": row_idx,
+                "col_idx": col_idx,
+                "path": path,
+                "warn": warn,
+                "kind": "cell_fill",
+            }
+            items.append(item)
+            if isinstance(warn, str) and warn:
+                unresolved += 1
+                warnings.append(warn)
+            else:
+                resolved += 1
+    return items, warnings, resolved, unresolved
+
+
+def _table_cell_text(content: str) -> str:
+    lines = [line.strip() for line in str(content).splitlines() if line.strip()]
+    return "<br>".join(lines)
+
+
+def _append_cell_content(cell: Dict[str, object], content: str, normalize_text_fn: Callable[[str], str]) -> None:
+    if not content:
+        return
+    existing_raw = str(cell.get("text", ""))
+    existing = normalize_text_fn(existing_raw)
+    updated = f"{existing} <br> {content}".strip() if existing else content
+    cell["text"] = updated
+
+
+def _inject_table_images(
+    parsed_table: Dict[str, object],
+    graphic_frame: ET.Element,
+    image_entries: Sequence[Dict[str, object]],
+    *,
+    ns: Dict[str, str],
+    normalize_text_fn: Callable[[str], str],
+    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
+    output_dir: Optional[Path],
+    media_dir: Optional[Path],
+    copied_media: Optional[Dict[str, Path]],
+    image_vlm_provider: str,
+    image_vlm_model: Optional[str],
+    image_vlm_prompt: str,
+    image_vlm_max_new_tokens: int,
+    image_vlm_api_key_env: str,
+) -> Tuple[Dict[str, object], List[str], bool]:
     bounds = compute_table_cell_bounds(graphic_frame, ns)
     if bounds is None:
-        return parsed_table
+        return parsed_table, [], False
     col_bounds, row_bounds = bounds
 
     rows = parsed_table.get("rows")
     if not isinstance(rows, list):
-        return parsed_table
+        return parsed_table, [], False
 
-    for overlay in overlays:
-        bbox = overlay.get("bbox")
-        if not (isinstance(bbox, tuple) and len(bbox) == 4):
+    warnings: List[str] = []
+    unavailable_reported = False
+
+    for image_entry in image_entries:
+        path = str(image_entry.get("path", ""))
+        if not path:
             continue
-        center = bbox_center(bbox)
-        row_idx = next((idx for idx, (top, bottom) in enumerate(row_bounds) if top <= center[1] <= bottom), None)
-        col_idx = next((idx for idx, (left, right) in enumerate(col_bounds) if left <= center[0] <= right), None)
+
+        row_idx = image_entry.get("row_idx")
+        col_idx = image_entry.get("col_idx")
+        if not isinstance(row_idx, int) or not isinstance(col_idx, int):
+            bbox = image_entry.get("bbox")
+            if not (isinstance(bbox, tuple) and len(bbox) == 4):
+                continue
+            center = bbox_center(bbox)
+            row_idx = next((idx for idx, (top, bottom) in enumerate(row_bounds) if top <= center[1] <= bottom), None)
+            col_idx = next((idx for idx, (left, right) in enumerate(col_bounds) if left <= center[0] <= right), None)
         if row_idx is None or col_idx is None:
             continue
         origin_row, origin_col = find_table_cell_origin(parsed_table, row_idx, col_idx)
@@ -254,16 +361,27 @@ def inject_table_overlay_links(
         cell = row[origin_col]
         if not isinstance(cell, dict):
             continue
-        existing = normalize_text_fn(str(cell.get("text", "")))
-        link = overlay_link_text_fn(
-            str(overlay.get("path", "")),
+
+        rendered, warn, unavailable, _, _ = overlay_content_text_fn(
+            path,
             output_dir,
-            media_dir,
-            copied_media,
+            media_dir=media_dir,
+            copied_media=copied_media,
+            image_vlm_provider=image_vlm_provider,
+            image_vlm_model=image_vlm_model,
+            image_vlm_prompt=image_vlm_prompt,
+            image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+            image_vlm_api_key_env=image_vlm_api_key_env,
         )
-        updated = f"{existing}\n{link}".strip() if existing else link
-        cell["text"] = updated
-    return parsed_table
+        _append_cell_content(cell, _table_cell_text(rendered), normalize_text_fn)
+        if warn:
+            if unavailable:
+                if not unavailable_reported:
+                    warnings.append(warn)
+                    unavailable_reported = True
+            else:
+                warnings.append(warn)
+    return parsed_table, warnings, unavailable_reported
 
 
 def convert_table_to_markdown(
@@ -272,10 +390,18 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    rels_path: Optional[Path] = None,
+    rels_map: Optional[Dict[str, str]] = None,
+    image_vlm_provider: str = "local",
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = "",
+    image_vlm_max_new_tokens: int = 1024,
+    image_vlm_api_key_env: str = "GEMINI_API_KEY",
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
-    overlay_link_text_fn: Callable[[str, Optional[Path], Optional[Path], Optional[Dict[str, Path]]], str],
+    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
+    resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
 ) -> Tuple[Optional[str], Optional[str]]:
     tbl = graphic_frame.find(".//a:tbl", ns)
     if tbl is None:
@@ -285,20 +411,53 @@ def convert_table_to_markdown(
     from table_pipeline import render as table_render  # type: ignore
 
     parsed = table_parse.parse_table_element(tbl, source="<slide_table>")
-    parsed = inject_table_overlay_links(
+    parsed, overlay_warnings, overlay_unavailable = inject_table_overlay_links(
         parsed,
         graphic_frame,
         overlays or [],
         ns=ns,
         normalize_text_fn=normalize_text_fn,
-        overlay_link_text_fn=overlay_link_text_fn,
+        overlay_content_text_fn=overlay_content_text_fn,
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
+    )
+    cell_fill_items, cell_fill_warnings, _, _ = collect_table_cell_fill_images(
+        graphic_frame,
+        rels_map or {},
+        rels_path,
+        ns=ns,
+        resolve_image_path_fn=resolve_image_path_fn,
+    )
+    parsed, cell_image_warnings, cell_image_unavailable = _inject_table_images(
+        parsed,
+        graphic_frame,
+        image_entries=cell_fill_items,
+        ns=ns,
+        normalize_text_fn=normalize_text_fn,
+        overlay_content_text_fn=overlay_content_text_fn,
+        output_dir=output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
     )
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,
         header_rows=1,
         fill_merged=table_render.FILL_BOTH,
     )
+    warnings = list(cell_fill_warnings) + list(overlay_warnings) + list(cell_image_warnings)
+    if warnings:
+        if overlay_unavailable or cell_image_unavailable:
+            return md, warnings[0]
+        return md, "; ".join(warnings)
     return md, None

@@ -328,6 +328,7 @@ docker compose exec app python3 main_converter/convert_slides_to_md.py --image-v
 ## 이미지 처리 정책
 
 - 일반 이미지 블록은 이미지 VLM이 켜져 있으면 Markdown 변환을 시도합니다.
+- 표 위에 겹쳐진 이미지와 표 셀 내부 배경 이미지도 같은 이미지 VLM 경로로 처리합니다.
 - VLM이 빈 결과를 내거나 `불필요한 정보` 성격으로 판단되면 이미지 링크로 남깁니다.
 - EMF/WMF는 LibreOffice로 PNG 변환 후 처리합니다.
 - 투명 배경 이미지는 회색 배경으로 평탄화한 뒤 처리합니다.

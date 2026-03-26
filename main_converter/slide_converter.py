@@ -255,6 +255,12 @@ def _handle_graphic_frame_block(
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
+    image_vlm_provider: str,
+    image_vlm_model: Optional[str],
+    image_vlm_prompt: str,
+    image_vlm_max_new_tokens: int,
+    image_vlm_api_key_env: str,
+    state: SlideRenderState,
     stats: SlideStats,
     deps: SlideConversionDeps,
 ) -> None:
@@ -264,6 +270,13 @@ def _handle_graphic_frame_block(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
     )
     if table_md is not None:
         lines.append(table_md.strip())
@@ -287,7 +300,13 @@ def _handle_graphic_frame_block(
     else:
         _append_unsupported_graphic_frame(lines, stats)
     if err:
-        stats.warnings.append(err)
+        normalized_err = str(err).lower()
+        if "api key not found" in normalized_err or "modulenotfounderror" in normalized_err or "importerror" in normalized_err:
+            if not state.image_pipeline_unavailable_reported:
+                stats.warnings.append(err)
+                state.image_pipeline_unavailable_reported = True
+        else:
+            stats.warnings.append(err)
 
 
 def convert_one_slide(
@@ -392,6 +411,12 @@ def convert_one_slide(
                 output_dir=output_dir,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                image_vlm_provider=image_vlm_provider,
+                image_vlm_model=image_vlm_model,
+                image_vlm_prompt=image_vlm_prompt,
+                image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+                image_vlm_api_key_env=image_vlm_api_key_env,
+                state=state,
                 stats=stats,
                 deps=deps,
             )
