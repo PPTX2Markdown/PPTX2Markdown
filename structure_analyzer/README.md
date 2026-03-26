@@ -1,6 +1,22 @@
 # structure_analyzer
 
-`structure_analyzer/extract_structure_analysis.py`는 슬라이드 XML의 객체 순서를 분석해, 구조 분석 JSON과 재정렬된 XML을 생성하는 모듈입니다.
+`structure_analyzer/extract_structure_analysis.py`는 슬라이드 XML의 객체 순서를 분석해, 구조 분석 JSON과 재정렬된 XML을 생성합니다.
+
+## 내부 구조 (리팩토링)
+
+스크립트 단일 파일에서 모듈 기반으로 분리되었습니다.
+
+- `constants.py`: XML namespace/태그/placeholder 상수
+- `models.py`: `SlideObject`, `OrderContext`
+- `xml_primitives.py`: XML 공통 유틸 (`local_name`, bbox 추출 등)
+- `text_rules.py`: 텍스트 normalize/번호형 heading 규칙
+- `extractor.py`: XML -> `SlideObject` 추출
+- `ordering.py`: 읽기 순서 버킷/정렬 로직
+- `headings.py`: heading depth/score 계산
+- `pipeline.py`: 리포트 생성, XML 재정렬, 파일 입출력
+- `extract_structure_analysis.py`: CLI 엔트리포인트(기존 인터페이스 유지)
+
+추가로 `check_native_table_support.py`도 `xml_primitives.py`를 공유합니다.
 
 아래 경로 예시는 저장소 루트에서 실행하는 기준입니다.
 
@@ -21,17 +37,16 @@
 
 - 슬라이드별 구조 분석 JSON
   - `<output-dir>/<slide_stem>.structure_analysis.json`
-  - 내용:
-    - `structure_order`: 분석된 읽기 순서 객체 목록
-    - `raw_xml_order`: 원본 XML 순서 객체 목록
-    - `ordered_xml_indexes`: 재정렬 인덱스
-    - `counts`, `confidence`, `xml_tables`, `xml_images` 등 메타데이터
+  - 주요 필드:
+    - `schema_version`
+    - `structure_order`
+    - `raw_xml_order`
+    - `ordered_xml_indexes`
+    - `counts`, `confidence`, `xml_tables`, `xml_images`
 - 슬라이드별 재정렬 XML
   - `<output-dir>/<slide_stem>.reordered.xml`
-  - 내용: 읽기 순서를 반영해 재배치된 슬라이드 XML
 - 실행 매니페스트
   - `<output-dir>/structure_analysis_manifest.json`
-  - 내용: 처리 성공/실패 목록, 각 입력별 출력 파일 경로
 
 ## 사용법
 

@@ -21,7 +21,6 @@
 - 패키지 결과: `output/<reading-order>/<package>/result.md`
 - 매니페스트: `output/<reading-order>/convert_manifest.json`
 - 이미지 복사본: `output/<reading-order>/<package>/media/*`
-- `--per-slide` 사용 시: `output/<reading-order>/<package>/per_slide/slideN.md`
 
 ## 기본 실행 예시
 
@@ -75,7 +74,6 @@ python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx
 
 ## 주요 옵션
 
-- `--per-slide`
 - `--reading-order {xml|surya}`
 - `--strict` (xml 모드 전용)
 - `--reuse-surya-cache`

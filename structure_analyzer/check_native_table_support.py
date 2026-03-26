@@ -13,84 +13,29 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+if __package__ is None or __package__ == "":
+    repo_root = Path(__file__).resolve().parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
 
-NS = {
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-    "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-}
-REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
-REORDERABLE = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
+from structure_analyzer.constants import NS, REL_NS, REORDERABLE
+from structure_analyzer.xml_primitives import (
+    extract_bbox_emu,
+    get_nvpr_paths,
+    local_name,
+    natural_key,
+)
+
+
 OVERLAY_PICTURE_MIN_RATIO = 0.80
-
-
-def local_name(tag: str) -> str:
-    return tag.split("}", 1)[-1]
-
-
-def natural_key(path: Path) -> Tuple[Any, ...]:
-    import re
-
-    parts = re.split(r"(\d+)", path.name)
-    out: List[Any] = []
-    for part in parts:
-        out.append(int(part) if part.isdigit() else part.lower())
-    return tuple(out)
-
-
-def parse_int(value: Optional[str], default: int = 10**18) -> int:
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        return default
-
-
-def first_off(elem: ET.Element) -> Optional[ET.Element]:
-    for xpath in (
-        "./p:spPr/a:xfrm/a:off",
-        "./p:grpSpPr/a:xfrm/a:off",
-        "./p:xfrm/a:off",
-        ".//a:off",
-    ):
-        node = elem.find(xpath, NS)
-        if node is not None:
-            return node
-    return None
-
-
-def first_ext(elem: ET.Element) -> Optional[ET.Element]:
-    for xpath in (
-        "./p:spPr/a:xfrm/a:ext",
-        "./p:grpSpPr/a:xfrm/a:ext",
-        "./p:xfrm/a:ext",
-        ".//a:ext",
-    ):
-        node = elem.find(xpath, NS)
-        if node is not None:
-            return node
-    return None
-
-
-def extract_bbox_emu(elem: ET.Element) -> Optional[Tuple[int, int, int, int]]:
-    off = first_off(elem)
-    ext = first_ext(elem)
-    if off is None or ext is None:
-        return None
-    x = parse_int(off.attrib.get("x"))
-    y = parse_int(off.attrib.get("y"))
-    w = parse_int(ext.attrib.get("cx"))
-    h = parse_int(ext.attrib.get("cy"))
-    if any(v >= 10**18 for v in (x, y, w, h)) or w <= 0 or h <= 0:
-        return None
-    return (x, y, x + w, y + h)
 
 
 def bbox_area(bbox: Tuple[int, int, int, int]) -> int:
@@ -112,20 +57,6 @@ def bbox_center(bbox: Tuple[int, int, int, int]) -> Tuple[float, float]:
 def bbox_contains_point(bbox: Tuple[int, int, int, int], point: Tuple[float, float]) -> bool:
     x, y = point
     return bbox[0] <= x <= bbox[2] and bbox[1] <= y <= bbox[3]
-
-
-def get_nvpr_paths(tag: str) -> Tuple[str, str]:
-    if tag == "sp":
-        return "./p:nvSpPr/p:cNvPr", "./p:nvSpPr/p:nvPr/p:ph"
-    if tag == "pic":
-        return "./p:nvPicPr/p:cNvPr", "./p:nvPicPr/p:nvPr/p:ph"
-    if tag == "graphicFrame":
-        return "./p:nvGraphicFramePr/p:cNvPr", "./p:nvGraphicFramePr/p:nvPr/p:ph"
-    if tag == "grpSp":
-        return "./p:nvGrpSpPr/p:cNvPr", "./p:nvGrpSpPr/p:nvPr/p:ph"
-    if tag == "cxnSp":
-        return "./p:nvCxnSpPr/p:cNvPr", "./p:nvCxnSpPr/p:nvPr/p:ph"
-    return ".//p:cNvPr", ".//p:ph"
 
 
 def extract_pptx_to_temp_root(pptx_path: Path) -> Tuple[Path, Path]:
@@ -184,6 +115,7 @@ def inspect_slide(slide_xml: Path) -> Dict[str, Any]:
         if tag not in REORDERABLE:
             continue
         reorderable_count += 1
+
         c_nv_path, _ = get_nvpr_paths(tag)
         c_nv_pr = child.find(c_nv_path, NS)
         shape_id = c_nv_pr.attrib.get("id", "") if c_nv_pr is not None else ""
@@ -191,13 +123,7 @@ def inspect_slide(slide_xml: Path) -> Dict[str, Any]:
         bbox = extract_bbox_emu(child)
 
         if tag == "graphicFrame" and bbox is not None and child.find(".//a:tbl", NS) is not None:
-            native_tables.append(
-                {
-                    "shape_id": shape_id,
-                    "name": name,
-                    "bbox": list(bbox),
-                }
-            )
+            native_tables.append({"shape_id": shape_id, "name": name, "bbox": list(bbox)})
             continue
 
         if tag != "pic" or bbox is None:
@@ -227,6 +153,7 @@ def inspect_slide(slide_xml: Path) -> Dict[str, Any]:
         picture_area = bbox_area(picture_bbox)
         best_match: Optional[Dict[str, Any]] = None
         best_ratio = 0.0
+
         for table in native_tables:
             table_bbox = tuple(table["bbox"])
             overlap = intersection_area(table_bbox, picture_bbox)
@@ -237,6 +164,7 @@ def inspect_slide(slide_xml: Path) -> Dict[str, Any]:
             if overlap_ratio > best_ratio:
                 best_ratio = overlap_ratio
                 best_match = table
+
         enriched = dict(picture)
         if best_match is not None:
             enriched["overlay_table_shape_id"] = best_match["shape_id"]
@@ -284,9 +212,7 @@ def inspect_ppt_root(ppt_root: Path) -> Dict[str, Any]:
         ),
     }
     totals["native_first_picture_reduction_ratio"] = round(
-        1.0 - (float(totals["standalone_pictures"]) / float(totals["pictures"]))
-        if totals["pictures"] > 0
-        else 0.0,
+        1.0 - (float(totals["standalone_pictures"]) / float(totals["pictures"])) if totals["pictures"] > 0 else 0.0,
         4,
     )
 
@@ -328,11 +254,9 @@ def render_text_report(report: Dict[str, Any]) -> str:
 
     for slide in report["slides"]:
         counts = slide.get("counts", {})
-        if not any(
-            int(counts.get(key, 0)) > 0
-            for key in ("native_tables", "pictures", "overlay_pictures", "standalone_pictures")
-        ):
+        if not any(int(counts.get(key, 0)) > 0 for key in ("native_tables", "pictures", "overlay_pictures", "standalone_pictures")):
             continue
+
         lines.append(
             f"{slide['slide']}: "
             f"native_tables={counts.get('native_tables', 0)} "
@@ -340,6 +264,7 @@ def render_text_report(report: Dict[str, Any]) -> str:
             f"overlay={counts.get('overlay_pictures', 0)} "
             f"standalone={counts.get('standalone_pictures', 0)}"
         )
+
         for picture in slide.get("overlay_pictures", []):
             lines.append(
                 "  overlay-picture: "
@@ -348,12 +273,14 @@ def render_text_report(report: Dict[str, Any]) -> str:
                 f"({picture.get('overlay_ratio', 0.0):.2f}) "
                 f"{picture.get('rel_target') or ''}".rstrip()
             )
+
         for picture in slide.get("standalone_pictures", []):
             lines.append(
                 "  standalone-picture: "
                 f"{picture.get('name') or picture.get('shape_id')} "
                 f"{picture.get('rel_target') or ''}".rstrip()
             )
+
     return "\n".join(lines)
 
 
@@ -395,8 +322,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 0
     finally:
         if temp_dir is not None:
-            import shutil
-
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 

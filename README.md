@@ -33,16 +33,76 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 전체 `.pptx` 자동 처리:
 
 ```bash
+<<<<<<< HEAD
 python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b
 ```
 
-특정 파일만 처리:
+# 특정 파일만 처리:
+
+python main_converter/convert_slides_to_md.py [--reading-order {xml(default) | surya}] [--strict] [INPUT_PPTX ...]
+
+````
+
+- `[INPUT_PPTX]`
+  - \*.pptx 파일을 0개 이상 전달할 수 있습니다.
+  - 예: `sample3.pptx sample4.pptx`
+  - 생략하면 `target_pptx/*.pptx` 전체를 자동 처리합니다.
+- `--reading-order`
+  - 읽기 순서 전략을 선택합니다.
+  - xml(기본): XML 기반 순서 사용
+  - surya: Surya 파이프라인 결과(`slideN.reordered.xml`) 사용
+- `--strict`
+  - XML 모드에서 stricter heading 규칙을 적용합니다.
+  - surya 모드에서는 무시됩니다.
+
+## 빠른 사용법
+
+저장소 루트 기준:
+
+기본 실행(default):
+>>>>>>> 1b8de32 (refactor main converter)
 
 ```bash
 python3 main_converter/convert_slides_to_md.py --image-vlm-model 3b sample1.pptx
-```
+````
+
+<<<<<<< HEAD
 
 ## 환경 준비
+
+=======
+
+- 이 동작은 `main_converter/target_pptx/*` 의 모든 `.pptx` 파일을 대상으로 `--reading-order xml` 방식으로 수행
+- 즉, 다음 동작과 같음
+
+```bash
+python main_converter/convert_slides_to_md.py --reading-order xml [none_target == target/pptx/* ]
+```
+
+특정 PPTX만 변환 수행:
+
+```bash
+python main_converter/convert_slides_to_md.py [*targets]
+```
+
+예시(Example)
+
+```bash
+python main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
+```
+
+Surya reading order:
+
+```bash
+python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
+```
+
+## 환경 재현 (의존성 설치)
+
+팀 기본 경로는 `env(.venv)`입니다.  
+로컬 환경 구축이 번거롭거나 OS 차이로 이슈가 있으면 `docker`를 대안으로 사용합니다.
+
+> > > > > > > 1b8de32 (refactor main converter)
 
 지원 Python 버전:
 
@@ -223,8 +283,7 @@ Available .pptx files under main_converter/target_pptx:
 - `main_converter/output/<reading-order>/<package>/per_slide/slideN.md`
 - `main_converter/output/<reading-order>/<package>/media/*`
 - `main_converter/output/<reading-order>/convert_manifest.json`
-
-`<reading-order>`는 `xml | surya`입니다.
+  - <reading-order> : xml | surya
 
 ## 이미지 처리 정책
 
