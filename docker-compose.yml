@@ -18,6 +18,7 @@ services:
       PYTHONUNBUFFERED: "1"
       HF_HOME: /root/.cache/huggingface
       TRANSFORMERS_CACHE: /root/.cache/huggingface
+      TOKENIZERS_PARALLELISM: "false"
 
 volumes:
   hf_cache:

@@ -1,5 +1,5 @@
-﻿"""Image pipeline package for bbox-based table classification + Surya extraction."""
+"""Image pipeline package for Qwen2.5-VL based markdown conversion."""
 
-from .service import classify_image, extract_table_markdown_from_image
+from .service import extract_markdown_from_image, resolve_model_id
 
-__all__ = ["classify_image", "extract_table_markdown_from_image"]
+__all__ = ["extract_markdown_from_image", "resolve_model_id"]

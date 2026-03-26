@@ -13,6 +13,8 @@
 surya-ocr==0.17.1
 torch==2.10.0
 transformers==4.57.6
+accelerate>=1.0.0,<2
+pydantic>=2.10.0,<3
 pillow==10.4.0
 opencv-python-headless==4.11.0.86
 pypdfium2==4.30.0

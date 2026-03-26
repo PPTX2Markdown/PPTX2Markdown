@@ -51,9 +51,18 @@ NS = {
 }
 REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
-_IMAGE_TABLE_PIPELINE_MODULE: Optional[object] = None
-_IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
-_IMAGE_TABLE_DEBUG_JSON = os.getenv("IMAGE_TABLE_DEBUG_JSON", "").strip().lower() in {"1", "true", "yes", "on"}
+_IMAGE_MARKDOWN_PIPELINE_MODULE: Optional[object] = None
+_IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR: Optional[str] = None
+_IMAGE_VLM_DEBUG_JSON = os.getenv("IMAGE_VLM_DEBUG_JSON", "").strip().lower() in {"1", "true", "yes", "on"}
+DEFAULT_IMAGE_VLM_PROMPT = (
+    "Convert this image into Markdown.\n"
+    "- Return Markdown only.\n"
+    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, tables, and code-like text.\n"
+    "- If the image is a chart, diagram, infographic, or screenshot, summarize the visible content in clean Markdown.\n"
+    "- If some text is unreadable, omit it instead of guessing.\n"
+    "- Do not wrap the answer in triple backticks."
+)
+DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS = 1024
 
 
 def run_structure_analysis_stage(
@@ -1238,191 +1247,105 @@ def convert_table_to_markdown(
     return md, None
 
 
-def _load_image_table_pipeline() -> Tuple[Optional[object], Optional[str]]:
-    global _IMAGE_TABLE_PIPELINE_MODULE, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
-    if _IMAGE_TABLE_PIPELINE_MODULE is not None:
-        return _IMAGE_TABLE_PIPELINE_MODULE, None
-    if _IMAGE_TABLE_PIPELINE_IMPORT_ERROR is not None:
-        return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+def _load_image_markdown_pipeline() -> Tuple[Optional[object], Optional[str]]:
+    global _IMAGE_MARKDOWN_PIPELINE_MODULE, _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR
+    if _IMAGE_MARKDOWN_PIPELINE_MODULE is not None:
+        return _IMAGE_MARKDOWN_PIPELINE_MODULE, None
+    if _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR is not None:
+        return None, _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR
 
     import_errors: List[str] = []
-    for module_name in ("image_pipeline.service", "image_table_pipeline"):
+    for module_name in ("image_pipeline.service", "image_markdown_pipeline"):
         try:
-            _IMAGE_TABLE_PIPELINE_MODULE = importlib.import_module(module_name)
-            return _IMAGE_TABLE_PIPELINE_MODULE, None
+            _IMAGE_MARKDOWN_PIPELINE_MODULE = importlib.import_module(module_name)
+            return _IMAGE_MARKDOWN_PIPELINE_MODULE, None
         except Exception as exc:  # noqa: BLE001
             import_errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
 
-    _IMAGE_TABLE_PIPELINE_IMPORT_ERROR = "; ".join(import_errors)
-    return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
+    _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR = "; ".join(import_errors)
+    return None, _IMAGE_MARKDOWN_PIPELINE_IMPORT_ERROR
 
 
-def convert_picture_to_table_markdown(
+def convert_picture_to_markdown(
     image_path: str,
+    *,
+    model_spec: str,
+    prompt: str,
+    max_new_tokens: int,
 ) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
-    module, import_error = _load_image_table_pipeline()
+    module, import_error = _load_image_markdown_pipeline()
     if module is None:
-        return None, f"image-table pipeline unavailable: {import_error}", True, None
+        return None, f"image markdown pipeline unavailable: {import_error}", True, None
     try:
-        result = module.extract_table_markdown_from_image(Path(image_path), header_rows=1)
+        result = module.extract_markdown_from_image(
+            Path(image_path),
+            model_spec=model_spec,
+            prompt=prompt,
+            max_new_tokens=max_new_tokens,
+        )
     except Exception as exc:  # noqa: BLE001
         return (
             None,
-            f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}",
+            f"image markdown pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}",
             False,
             None,
         )
 
     if not isinstance(result, dict):
-        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False, None
+        return None, f"image markdown pipeline returned invalid payload: {type(result).__name__}", False, None
 
-    _log_image_table_evaluation(image_path, result)
+    _log_image_markdown_result(image_path, result)
 
     status = str(result.get("status", "error"))
-    if status == "table":
+    if status == "markdown":
         markdown = result.get("markdown")
         if isinstance(markdown, str) and markdown.strip():
             return markdown, None, False, result
-        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False, result
-    if status == "table_skipped":
-        return None, None, False, result
-    if status == "not_table":
-        return None, None, False, result
+        return None, f"image markdown pipeline rendered empty markdown: {Path(image_path).name}", False, result
 
     error = result.get("error")
     if not isinstance(error, str) or not error.strip():
-        error = "unknown image-table pipeline error"
+        error = "unknown image markdown pipeline error"
     return None, f"{Path(image_path).name}: {error}", False, result
-
-
-def _fmt_eval_value(value: object, digits: int = 3) -> str:
-    if isinstance(value, (int, float)):
-        return f"{float(value):.{digits}f}"
-    return "n/a"
 
 
 def _to_jsonable_copy(value: object) -> object:
     return json.loads(json.dumps(value, ensure_ascii=False))
 
 
-def _log_image_table_evaluation(image_path: str, result: Dict[str, object]) -> None:
+def _log_image_markdown_result(image_path: str, result: Dict[str, object]) -> None:
     name = Path(image_path).name
     status = str(result.get("status", "error"))
-    predicted = str(result.get("predicted_class", "unknown"))
-
-    classification = result.get("classification")
-    if not isinstance(classification, dict):
-        classification = {}
-    feature_values = classification.get("feature_values")
-    if not isinstance(feature_values, dict):
-        feature_values = None
-    score_breakdown = classification.get("score_breakdown")
-    if not isinstance(score_breakdown, dict):
-        score_breakdown = None
-    decision_flags = classification.get("decision_flags")
-    if not isinstance(decision_flags, dict):
-        decision_flags = None
-    feature_details = classification.get("feature_details")
-    if not isinstance(feature_details, dict):
-        feature_details = None
-    thresholds = classification.get("thresholds")
-    if not isinstance(thresholds, dict):
-        thresholds = None
-    image_size = classification.get("image_size")
-    if not isinstance(image_size, dict):
-        image_size = None
-    visible_image = classification.get("visible_image")
-    if not isinstance(visible_image, dict):
-        visible_image = None
-
-    score = result.get("score", classification.get("score", score_breakdown.get("final_score") if isinstance(score_breakdown, dict) else None))
-    table_count = result.get("table_count")
-    reason = result.get("reason")
+    model_alias = result.get("model_alias")
+    model_id = result.get("model_id")
+    elapsed_sec = result.get("elapsed_sec")
     error = result.get("error")
-    surya_attempted = bool(result.get("surya_attempted"))
-    surya_quality_ok = result.get("surya_quality_ok")
-
-    geometry_score = score_breakdown.get("geometry_score") if isinstance(score_breakdown, dict) else None
-    structure_score = score_breakdown.get("structure_score") if isinstance(score_breakdown, dict) else None
-    width_score = score_breakdown.get("width_score") if isinstance(score_breakdown, dict) else None
-    height_score = score_breakdown.get("height_score") if isinstance(score_breakdown, dict) else None
-    iou_score = score_breakdown.get("iou_score") if isinstance(score_breakdown, dict) else None
-    center_score = score_breakdown.get("center_score") if isinstance(score_breakdown, dict) else None
-    box_count_score = score_breakdown.get("box_count_score") if isinstance(score_breakdown, dict) else None
+    markdown = result.get("markdown")
+    markdown_chars = len(markdown.strip()) if isinstance(markdown, str) else 0
 
     summary = (
-        f"[image-table] {name} "
+        f"[image-vlm] {name} "
         f"status={status} "
-        f"pred={predicted} "
-        f"score={_fmt_eval_value(score)} "
-        f"det(geom={_fmt_eval_value(geometry_score)},"
-        f"struct={_fmt_eval_value(structure_score)},"
-        f"w={_fmt_eval_value(width_score)},"
-        f"h={_fmt_eval_value(height_score)},"
-        f"iou={_fmt_eval_value(iou_score)},"
-        f"center={_fmt_eval_value(center_score)},"
-        f"boxes={_fmt_eval_value(box_count_score)}) "
-        f"bbox(area_ratio={_fmt_eval_value(feature_values.get('table_union_area_ratio') if isinstance(feature_values, dict) else None)},"
-        f"bbox_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_area_ratio') if isinstance(feature_values, dict) else None)},"
-        f"w_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_width_ratio') if isinstance(feature_values, dict) else None)},"
-        f"h_ratio={_fmt_eval_value(feature_values.get('table_union_bbox_height_ratio') if isinstance(feature_values, dict) else None)},"
-        f"iou={_fmt_eval_value(feature_values.get('table_union_bbox_iou') if isinstance(feature_values, dict) else None)},"
-        f"offset={_fmt_eval_value(feature_values.get('table_union_center_offset') if isinstance(feature_values, dict) else None)}) "
-        f"count(tbl={_fmt_eval_value(feature_values.get('detected_table_count') if isinstance(feature_values, dict) else None, digits=0)},"
-        f"rows={_fmt_eval_value(feature_values.get('detected_row_count') if isinstance(feature_values, dict) else None, digits=0)},"
-        f"cols={_fmt_eval_value(feature_values.get('detected_col_count') if isinstance(feature_values, dict) else None, digits=0)},"
-        f"cells={_fmt_eval_value(feature_values.get('detected_cell_count') if isinstance(feature_values, dict) else None, digits=0)},"
-        f"box={_fmt_eval_value(feature_values.get('detected_box_count') if isinstance(feature_values, dict) else None, digits=0)})"
+        f"model={model_alias or model_id or 'unknown'} "
+        f"chars={markdown_chars} "
+        f"elapsed={elapsed_sec if isinstance(elapsed_sec, (int, float)) else 'n/a'}"
     )
-
-    extras: List[str] = []
-    extras.append(f"surya={'run' if surya_attempted else 'skip'}")
-    if isinstance(table_count, int):
-        extras.append(f"tables={table_count}")
-    if isinstance(surya_quality_ok, bool):
-        extras.append(f"surya_quality={'ok' if surya_quality_ok else 'low'}")
-    if isinstance(reason, str) and reason.strip():
-        extras.append(f"reason={reason}")
     if isinstance(error, str) and error.strip():
-        extras.append(f"error={error}")
-    active_flags = [name for name, active in decision_flags.items() if active] if isinstance(decision_flags, dict) else []
-    if active_flags:
-        extras.append("flags=" + ",".join(sorted(active_flags)))
-    if extras:
-        summary = f"{summary} " + " ".join(extras)
-
+        summary = f"{summary} error={error}"
     print(summary)
-    if _IMAGE_TABLE_DEBUG_JSON:
-        feature_details_payload = {
-            "visible_image_bbox": feature_details.get("visible_image_bbox") if isinstance(feature_details, dict) else None,
-            "detected_table_union_bbox": (
-                feature_details.get("detected_table_union_bbox") if isinstance(feature_details, dict) else None
-            ),
-            "detected_tables": feature_details.get("detected_tables") if isinstance(feature_details, dict) else None,
-        }
-        if isinstance(feature_details, dict):
-            feature_details_payload.update(feature_details)
 
+    if _IMAGE_VLM_DEBUG_JSON:
         debug_payload = {
-            "kind": "image_table_debug",
-            "file": str(Path(str(result.get("file", image_path))).expanduser().resolve()),
+            "kind": "image_vlm_debug",
+            "file": str(Path(str(result.get('file', image_path))).expanduser().resolve()),
             "image_name": name,
             "status": status,
-            "predicted_class": result.get("predicted_class"),
-            "score": score,
-            "low_confidence": result.get("low_confidence"),
-            "surya_attempted": surya_attempted,
-            "surya_quality_ok": surya_quality_ok if isinstance(surya_quality_ok, bool) else None,
-            "table_count": table_count if isinstance(table_count, int) else None,
-            "reason": reason if isinstance(reason, str) and reason.strip() else None,
+            "model_alias": model_alias,
+            "model_id": model_id,
+            "elapsed_sec": elapsed_sec if isinstance(elapsed_sec, (int, float)) else None,
+            "max_new_tokens": result.get("max_new_tokens"),
             "error": error if isinstance(error, str) and error.strip() else None,
-            "thresholds": thresholds,
-            "image_size": image_size,
-            "visible_image": visible_image,
-            "feature_values": feature_values,
-            "score_breakdown": score_breakdown,
-            "decision_flags": decision_flags,
-            "feature_details": feature_details_payload,
+            "markdown_chars": markdown_chars,
         }
         print(json.dumps(_to_jsonable_copy(debug_payload), ensure_ascii=False, separators=(",", ":")))
 
@@ -1434,9 +1357,9 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    surya_debug_dir: Optional[Path] = None,
-    copied_surya_debug_images: Optional[Dict[str, Path]] = None,
-    enable_image_table_pipeline: bool = False,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     strict_headings: bool = False,
 ) -> Tuple[str, Dict[str, object]]:
     heading_policy = HeadingPolicy(strict=strict_headings)
@@ -1460,8 +1383,9 @@ def convert_one_slide(
         "blocks_total": 0,
         "text_blocks": 0,
         "image_blocks": 0,
+        "image_markdown_blocks": 0,
+        "image_markdown_failed_blocks": 0,
         "table_blocks": 0,
-        "table_skipped_blocks": 0,
         "unsupported_blocks": 0,
         "skipped_blocks": 0,
         "resolved_images": 0,
@@ -1579,31 +1503,26 @@ def convert_one_slide(
             else:
                 stats["resolved_images"] += 1
 
-            if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
-                table_md, table_warn, unavailable, table_result = convert_picture_to_table_markdown(img_path)
-                if isinstance(table_result, dict) and (
-                    bool(table_result.get("surya_attempted"))
-                    or str(table_result.get("status", "")) == "table_skipped"
-                ):
-                    copy_debug_image_asset(
-                        img_path,
-                        debug_dir=surya_debug_dir,
-                        copied_debug_images=copied_surya_debug_images,
-                    )
-                if table_md is not None:
-                    lines.append(table_md.strip())
+            if image_vlm_model and not warn and not img_path.startswith("[unresolved-image"):
+                image_md, image_warn, unavailable, _ = convert_picture_to_markdown(
+                    img_path,
+                    model_spec=image_vlm_model,
+                    prompt=image_vlm_prompt,
+                    max_new_tokens=image_vlm_max_new_tokens,
+                )
+                if image_md is not None:
+                    lines.append(image_md.strip())
                     lines.append("")
-                    stats["table_blocks"] += 1
+                    stats["image_markdown_blocks"] += 1
                     continue
-                if isinstance(table_result, dict) and str(table_result.get("status", "")) == "table_skipped":
-                    stats["table_skipped_blocks"] += 1
-                if table_warn:
+                stats["image_markdown_failed_blocks"] += 1
+                if image_warn:
                     if unavailable:
                         if not image_pipeline_unavailable_reported:
-                            stats["warnings"].append(table_warn)
+                            stats["warnings"].append(image_warn)
                             image_pipeline_unavailable_reported = True
                     else:
-                        stats["warnings"].append(table_warn)
+                        stats["warnings"].append(image_warn)
 
             lines.append(
                 format_markdown_image(
@@ -1779,7 +1698,9 @@ class ConverterConfig(BaseModel):
     reading_order: str = "xml"
     strict: bool = False
     reuse_surya_cache: bool = False
-    image_table_pipeline: bool = False
+    image_vlm_model: Optional[str] = None
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS
 
 
 def _parse_args() -> argparse.Namespace:
@@ -1816,9 +1737,20 @@ def _parse_args() -> argparse.Namespace:
         help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
     )
     parser.add_argument(
-        "--image-table-pipeline",
-        action="store_true",
-        help="Classify image blocks with Surya bbox/box-count signals and parse detected table images with Surya.",
+        "--image-vlm-model",
+        choices=("3b", "7b"),
+        help="Convert every image block with a local Qwen2.5-VL model instead of leaving raw image links.",
+    )
+    parser.add_argument(
+        "--image-vlm-prompt",
+        default=DEFAULT_IMAGE_VLM_PROMPT,
+        help="Prompt passed to the local image VLM when --image-vlm-model is enabled.",
+    )
+    parser.add_argument(
+        "--image-vlm-max-new-tokens",
+        type=int,
+        default=DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+        help="Maximum number of tokens to generate per image when --image-vlm-model is enabled.",
     )
     return parser.parse_args()
 
@@ -1836,7 +1768,9 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
         reuse_surya_cache=bool(args.reuse_surya_cache),
-        image_table_pipeline=bool(args.image_table_pipeline),
+        image_vlm_model=(str(args.image_vlm_model).strip().lower() if args.image_vlm_model else None),
+        image_vlm_prompt=str(args.image_vlm_prompt),
+        image_vlm_max_new_tokens=max(1, int(args.image_vlm_max_new_tokens)),
     )
 
 
@@ -1898,8 +1832,9 @@ def _new_manifest() -> Dict[str, object]:
             "failed": 0,
             "resolved_images": 0,
             "unresolved_images": 0,
+            "image_markdown_blocks": 0,
+            "image_markdown_failed_blocks": 0,
             "table_blocks": 0,
-            "table_skipped_blocks": 0,
         },
     }
 
@@ -1953,9 +1888,7 @@ def _convert_package(
     pkg_out = config.output_dir / pkg_name
     per_slide_dir = pkg_out / "per_slide"
     media_dir = pkg_out / "media"
-    surya_debug_dir = config.debug_output_dir / pkg_name / "surya_run_images"
     copied_media: Dict[str, Path] = {}
-    copied_surya_debug_images: Dict[str, Path] = {}
     pkg_out.mkdir(parents=True, exist_ok=True)
     if config.per_slide:
         per_slide_dir.mkdir(parents=True, exist_ok=True)
@@ -1968,6 +1901,7 @@ def _convert_package(
         "slides": [],
         "result_md": str(pkg_out / "result.md"),
         "pipeline_mode": config.reading_order,
+        "image_vlm_model": config.image_vlm_model,
     }
 
     all_chunks: List[str] = []
@@ -2029,9 +1963,9 @@ def _convert_package(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
-                surya_debug_dir=surya_debug_dir,
-                copied_surya_debug_images=copied_surya_debug_images,
-                enable_image_table_pipeline=config.image_table_pipeline,
+                image_vlm_model=config.image_vlm_model,
+                image_vlm_prompt=config.image_vlm_prompt,
+                image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
                 strict_headings=(config.reading_order == "xml" and config.strict),
             )
             if config.reading_order == "surya":
@@ -2048,8 +1982,9 @@ def _convert_package(
                     "blocks_total": stats["blocks_total"],
                     "text_blocks": stats["text_blocks"],
                     "image_blocks": stats["image_blocks"],
+                    "image_markdown_blocks": stats["image_markdown_blocks"],
+                    "image_markdown_failed_blocks": stats["image_markdown_failed_blocks"],
                     "table_blocks": stats["table_blocks"],
-                    "table_skipped_blocks": stats["table_skipped_blocks"],
                     "unsupported_blocks": stats["unsupported_blocks"],
                     "skipped_blocks": stats["skipped_blocks"],
                     "rels_path": stats["rels_path"],
@@ -2059,10 +1994,13 @@ def _convert_package(
             summary["processed_slides"] = int(summary.get("processed_slides", 0)) + 1
             summary["resolved_images"] = int(summary.get("resolved_images", 0)) + int(stats["resolved_images"])
             summary["unresolved_images"] = int(summary.get("unresolved_images", 0)) + int(stats["unresolved_images"])
-            summary["table_blocks"] = int(summary.get("table_blocks", 0)) + int(stats["table_blocks"])
-            summary["table_skipped_blocks"] = int(summary.get("table_skipped_blocks", 0)) + int(
-                stats["table_skipped_blocks"]
+            summary["image_markdown_blocks"] = int(summary.get("image_markdown_blocks", 0)) + int(
+                stats["image_markdown_blocks"]
             )
+            summary["image_markdown_failed_blocks"] = int(summary.get("image_markdown_failed_blocks", 0)) + int(
+                stats["image_markdown_failed_blocks"]
+            )
+            summary["table_blocks"] = int(summary.get("table_blocks", 0)) + int(stats["table_blocks"])
             print(f"[{pkg_name}] Processed: {slide_xml.name}")
         except Exception as e:  # noqa: BLE001
             row.update({"status": "failed", "error": str(e)})
@@ -2119,8 +2057,9 @@ def main() -> int:
         f"packages={manifest['summary']['processed_packages']} "
         f"slides={manifest['summary']['processed_slides']} "
         f"failed={manifest['summary']['failed']} "
+        f"image_md={manifest['summary']['image_markdown_blocks']} "
+        f"image_md_failed={manifest['summary']['image_markdown_failed_blocks']} "
         f"tables={manifest['summary']['table_blocks']} "
-        f"table_skipped={manifest['summary']['table_skipped_blocks']} "
         f"images_resolved={manifest['summary']['resolved_images']} "
         f"images_unresolved={manifest['summary']['unresolved_images']}"
     )
