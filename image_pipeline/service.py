@@ -21,13 +21,11 @@ QWEN_VL_MODELS = {
 }
 
 DEFAULT_PROMPT = (
-    "Convert this image into concise Markdown for RAG ingestion.\n"
-    "- Extract visible text and table content faithfully.\n"
-    "- If the image is mainly a table, recreate it as a Markdown table and keep readable cell text.\n"
-    "- Preserve visible headings, paragraphs, bullet lists, numbered lists, and code-like text.\n"
-    "- If the image is a chart, diagram, infographic, or screenshot, summarize only the useful visible content in Markdown.\n"
-    "- If some text is unreadable, omit it instead of guessing.\n"
-    "- If the image does not contain useful documentable information, answer exactly: 불필요한 정보\n"
+    "Extract only document-worthy information from this image as concise Markdown.\n"
+    "- Keep readable text, labels, and table content that are useful for retrieval.\n"
+    "- If the image is mainly a table, recreate it as a Markdown table.\n"
+    "- If the image is decorative or not useful for document retrieval, answer exactly: 불필요한 정보\n"
+    "- Omit unreadable text.\n"
     "- Do not wrap the answer in triple backticks."
 )
 
@@ -253,12 +251,17 @@ _PROMPT_ECHO_PHRASES = {
     "converted to markdown:",
     "convert this image into markdown.",
     "convert this image into concise markdown for rag ingestion.",
+    "extract only document-worthy information from this image as concise markdown.",
     "extract visible text and table content faithfully.",
+    "keep readable text, labels, and table content that are useful for retrieval.",
     "if the image is mainly a table, recreate it as a markdown table and keep readable cell text.",
+    "if the image is mainly a table, recreate it as a markdown table.",
     "preserve visible headings, paragraphs, bullet lists, numbered lists, and code-like text.",
     "if the image is a chart, diagram, infographic, or screenshot, summarize only the useful visible content in markdown.",
     "if some text is unreadable, omit it instead of guessing.",
     "if the image does not contain useful documentable information, answer exactly: 불필요한 정보",
+    "if the image is decorative or not useful for document retrieval, answer exactly: 불필요한 정보",
+    "omit unreadable text.",
     "do not wrap the answer in triple backticks.",
 }
 
