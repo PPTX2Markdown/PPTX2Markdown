@@ -1,9 +1,12 @@
 FROM python:3.11-slim
 
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    HF_HOME=/root/.cache/huggingface
+    HF_HOME=/root/.cache/huggingface \
+    TORCH_INDEX_URL=${TORCH_INDEX_URL}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice \
@@ -23,10 +26,11 @@ WORKDIR /workspace
 COPY requirements.txt /tmp/requirements.txt
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cpu && \
+    pip install torch==2.10.0 torchvision==0.25.0 --index-url ${TORCH_INDEX_URL} && \
     pip install -r /tmp/requirements.txt
 
 RUN python -c "import torch; print(torch.__version__)" && \
+    python -c "import torch; print('torch_cuda_build=', torch.version.cuda)" && \
     python -c "import torchvision; print(torchvision.__version__)" && \
     python -c "import accelerate; print(accelerate.__version__)" && \
     python -c "import transformers; print(transformers.__version__)" && \

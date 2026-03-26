@@ -218,7 +218,8 @@ docker compose exec app bash
 
 - 저장소 루트가 컨테이너의 `/workspace`로 마운트됩니다.
 - Hugging Face / torch / pip 캐시는 compose 볼륨으로 유지됩니다.
-- 기본 이미지는 CPU 기준입니다. 로컬 Qwen `7b`는 매우 느릴 수 있습니다.
+- 기본 compose 설정은 GPU용 PyTorch wheel(`cu128`)을 설치하고 `gpus: all`로 실행합니다.
+- Docker Host에는 NVIDIA driver와 NVIDIA Container Toolkit이 준비되어 있어야 합니다.
 
 ### Docker에서 기본 실행
 
@@ -262,8 +263,15 @@ docker compose exec app python3 main_converter/convert_slides_to_md.py \
 
 주의:
 
-- Dockerfile은 CPU용 `torch` wheel을 설치합니다.
-- 큰 로컬 VLM은 GPU 없는 컨테이너에서 비현실적으로 느릴 수 있습니다.
+- Dockerfile은 기본적으로 GPU용 PyTorch wheel(`cu128`)을 설치합니다.
+- 호스트가 GPU를 컨테이너에 전달하지 못하면 `torch.cuda.is_available()`는 `False`가 됩니다.
+- 큰 로컬 VLM은 GPU 없이 실행하면 매우 느릴 수 있습니다.
+
+GPU 사용 여부 확인:
+
+```bash
+docker compose exec app python3 -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.device_count())"
+```
 
 ### Docker에서 Gemini API 사용
 
