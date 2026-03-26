@@ -13,7 +13,9 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 ## 현재 이미지 처리 정책
 
 - `graphicFrame/a:tbl` 형태의 실제 PPT 표는 기존 `table_pipeline`으로 그대로 Markdown 표로 변환합니다.
+- 표 위에 겹쳐진 overlay 이미지가 있으면 해당 셀에 링크 대신 VLM Markdown 주입을 먼저 시도합니다.
 - `pic` 이미지 블록은 `--image-vlm-model` 옵션을 주면 분류 없이 전부 로컬 Qwen2.5-VL 모델로 보내 Markdown으로 변환합니다.
+- 임시 디버깅용으로 VLM이 변환한 Markdown 앞에는 원본 이미지명(`image6.png` 등)을 `[image-vlm-source: ...]` 형태로 남깁니다.
 - `--image-vlm-model`을 주지 않으면 이미지는 기존처럼 Markdown 이미지 링크(`![](...)`)로 남깁니다.
 - 투명 배경 이미지가 들어오면 OCR/VLM 가독성을 위해 `RGB(192, 192, 192)` 배경에 합성한 뒤 처리합니다.
 - 이미지 VLM 변환이 실패한 경우에는 경고를 남기고 원본 이미지 링크로 폴백합니다.

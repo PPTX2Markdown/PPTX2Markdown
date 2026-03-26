@@ -1047,6 +1047,50 @@ def overlay_link_text(
     return f"[image]({path})"
 
 
+def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
+    image_name = Path(image_path).name
+    body = markdown.strip()
+    if not body:
+        return f"[image-vlm-source: {image_name}]"
+    return f"[image-vlm-source: {image_name}]\n\n{body}"
+
+
+def overlay_content_text(
+    path: str,
+    output_dir: Optional[Path],
+    media_dir: Optional[Path] = None,
+    copied_media: Optional[Dict[str, Path]] = None,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+) -> Tuple[str, Optional[str], bool, bool]:
+    if path.startswith("[unresolved-image"):
+        return path, None, False, False
+
+    if image_vlm_model:
+        image_md, image_warn, unavailable, _ = convert_picture_to_markdown(
+            path,
+            model_spec=image_vlm_model,
+            prompt=image_vlm_prompt,
+            max_new_tokens=image_vlm_max_new_tokens,
+        )
+        if image_md is not None:
+            return annotate_generated_image_markdown(image_md, path), None, unavailable, True
+        return (
+            overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
+            image_warn,
+            unavailable,
+            False,
+        )
+
+    return (
+        overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
+        None,
+        False,
+        False,
+    )
+
+
 def collect_table_overlay_pictures(
     sp_tree: ET.Element,
     slide_xml: Path,
@@ -1183,25 +1227,34 @@ def find_table_cell_origin(
     return row_idx, col_idx
 
 
-def inject_table_overlay_links(
+def inject_table_overlay_content(
     parsed_table: Dict[str, object],
     graphic_frame: ET.Element,
     overlays: Sequence[Dict[str, object]],
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-) -> Dict[str, object]:
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+) -> Tuple[Dict[str, object], Dict[str, object]]:
+    overlay_stats: Dict[str, object] = {
+        "image_markdown_blocks": 0,
+        "image_markdown_failed_blocks": 0,
+        "warnings": [],
+        "pipeline_unavailable": False,
+    }
     if not overlays:
-        return parsed_table
+        return parsed_table, overlay_stats
 
     bounds = compute_table_cell_bounds(graphic_frame)
     if bounds is None:
-        return parsed_table
+        return parsed_table, overlay_stats
     col_bounds, row_bounds = bounds
 
     rows = parsed_table.get("rows")
     if not isinstance(rows, list):
-        return parsed_table
+        return parsed_table, overlay_stats
 
     for overlay in overlays:
         bbox = overlay.get("bbox")
@@ -1222,16 +1275,31 @@ def inject_table_overlay_links(
         if not isinstance(cell, dict):
             continue
         existing = normalize_text(str(cell.get("text", "")))
-        link = overlay_link_text(
+        content_text, content_warn, unavailable, converted = overlay_content_text(
             str(overlay.get("path", "")),
             output_dir,
             media_dir=media_dir,
             copied_media=copied_media,
+            image_vlm_model=image_vlm_model,
+            image_vlm_prompt=image_vlm_prompt,
+            image_vlm_max_new_tokens=image_vlm_max_new_tokens,
         )
-        updated = f"{existing}\n{link}".strip() if existing else link
+        updated = f"{existing}\n{content_text}".strip() if existing else content_text
         cell["text"] = updated
+        if converted:
+            overlay_stats["image_markdown_blocks"] = int(overlay_stats.get("image_markdown_blocks", 0)) + 1
+        elif image_vlm_model and not str(overlay.get("path", "")).startswith("[unresolved-image"):
+            overlay_stats["image_markdown_failed_blocks"] = int(
+                overlay_stats.get("image_markdown_failed_blocks", 0)
+            ) + 1
+        if isinstance(content_warn, str) and content_warn.strip():
+            warnings = overlay_stats.get("warnings")
+            if isinstance(warnings, list):
+                warnings.append(content_warn)
+            if unavailable:
+                overlay_stats["pipeline_unavailable"] = True
 
-    return parsed_table
+    return parsed_table, overlay_stats
 
 
 def convert_table_to_markdown(
@@ -1240,29 +1308,40 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-) -> Tuple[Optional[str], Optional[str]]:
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+) -> Tuple[Optional[str], Optional[str], Dict[str, object]]:
     tbl = graphic_frame.find(".//a:tbl", NS)
     if tbl is None:
-        return None, "graphicFrame without a:tbl"
+        return None, "graphicFrame without a:tbl", {
+            "image_markdown_blocks": 0,
+            "image_markdown_failed_blocks": 0,
+            "warnings": [],
+            "pipeline_unavailable": False,
+        }
 
     from table_pipeline import parse as table_parse  # type: ignore
     from table_pipeline import render as table_render  # type: ignore
 
     parsed = table_parse.parse_table_element(tbl, source="<slide_table>")
-    parsed = inject_table_overlay_links(
+    parsed, overlay_stats = inject_table_overlay_content(
         parsed,
         graphic_frame,
         overlays or [],
         output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
     )
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,
         header_rows=1,
         fill_merged=table_render.FILL_BOTH,
     )
-    return md, None
+    return md, None, overlay_stats
 
 
 def _load_image_markdown_pipeline() -> Tuple[Optional[object], Optional[str]]:
@@ -1530,7 +1609,7 @@ def convert_one_slide(
                     max_new_tokens=image_vlm_max_new_tokens,
                 )
                 if image_md is not None:
-                    lines.append(image_md.strip())
+                    lines.append(annotate_generated_image_markdown(image_md, img_path))
                     lines.append("")
                     stats["image_markdown_blocks"] += 1
                     continue
@@ -1556,13 +1635,30 @@ def convert_one_slide(
             continue
 
         if tag == "graphicFrame":
-            table_md, err = convert_table_to_markdown(
+            table_md, err, overlay_stats = convert_table_to_markdown(
                 child,
                 overlays=table_overlay_map.get(shape_id_of(child), []),
                 output_dir=output_dir,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                image_vlm_model=image_vlm_model,
+                image_vlm_prompt=image_vlm_prompt,
+                image_vlm_max_new_tokens=image_vlm_max_new_tokens,
             )
+            stats["image_markdown_blocks"] += int(overlay_stats.get("image_markdown_blocks", 0))
+            stats["image_markdown_failed_blocks"] += int(overlay_stats.get("image_markdown_failed_blocks", 0))
+            overlay_pipeline_unavailable = bool(overlay_stats.get("pipeline_unavailable"))
+            overlay_warnings_list = overlay_stats.get("warnings")
+            if isinstance(overlay_warnings_list, list):
+                for overlay_warn in overlay_warnings_list:
+                    if not isinstance(overlay_warn, str) or not overlay_warn.strip():
+                        continue
+                    if overlay_pipeline_unavailable:
+                        if not image_pipeline_unavailable_reported:
+                            stats["warnings"].append(overlay_warn)
+                            image_pipeline_unavailable_reported = True
+                    else:
+                        stats["warnings"].append(overlay_warn)
             if table_md is not None:
                 lines.append(table_md.strip())
                 lines.append("")
@@ -1875,6 +1971,7 @@ def _new_manifest() -> Dict[str, object]:
             "image_markdown_blocks": 0,
             "image_markdown_failed_blocks": 0,
             "table_blocks": 0,
+            "elapsed_sec": 0.0,
         },
     }
 
@@ -1914,6 +2011,7 @@ def _convert_package(
     surya_structure_root: Optional[Path],
     manifest: Dict[str, object],
 ) -> None:
+    package_started_at = time.perf_counter()
     summary = manifest.get("summary")
     packages = manifest.get("packages")
     if not isinstance(summary, dict) or not isinstance(packages, list):
@@ -1982,6 +2080,7 @@ def _convert_package(
             return
 
     for i, slide_xml in enumerate(slide_xmls, 1):
+        slide_started_at = time.perf_counter()
         page_no = parse_slide_number(slide_xml.name, i)
         ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
         if config.reading_order == "surya" and structure_output_dir is not None:
@@ -2019,6 +2118,7 @@ def _convert_package(
             row.update(
                 {
                     "status": "ok",
+                    "elapsed_sec": round(time.perf_counter() - slide_started_at, 3),
                     "blocks_total": stats["blocks_total"],
                     "text_blocks": stats["text_blocks"],
                     "image_blocks": stats["image_blocks"],
@@ -2041,11 +2141,21 @@ def _convert_package(
                 stats["image_markdown_failed_blocks"]
             )
             summary["table_blocks"] = int(summary.get("table_blocks", 0)) + int(stats["table_blocks"])
-            print(f"[{pkg_name}] Processed: {slide_xml.name}")
+            print(
+                f"[{pkg_name}] Processed: {slide_xml.name} "
+                f"elapsed={row['elapsed_sec']:.3f}s "
+                f"image_md={stats['image_markdown_blocks']} "
+                f"image_md_failed={stats['image_markdown_failed_blocks']} "
+                f"tables={stats['table_blocks']}",
+                flush=True,
+            )
         except Exception as e:  # noqa: BLE001
-            row.update({"status": "failed", "error": str(e)})
+            row.update({"status": "failed", "error": str(e), "elapsed_sec": round(time.perf_counter() - slide_started_at, 3)})
             summary["failed"] = int(summary.get("failed", 0)) + 1
-            print(f"[{pkg_name}] Failed: {slide_xml.name} -> {e}")
+            print(
+                f"[{pkg_name}] Failed: {slide_xml.name} elapsed={row['elapsed_sec']:.3f}s -> {e}",
+                flush=True,
+            )
         slides = pkg_row.get("slides")
         if isinstance(slides, list):
             slides.append(row)
@@ -2055,8 +2165,14 @@ def _convert_package(
         merged += "\n"
     merged_path = pkg_out / "result.md"
     merged_path.write_text(merged, encoding="utf-8")
+    pkg_row["elapsed_sec"] = round(time.perf_counter() - package_started_at, 3)
     summary["processed_packages"] = int(summary.get("processed_packages", 0)) + 1
+    summary["elapsed_sec"] = round(float(summary.get("elapsed_sec", 0.0)) + float(pkg_row["elapsed_sec"]), 3)
     packages.append(pkg_row)
+    print(
+        f"[{pkg_name}] Package done: slides={len(slide_xmls)} elapsed={pkg_row['elapsed_sec']:.3f}s",
+        flush=True,
+    )
 
 
 def _write_manifest(output_dir: Path, manifest: Dict[str, object]) -> Path:
@@ -2101,7 +2217,8 @@ def main() -> int:
         f"image_md_failed={manifest['summary']['image_markdown_failed_blocks']} "
         f"tables={manifest['summary']['table_blocks']} "
         f"images_resolved={manifest['summary']['resolved_images']} "
-        f"images_unresolved={manifest['summary']['unresolved_images']}"
+        f"images_unresolved={manifest['summary']['unresolved_images']} "
+        f"elapsed={float(manifest['summary']['elapsed_sec']):.3f}s"
     )
     return 1 if manifest["summary"]["failed"] > 0 else 0
 
