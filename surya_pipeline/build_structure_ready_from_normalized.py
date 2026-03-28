@@ -605,11 +605,11 @@ def main() -> int:
         try:
             row = write_structure_ready_outputs(slide_xml, pages[page_no], output_dir)
             processed.append(row)
-            print(f"Processed: slide{page_no}.xml")
+            print(f"[surya-struct] Processed: slide{page_no}.xml")
         except Exception as exc:  # noqa: BLE001
             failed.append({"page": page_no, "input_xml": str(slide_xml), "error": str(exc)})
-            print(f"Failed: slide{page_no}.xml -> {exc}")
-    print(f"Completed: processed={len(processed)} failed={len(failed)}")
+            print(f"[surya-struct] Failed: slide{page_no}.xml -> {exc}")
+    print(f"[surya-struct] Completed: processed={len(processed)} failed={len(failed)}")
 
     if temp_ppt_dir is not None and temp_ppt_dir.exists():
         shutil.rmtree(temp_ppt_dir, ignore_errors=True)
