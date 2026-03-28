@@ -1350,7 +1350,7 @@ def _convert_package(
                 {"status": "ok", **stats.to_slide_row_fields()}
             )
             manifest.summary.add_slide(stats)
-            logger.info("[%s] Processed: %s", pkg_name, slide_xml.name)
+            logger.info("[%s] [md-convert] Processed: %s", pkg_name, slide_xml.name)
             if stats.warnings:
                 _log_slide_warnings(pkg_name, slide_xml, page_no, stats.warnings)
         except Exception as e:  # noqa: BLE001
