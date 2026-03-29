@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +10,55 @@ from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _is_usable_python(executable: str) -> bool:
+    candidate = str(executable or "").strip()
+    if not candidate:
+        return False
+    try:
+        proc = subprocess.run(
+            [candidate, "-c", "import sys"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0
+
+
+def resolve_python_executable(repo_root: Path) -> str:
+    """
+    Pick a Python interpreter that is valid on the current OS.
+
+    Priority:
+    1) explicit override via PPTX2MARKDOWN_PYTHON
+    2) the interpreter running the current process
+    3) repo-local venv for the current platform
+    """
+    candidates = []
+
+    env_python = str(os.environ.get("PPTX2MARKDOWN_PYTHON", "")).strip()
+    if env_python:
+        candidates.append(env_python)
+
+    if sys.executable:
+        candidates.append(sys.executable)
+
+    if os.name == "nt":
+        candidates.append(str(repo_root / ".venv" / "Scripts" / "python.exe"))
+        candidates.append(str(repo_root / ".venv" / "python.exe"))
+    else:
+        candidates.append(str(repo_root / ".venv" / "bin" / "python"))
+
+    for candidate in candidates:
+        if _is_usable_python(candidate):
+            return candidate
+
+    raise RuntimeError(
+        "could not find a usable Python interpreter. "
+        "Run this tool with the intended virtualenv active, or set PPTX2MARKDOWN_PYTHON."
+    )
 
 
 def run_structure_analysis_stage(
@@ -26,8 +76,9 @@ def run_structure_analysis_stage(
         shutil.rmtree(ro_output)
     ro_output.mkdir(parents=True, exist_ok=True)
 
+    py_exe = resolve_python_executable(repo_root)
     cmd = [
-        "python3",
+        py_exe,
         str(ro_script),
         "--mode",
         "xml",
@@ -104,18 +155,12 @@ def run_surya_pipeline_stage(
     target_pptx_dir: Optional[Path] = None,
     target_slides_dir: Optional[Path] = None,
 ) -> Path:
-    def choose_python_for_surya() -> str:
-        repo_root = Path(__file__).resolve().parent.parent
-        venv_py = repo_root / ".venv" / "bin" / "python"
-        if venv_py.exists() and venv_py.is_file():
-            return str(venv_py)
-        return sys.executable
-
     run_script = surya_root / "run_surya_pipeline.py"
     if not run_script.exists():
         raise FileNotFoundError(f"surya pipeline script not found: {run_script}")
 
-    py_exe = choose_python_for_surya()
+    repo_root = Path(__file__).resolve().parent.parent
+    py_exe = resolve_python_executable(repo_root)
     cmd = [py_exe, str(run_script)]
     if target_pptx_dir is not None:
         cmd.extend(["--target-pptx-dir", str(target_pptx_dir)])

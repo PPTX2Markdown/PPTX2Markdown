@@ -27,7 +27,7 @@ try:
     from table_pipeline import parse as table_parse
     from table_pipeline import render as table_render
 except Exception:
-    # Support running directly from inside ./table_pipeline (python3 run.py).
+    # Support running directly from inside ./table_pipeline (python run.py).
     import parse as table_parse  # type: ignore
     import render as table_render  # type: ignore
 

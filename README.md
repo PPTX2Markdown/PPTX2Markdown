@@ -49,11 +49,24 @@ Gemini 모드는 별도 Python 패키지 없이 `urllib` 기반 REST 호출로 �
 
 #### venv 생성 및 패키지 설치
 
+Do not reuse a `.venv` copied from another machine or OS. Recreate the virtual environment locally on each system.
+
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install -r requirements.txt
+```
+
+macOS / Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
 #### LibreOffice 설치
@@ -127,21 +140,21 @@ docker compose exec app bash
 ### 기본 실행
 
 ```bash
-python3 main_converter/convert_slides_to_md.py [INPUT_PPTX ...]
+python main_converter/convert_slides_to_md.py [INPUT_PPTX ...]
 ```
 
 예시:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py
-python3 main_converter/convert_slides_to_md.py sample1.pptx sample2.pptx
+python main_converter/convert_slides_to_md.py
+python main_converter/convert_slides_to_md.py sample1.pptx sample2.pptx
 ```
 
 ### Reading Order 옵션
 
 ```bash
-python3 main_converter/convert_slides_to_md.py --reading-order xml sample1.pptx
-python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
+python main_converter/convert_slides_to_md.py --reading-order xml sample1.pptx
+python main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
 ```
 
 ### 이미지 VLM 옵션
@@ -165,7 +178,7 @@ python3 main_converter/convert_slides_to_md.py --reading-order surya sample1.ppt
 3B 별칭 사용:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider local \
   --image-vlm-model 3b \
   sample1.pptx
@@ -174,7 +187,7 @@ python3 main_converter/convert_slides_to_md.py \
 직접 Hugging Face 모델 ID 지정:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider local \
   --image-vlm-model Qwen/Qwen2.5-VL-7B-Instruct \
   sample1.pptx
@@ -191,7 +204,7 @@ export GEMINI_API_KEY="your-api-key"
 기본 Gemini 모델 사용:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   sample1.pptx
 ```
@@ -199,7 +212,7 @@ python3 main_converter/convert_slides_to_md.py \
 명시적으로 모델 지정:
 
 ```bash
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
   sample1.pptx
@@ -209,7 +222,7 @@ API 키 환경변수 이름을 바꾸는 경우:
 
 ```bash
 MY_GEMINI_KEY="your-api-key" \
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-api-key-env MY_GEMINI_KEY \
   sample1.pptx
@@ -218,7 +231,7 @@ python3 main_converter/convert_slides_to_md.py \
 #### 프롬프트 및 토큰 제어
 
 ```bash
-python3 main_converter/convert_slides_to_md.py \
+python main_converter/convert_slides_to_md.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
   --image-vlm-prompt "Custom prompt here" \
@@ -255,7 +268,7 @@ python3 main_converter/convert_slides_to_md.py \
 ## 빠른 체크
 
 ```bash
-python3 -m py_compile \
+python -m py_compile \
   image_pipeline/service.py \
   main_converter/converter_models.py \
   main_converter/slide_converter.py \

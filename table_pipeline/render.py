@@ -379,6 +379,6 @@ def main(argv: list[str]) -> int:
 if __name__ == "__main__":
     print(
         "[INFO] render.py is an internal pipeline module.\n"
-        "Use `python3 run.py` from table_pipeline/ as the entrypoint."
+        "Use `python run.py` from table_pipeline/ as the entrypoint."
     )
     raise SystemExit(1)
