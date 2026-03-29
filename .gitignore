@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# python evironment 
+.python-version
+.venv
+
 # Do not commit local XML,JSON sources/results
 /table_extractor/extract_results/*.xml
 /table_extractor/extract_results/manifest.json
@@ -12,7 +16,6 @@
 *.md
 !/README.md
 !/README.eg.md
-.venv
 
 # Inputs / outputs (never commit)
 /main_converter/raw_pptx/**

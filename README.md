@@ -14,31 +14,13 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
 - `table_pipeline`: 네이티브 테이블 추출 및 렌더링
 - `image_pipeline`: 이미지 블록을 Markdown으로 변환하는 VLM 계층
 
-## 이미지 처리 백엔드
-
-이미지 블록은 다음 세 가지 방식 중 하나로 처리됩니다.
-
-1. 기본값: 이미지 링크 그대로 유지
-2. 로컬 VLM: Qwen2.5-VL 사용
-3. API VLM: Gemini API 사용
-
-Gemini 모드는 별도 Python 패키지 없이 `urllib` 기반 REST 호출로 동작합니다.
-
-### 이미지 처리 정책
-
-- 일반 이미지 블록은 이미지 VLM이 활성화되어 있으면 Markdown 변환을 시도합니다.
-- 표 위에 겹쳐진 이미지와 표 셀 내부 배경 이미지도 동일한 이미지 VLM 경로로 처리합니다.
-- VLM이 빈 결과를 반환하거나 `불필요한 정보` 성격으로 판단되면 이미지 링크로 fallback 합니다.
-- EMF/WMF 이미지는 LibreOffice를 이용해 PNG로 변환한 뒤 처리합니다.
-- 투명 배경 이미지는 회색 배경으로 평탄화한 뒤 처리합니다.
-
 ## 설치
 
-### 1. venv 기반 설치
+### 1. uv 기반 설치
 
 #### 요구 사항
 
-- Python `3.10` 또는 `3.11`
+- uv
 - LibreOffice
   - EMF/WMF 이미지를 PNG로 변환할 때 필요
 - 로컬 Qwen 모드 사용 시
@@ -47,15 +29,15 @@ Gemini 모드는 별도 Python 패키지 없이 `urllib` 기반 REST 호출로 �
 - Gemini 모드 사용 시
   - `GEMINI_API_KEY` 환경변수 필요
 
-#### venv 생성 및 패키지 설치
-
-Do not reuse a `.venv` copied from another machine or OS. Recreate the virtual environment locally on each system.
+#### 저장소 클론 후 환경 구성
 
 ```bash
-python -m venv .venv
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -r requirements.txt
+git clone https://github.com/PPTX2Markdown/PPTX2Markdown.git
+cd PPTX2Markdown
+uv sync
 ```
+
+#### 가상환경 적용
 
 macOS / Linux:
 
@@ -85,6 +67,9 @@ sudo apt-get install -y libreoffice libreoffice-impress fonts-dejavu-core libgli
 ```
 
 Windows PowerShell:
+다음 웹 페이지에서 직접 다운로드 후 환경변수 설정
+
+- 설치 페이지 : https://www.libreoffice.org/download/download-libreoffice/?type=win-x86_64&version=25.8.4&lang=ss
 
 ```powershell
 $env:SOFFICE_PATH="C:\Program Files\LibreOffice\program\soffice.exe"
