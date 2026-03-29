@@ -186,6 +186,19 @@ python main_converter/convert_slides_to_md.py \
 export GEMINI_API_KEY="your-api-key"
 ```
 
+속도 제한 완화용 환경변수:
+
+```bash
+export GEMINI_MIN_REQUEST_INTERVAL_SEC=1.5
+export GEMINI_MAX_RETRIES=5
+export GEMINI_BASE_BACKOFF_SEC=2
+export GEMINI_MAX_BACKOFF_SEC=30
+```
+
+- `429 Too Many Requests` 또는 일시적 `5xx` 응답이 오면 자동 재시도합니다.
+- `GEMINI_MIN_REQUEST_INTERVAL_SEC`로 요청 간 최소 간격을 강제할 수 있습니다.
+- quota가 빡빡하면 `GEMINI_MIN_REQUEST_INTERVAL_SEC=3` 또는 `5`로 늘리는 편이 안정적입니다.
+
 기본 Gemini 모델 사용:
 
 ```bash
