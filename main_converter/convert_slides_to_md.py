@@ -3,16 +3,12 @@
 Convert extracted PPTX package(s) to markdown.
 
 Usage:
-  python convert_slides_to_md.py [ppt_root_dir|file.pptx ...]
-  python convert_slides_to_md.py --raw
-  python convert_slides_to_md.py --raw [sample1|sample1.pptx|raw_pptx/sample1.pptx ...]
+  python convert_slides_to_md.py [package_name|file.pptx ...]
 
 Rules:
-  - If no positional args are provided, process all package roots in ./target_pptx.
-  - Package root example: ./target_pptx/sample1
-  - If a .pptx file is provided, it is extracted automatically into ./target_pptx/<stem>/.
-  - If --raw is provided, process all .pptx files in ./raw_pptx.
-    If positional args are also provided, only those raw .pptx files are processed.
+  - If no positional args are provided, process all package roots in ./target_slides.
+  - Package root example: ./target_slides/sample1
+  - If a .pptx file is provided, it is extracted into ./target_slides/<stem>/ first.
   - Each package must contain: ./ppt/slides
   - Output is always written to ./output (created automatically).
   - Input slide XML order is assumed to be the final reading order.
@@ -21,28 +17,46 @@ Rules:
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
+import time
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
-from heading_rules import (
-    HeadingPolicy,
-    clean_heading_text_for_render as hr_clean_heading_text_for_render,
-    infer_heading_depth_fallback as hr_infer_heading_depth_fallback,
-    is_body_like_long_sentence as hr_is_body_like_long_sentence,
-    looks_like_multi_numbered_items as hr_looks_like_multi_numbered_items,
-    normalize_single_heading_to_h1,
-    strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from asset_utils import copy_debug_image_asset, copy_media_asset
+from converter_models import ConversionManifest, ConverterConfig, SlideStats
+from reading_order_pipeline import (
+    prepare_surya_structure_root,
+    resolve_surya_structure_dir,
+    run_structure_analysis_stage,
+)
+from heading_rules import normalize_single_heading_to_h1
+from image_pipeline.service import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
+    DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
+    extract_markdown_from_image,
+    normalize_provider,
+)
+from image_table_pipeline_adapter import convert_picture_to_table_markdown
+from slide_converter import SlideConversionDeps, convert_one_slide as convert_one_slide_core
+from table_overlay import (
+    collect_table_overlay_pictures as collect_table_overlay_pictures_core,
+    convert_table_to_markdown as convert_table_to_markdown_core,
+    shape_id_of as shape_id_of_core,
 )
 
 
@@ -54,91 +68,40 @@ NS = {
 }
 REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
-_IMAGE_TABLE_PIPELINE_MODULE: Optional[object] = None
-_IMAGE_TABLE_PIPELINE_IMPORT_ERROR: Optional[str] = None
+logger = logging.getLogger(__name__)
 
 
-def run_structure_analysis_stage(
-    repo_root: Path,
-    slide_xmls: Sequence[Path],
-    strict: bool = False,
-) -> Tuple[Dict[str, Path], Path]:
-    ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
-    if not ro_script.exists():
-        raise FileNotFoundError(f"structure_analyzer script not found: {ro_script}")
-
-    ro_output = Path(tempfile.mkdtemp(prefix="struct_analysis_xml_", dir="/tmp"))
-    cmd = [
-        "python3",
-        str(ro_script),
-        "--mode",
-        "xml",
-        "--output-dir",
-        str(ro_output),
-    ]
-    if strict:
-        cmd.append("--strict")
-    cmd.extend(str(p.resolve()) for p in slide_xmls)
-
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            "structure_analysis stage failed\n"
-            f"cmd: {' '.join(cmd)}\n"
-            f"stdout:\n{proc.stdout}\n"
-            f"stderr:\n{proc.stderr}"
-        )
-
-    manifest_path = ro_output / "structure_analysis_manifest.json"
-    if not manifest_path.exists():
-        legacy_manifest = ro_output / "reading_order_manifest.json"
-        if legacy_manifest.exists():
-            manifest_path = legacy_manifest
-        else:
-            raise FileNotFoundError(f"structure_analysis manifest not found: {manifest_path}")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    failed = manifest.get("failed", [])
-    if isinstance(failed, list) and failed:
-        raise RuntimeError(f"structure_analysis stage reported failures: {json.dumps(failed, ensure_ascii=False)}")
-
-    mapping: Dict[str, Path] = {}
-    processed = manifest.get("processed", [])
-    if isinstance(processed, list):
-        for row in processed:
-            if not isinstance(row, dict):
-                continue
-            src = row.get("input_xml")
-            out = row.get("output_xml")
-            if isinstance(src, str) and isinstance(out, str):
-                mapping[str(Path(src).resolve())] = Path(out).resolve()
-    return mapping, ro_output
+def _configure_logging(verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(message)s")
 
 
 def ensure_imports(repo_root: Path) -> None:
-    # Support both new and legacy repository layouts.
+    # Ensure project root is importable for local packages.
     candidates = [
         repo_root,
-        repo_root / "table_parser",
-        repo_root / "pptx_table_parser" / "table_parser",
-        repo_root / "pptx_table_parser",
     ]
     for cand in candidates:
         if cand.exists() and cand.is_dir() and str(cand) not in sys.path:
             sys.path.insert(0, str(cand))
 
 
-def default_target_dirs(cwd: Path) -> List[Path]:
-    # Prefer local main_converter/target_pptx. Create it when absent.
-    local_target = cwd / "target_pptx"
+def default_target_dirs(base_dir: Path) -> List[Path]:
+    # Always anchor under main_converter/.
+    local_target = base_dir / "target_slides"
+    if local_target.exists() and not local_target.is_dir():
+        raise NotADirectoryError(f"target_slides path exists but is not a directory: {local_target}")
+    local_target.mkdir(parents=True, exist_ok=True)
+    return [local_target]
+
+
+def default_pptx_input_dirs(base_dir: Path) -> List[Path]:
+    # Always anchor under main_converter/.
+    local_target = base_dir / "target_pptx"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
     local_target.mkdir(parents=True, exist_ok=True)
-
-    out: List[Path] = [local_target]
-    parent_target = cwd.parent / "target_pptx"
-    if parent_target.exists() and parent_target.is_dir() and parent_target != local_target:
-        out.append(parent_target)
-    return out
+    return [local_target]
 
 
 def natural_key(name: str) -> Tuple:
@@ -199,15 +162,18 @@ def sanitize_package_name(name: str) -> str:
     return cleaned or "package"
 
 
-def preferred_target_dir(cwd: Path) -> Path:
-    cands = default_target_dirs(cwd)
+def preferred_target_dir(base_dir: Path) -> Path:
+    cands = default_target_dirs(base_dir)
     if cands:
         return cands[0]
-    return cwd / "target_pptx"
+    return base_dir / "target_slides"
 
 
-def raw_pptx_dir(cwd: Path) -> Path:
-    return cwd / "raw_pptx"
+def preferred_pptx_input_dir(base_dir: Path) -> Path:
+    cands = default_pptx_input_dirs(base_dir)
+    if cands:
+        return cands[0]
+    return base_dir / "target_pptx"
 
 
 def package_marker_path(pkg_dir: Path) -> Path:
@@ -250,6 +216,7 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 def extract_pptx_to_target(
     pptx_path: Path,
     extraction_root: Path,
+    staged_pptx_root: Path,
     allow_replace_unmanaged: bool = False,
 ) -> Path:
     stat = pptx_path.stat()
@@ -280,6 +247,10 @@ def extract_pptx_to_target(
                 raise
 
     if package_marker_matches(pkg_dir, pptx_path):
+        staged_pptx_root.mkdir(parents=True, exist_ok=True)
+        staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
+        if staged_pptx.resolve() != pptx_path.resolve():
+            shutil.copy2(pptx_path, staged_pptx)
         return pkg_dir.resolve()
 
     marker = package_marker_path(pkg_dir)
@@ -313,6 +284,12 @@ def extract_pptx_to_target(
         ),
         encoding="utf-8",
     )
+
+    staged_pptx_root.mkdir(parents=True, exist_ok=True)
+    staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
+    if staged_pptx.resolve() != pptx_path.resolve():
+        shutil.copy2(pptx_path, staged_pptx)
+
     return pkg_dir.resolve()
 
 
@@ -321,94 +298,83 @@ def is_ignored_pptx_file(path: Path) -> bool:
     return path.name.startswith("~$")
 
 
-def prepare_package_inputs(
-    cwd: Path,
-    raw_inputs: Sequence[str],
-    force_extract: bool = False,
-) -> List[str]:
-    if not raw_inputs:
-        return list(raw_inputs)
-
-    prepared: List[str] = []
-    extraction_root = preferred_target_dir(cwd)
+def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
     search_roots = [cwd]
+    for root in default_pptx_input_dirs(cwd):
+        if root not in search_roots:
+            search_roots.append(root)
     for root in default_target_dirs(cwd):
         if root not in search_roots:
             search_roots.append(root)
 
+    candidates: List[Path] = []
+    seen: set[str] = set()
+
+    def add_candidate(path: Path) -> None:
+        key = str(path)
+        if key not in seen:
+            seen.add(key)
+            candidates.append(path)
+
+    raw_path = Path(item)
+    add_candidate(raw_path)
+    for root in search_roots:
+        add_candidate(root / item)
+
+    for cand in candidates:
+        if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
+            if is_ignored_pptx_file(cand):
+                continue
+            return cand.resolve(), candidates
+        if cand.suffix.lower() != ".pptx":
+            cand_pptx = cand.with_suffix(".pptx")
+            if cand_pptx.exists() and cand_pptx.is_file() and not is_ignored_pptx_file(cand_pptx):
+                return cand_pptx.resolve(), candidates
+    return None, candidates
+
+
+def prepare_package_inputs(
+    cwd: Path,
+    raw_inputs: Sequence[str],
+    force_extract: bool = False,
+) -> Tuple[List[str], List[Dict[str, object]]]:
+    if not raw_inputs:
+        return list(raw_inputs), []
+
+    prepared: List[str] = []
+    missing_inputs: List[Dict[str, object]] = []
+    extraction_root = preferred_target_dir(cwd)
+    staged_pptx_root = preferred_pptx_input_dir(cwd)
+
     for item in raw_inputs:
-        p = Path(item)
-        candidates = [p]
-        for root in search_roots:
-            candidates.append(root / item)
-        picked_file: Optional[Path] = None
-        for cand in candidates:
-            if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
-                if is_ignored_pptx_file(cand):
-                    continue
-                picked_file = cand.resolve()
-                break
+        picked_file, candidates = resolve_input_pptx_path(cwd, item)
         if picked_file is None:
-            prepared.append(item)
+            missing_inputs.append(
+                {
+                    "input": item,
+                    "checked": [str(path.resolve()) if path.is_absolute() else str((cwd / path).resolve()) for path in candidates],
+                }
+            )
             continue
         pkg_dir = extract_pptx_to_target(
             picked_file,
             extraction_root,
+            staged_pptx_root=staged_pptx_root,
             allow_replace_unmanaged=force_extract,
         )
         prepared.append(str(pkg_dir))
-    return prepared
+    return prepared, missing_inputs
 
 
-def collect_raw_pptx_inputs(cwd: Path) -> List[str]:
-    raw_dir = raw_pptx_dir(cwd)
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    files = sorted(
-        [
-            path.resolve()
-            for path in raw_dir.glob("*.pptx")
-            if path.is_file() and not is_ignored_pptx_file(path)
-        ],
-        key=lambda path: natural_key(path.name),
-    )
-    return [str(path) for path in files]
-
-
-def resolve_selected_raw_inputs(cwd: Path, selections: Sequence[str]) -> List[str]:
-    raw_dir = raw_pptx_dir(cwd)
-    resolved: List[str] = []
-    missing: List[str] = []
-
-    for item in selections:
-        token = item.strip()
-        if not token:
-            continue
-        as_path = Path(token)
-        candidates: List[Path] = [as_path, cwd / as_path, raw_dir / as_path]
-        if as_path.suffix.lower() != ".pptx":
-            candidates.append(raw_dir / f"{token}.pptx")
-
-        picked: Optional[Path] = None
-        for cand in candidates:
-            if not cand.exists() or not cand.is_file():
-                continue
-            if cand.suffix.lower() != ".pptx" or is_ignored_pptx_file(cand):
-                continue
-            picked = cand.resolve()
-            break
-
-        if picked is None:
-            missing.append(item)
-            continue
-        resolved.append(str(picked))
-
-    if missing:
-        msg = ", ".join(missing)
-        raise FileNotFoundError(
-            "Raw selection did not match any .pptx file in ./raw_pptx (or provided path): "
-            f"{msg}"
-        )
-    return resolved
+def collect_target_pptx_inputs(cwd: Path) -> List[str]:
+    files: List[Path] = []
+    for root in default_pptx_input_dirs(cwd):
+        for path in root.glob("*.pptx"):
+            if path.is_file() and not is_ignored_pptx_file(path):
+                files.append(path.resolve())
+    files = sorted(files, key=lambda p: natural_key(p.name))
+    uniq: Dict[str, Path] = {str(p): p for p in files}
+    return [str(p) for p in uniq.values()]
 
 
 def parse_slide_number(filename: str, default_idx: int) -> int:
@@ -556,7 +522,6 @@ def choose_rels_in_package(
 
 
 def resolve_image_path(
-    slide_xml: Path,
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
     r_embed: Optional[str],
@@ -581,7 +546,7 @@ def resolve_image_path(
         pkg_name = None
     if pkg_name:
         target_name = Path(target).name
-        remapped = (repo_root / "main_converter" / "target_pptx" / pkg_name / "ppt" / "media" / target_name)
+        remapped = (repo_root / "main_converter" / "target_slides" / pkg_name / "ppt" / "media" / target_name)
         if remapped.exists():
             abs_path = remapped.absolute()
     return str(abs_path), None
@@ -596,45 +561,62 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
-def copy_media_asset(
-    path: str,
-    media_dir: Optional[Path],
-    copied_media: Optional[Dict[str, Path]] = None,
-) -> str:
-    if path.startswith("[unresolved-image") or media_dir is None:
-        return path
+def convert_picture_to_markdown(
+    image_path: str,
+    *,
+    provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    model_spec: Optional[str] = None,
+    prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
+    def is_pipeline_unavailable(message: str) -> bool:
+        normalized = str(message or "").strip().lower()
+        return (
+            "api key not found" in normalized
+            or "modulenotfounderror" in normalized
+            or "importerror" in normalized
+        )
 
-    src = Path(path)
-    if not src.exists() or not src.is_file():
-        return path
+    normalized_provider = normalize_provider(provider)
+    effective_model = model_spec
+    if normalized_provider == "gemini" and not effective_model:
+        effective_model = DEFAULT_GEMINI_MODEL
+    if not effective_model:
+        return None, None, False, None
 
     try:
-        src_key = str(src.resolve())
-    except Exception:
-        src_key = str(src)
+        result = extract_markdown_from_image(
+            Path(image_path),
+            provider=normalized_provider,
+            model_spec=effective_model,
+            prompt=prompt,
+            max_new_tokens=max(1, int(max_new_tokens)),
+            gemini_api_key_env=gemini_api_key_env,
+        )
+    except Exception as exc:  # noqa: BLE001
+        error_message = f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
+        return (
+            None,
+            error_message,
+            is_pipeline_unavailable(error_message),
+            None,
+        )
 
-    if copied_media is not None and src_key in copied_media:
-        return str(copied_media[src_key])
+    if not isinstance(result, dict):
+        return None, f"image pipeline returned invalid payload: {type(result).__name__}", False, None
 
-    media_dir.mkdir(parents=True, exist_ok=True)
-    dest = media_dir / src.name
-    if dest.exists():
-        try:
-            same_file = dest.resolve() == src.resolve()
-        except Exception:
-            same_file = False
-        if not same_file:
-            stem = src.stem
-            suffix = src.suffix
-            n = 2
-            while dest.exists():
-                dest = media_dir / f"{stem}-{n}{suffix}"
-                n += 1
+    status = str(result.get("status", "")).strip().lower()
+    if status == "markdown":
+        markdown = str(result.get("markdown", "")).strip()
+        if markdown:
+            return markdown, None, False, result
+        return None, f"image pipeline rendered empty markdown: {Path(image_path).name}", False, result
+    if status == "no_markdown":
+        return None, None, False, result
 
-    shutil.copy2(src, dest)
-    if copied_media is not None:
-        copied_media[src_key] = dest
-    return str(dest)
+    error = str(result.get("error", "")).strip() or "unknown image pipeline error"
+    return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
 
 
 def format_markdown_image(
@@ -643,12 +625,36 @@ def format_markdown_image(
     alt_text: str = "image",
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-) -> str:
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
-        return path
-    path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
-    path = relativize_markdown_path(path, output_dir)
-    return f"![{alt_text}]({path})"
+        return path, None, False, False, False
+
+    normalized_provider = normalize_provider(image_vlm_provider)
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    if image_vlm_enabled:
+        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
+            path,
+            provider=normalized_provider,
+            model_spec=image_vlm_model,
+            prompt=image_vlm_prompt,
+            max_new_tokens=image_vlm_max_new_tokens,
+            gemini_api_key_env=image_vlm_api_key_env,
+        )
+        if image_md is not None:
+            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+        copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+        relative_path = relativize_markdown_path(copied_path, output_dir)
+        return f"![{alt_text}]({relative_path})", image_warn, unavailable, False, skipped_no_markdown
+
+    copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    relative_path = relativize_markdown_path(copied_path, output_dir)
+    return f"![{alt_text}]({relative_path})", None, False, False, False
 
 
 def paragraph_text(paragraph: ET.Element) -> str:
@@ -774,10 +780,6 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
     return "\n".join(rendered).strip()
 
 
-def extract_shape_text(shape_elem: ET.Element) -> str:
-    return render_shape_blocks(extract_shape_blocks(shape_elem))
-
-
 def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     graphic_data = graphic_frame.find("./a:graphic/a:graphicData", NS)
     if graphic_data is None:
@@ -835,34 +837,6 @@ def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
     return "\n".join(f"- {text}" for text in cleaned)
 
 
-def infer_heading_depth_fallback(
-    text: str,
-    text_block_index: int,
-    font_pt: Optional[float] = None,
-) -> Optional[int]:
-    return hr_infer_heading_depth_fallback(
-        text=text,
-        text_block_index=text_block_index,
-        font_pt=font_pt,
-    )
-
-
-def clean_heading_text_for_render(text: str) -> str:
-    return hr_clean_heading_text_for_render(text)
-
-
-def looks_like_multi_numbered_items(text: str) -> bool:
-    return hr_looks_like_multi_numbered_items(text)
-
-
-def strict_heading_depth_from_placeholder(ph_type: Optional[str]) -> Optional[int]:
-    return hr_strict_heading_depth_from_placeholder(ph_type)
-
-
-def is_body_like_long_sentence(text: str) -> bool:
-    return hr_is_body_like_long_sentence(text)
-
-
 def normalize_triangle_bullet(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
@@ -899,88 +873,8 @@ def split_triangle_bullets(text: str) -> List[str]:
     return rendered_lines
 
 
-def infer_heading_depth_fallback_strict(text: str, text_block_index: int) -> Optional[int]:
-    # Strict mode keeps fallback conservative; rely on structure_analyzer hints first.
-    # TODO: Add stricter lexical and position-aware fallback heuristics for xml-only mode.
-    return None
-
-
 def shape_id_of(elem: ET.Element) -> str:
-    c_nv_pr = elem.find(".//p:cNvPr", NS)
-    if c_nv_pr is None:
-        return ""
-    return c_nv_pr.attrib.get("id", "")
-
-
-def parse_int(v: Optional[str], default: int = 10**18) -> int:
-    if v is None:
-        return default
-    try:
-        return int(v)
-    except ValueError:
-        return default
-
-
-def first_off(elem: ET.Element) -> Optional[ET.Element]:
-    for p in (
-        "./p:spPr/a:xfrm/a:off",
-        "./p:grpSpPr/a:xfrm/a:off",
-        "./p:xfrm/a:off",
-        ".//a:off",
-    ):
-        off = elem.find(p, NS)
-        if off is not None:
-            return off
-    return None
-
-
-def first_ext(elem: ET.Element) -> Optional[ET.Element]:
-    for p in (
-        "./p:spPr/a:xfrm/a:ext",
-        "./p:grpSpPr/a:xfrm/a:ext",
-        "./p:xfrm/a:ext",
-        ".//a:ext",
-    ):
-        ext = elem.find(p, NS)
-        if ext is not None:
-            return ext
-    return None
-
-
-def extract_bbox_emu(elem: ET.Element) -> Optional[Tuple[int, int, int, int]]:
-    off = first_off(elem)
-    ext = first_ext(elem)
-    if off is None or ext is None:
-        return None
-    x = parse_int(off.attrib.get("x"))
-    y = parse_int(off.attrib.get("y"))
-    w = parse_int(ext.attrib.get("cx"))
-    h = parse_int(ext.attrib.get("cy"))
-    if any(v >= 10**18 for v in (x, y, w, h)) or w <= 0 or h <= 0:
-        return None
-    return (x, y, x + w, y + h)
-
-
-def intersection_area(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> int:
-    left = max(a[0], b[0])
-    top = max(a[1], b[1])
-    right = min(a[2], b[2])
-    bottom = min(a[3], b[3])
-    if right <= left or bottom <= top:
-        return 0
-    return (right - left) * (bottom - top)
-
-
-def bbox_area(bbox: Tuple[int, int, int, int]) -> int:
-    return max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])
-
-
-def bbox_center(bbox: Tuple[int, int, int, int]) -> Tuple[int, int]:
-    return ((bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2)
-
-
-def bbox_contains_point(bbox: Tuple[int, int, int, int], point: Tuple[int, int]) -> bool:
-    return bbox[0] <= point[0] <= bbox[2] and bbox[1] <= point[1] <= bbox[3]
+    return shape_id_of_core(elem, NS)
 
 
 def overlay_link_text(
@@ -996,195 +890,74 @@ def overlay_link_text(
     return f"[image]({path})"
 
 
+def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
+    image_name = Path(image_path).name
+    body = markdown.strip()
+    if not body:
+        return f"[image-vlm-source: {image_name}]"
+    return f"[image-vlm-source: {image_name}]\n\n{body}"
+
+
+def overlay_content_text(
+    path: str,
+    output_dir: Optional[Path],
+    media_dir: Optional[Path] = None,
+    copied_media: Optional[Dict[str, Path]] = None,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+) -> Tuple[str, Optional[str], bool, bool, bool]:
+    if path.startswith("[unresolved-image"):
+        return path, None, False, False, False
+
+    normalized_provider = normalize_provider(image_vlm_provider)
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    if image_vlm_enabled:
+        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
+            path,
+            provider=normalized_provider,
+            model_spec=image_vlm_model,
+            prompt=image_vlm_prompt,
+            max_new_tokens=image_vlm_max_new_tokens,
+            gemini_api_key_env=image_vlm_api_key_env,
+        )
+        if image_md is not None:
+            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+        return (
+            overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
+            image_warn,
+            unavailable,
+            False,
+            skipped_no_markdown,
+        )
+
+    return (
+        overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
+        None,
+        False,
+        False,
+        False,
+    )
+
+
 def collect_table_overlay_pictures(
     sp_tree: ET.Element,
     slide_xml: Path,
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
-) -> Tuple[Dict[str, List[Dict[str, object]]], set, List[str], int, int]:
-    table_bboxes: List[Tuple[str, Tuple[int, int, int, int]]] = []
-    picture_infos: List[Dict[str, object]] = []
-
-    for child in list(sp_tree):
-        tag = local_name(child.tag)
-        if tag == "graphicFrame":
-            tbl = child.find(".//a:tbl", NS)
-            bbox = extract_bbox_emu(child)
-            sid = shape_id_of(child)
-            if tbl is not None and bbox is not None and sid:
-                table_bboxes.append((sid, bbox))
-        elif tag == "pic":
-            bbox = extract_bbox_emu(child)
-            sid = shape_id_of(child)
-            if bbox is None or not sid:
-                continue
-            blip = child.find(".//a:blip", NS)
-            embed = blip.attrib.get(f"{{{NS['r']}}}embed") if blip is not None else None
-            path, warn = resolve_image_path(slide_xml, rels_map, rels_path, embed)
-            picture_infos.append(
-                {
-                    "shape_id": sid,
-                    "bbox": bbox,
-                    "path": path,
-                    "warn": warn,
-                }
-            )
-
-    by_table: Dict[str, List[Dict[str, object]]] = {}
-    consumed: set = set()
-    warnings: List[str] = []
-    resolved = 0
-    unresolved = 0
-    for _, table_bbox in table_bboxes:
-        table_area = bbox_area(table_bbox)
-        if table_area <= 0:
-            continue
-        for pic_info in picture_infos:
-            pic_id = str(pic_info["shape_id"])
-            pic_bbox = pic_info["bbox"]
-            pic_area = bbox_area(pic_bbox)
-            if pic_area <= 0:
-                continue
-            overlap = intersection_area(table_bbox, pic_bbox)
-            overlap_ratio = overlap / pic_area
-            center_inside = bbox_contains_point(table_bbox, bbox_center(pic_bbox))
-            if center_inside and overlap_ratio >= 0.8:
-                consumed.add(pic_id)
-                by_table.setdefault(_, []).append(pic_info)
-                warn = pic_info.get("warn")
-                if isinstance(warn, str) and warn:
-                    unresolved += 1
-                    warnings.append(warn)
-                else:
-                    resolved += 1
-    return by_table, consumed, warnings, resolved, unresolved
-
-
-def compute_table_cell_bounds(
-    graphic_frame: ET.Element,
-) -> Optional[Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]]:
-    bbox = extract_bbox_emu(graphic_frame)
-    tbl = graphic_frame.find(".//a:tbl", NS)
-    if bbox is None or tbl is None:
-        return None
-
-    col_elems = tbl.findall("./a:tblGrid/a:gridCol", NS)
-    row_elems = tbl.findall("./a:tr", NS)
-    col_widths = [parse_int(col.attrib.get("w"), 0) for col in col_elems]
-    row_heights = [parse_int(row.attrib.get("h"), 0) for row in row_elems]
-    total_col = sum(v for v in col_widths if v > 0)
-    total_row = sum(v for v in row_heights if v > 0)
-    if total_col <= 0 or total_row <= 0:
-        return None
-
-    table_width = bbox[2] - bbox[0]
-    table_height = bbox[3] - bbox[1]
-    if table_width <= 0 or table_height <= 0:
-        return None
-
-    col_bounds: List[Tuple[int, int]] = []
-    cursor = bbox[0]
-    used_width = 0
-    for idx, width in enumerate(col_widths):
-        if idx == len(col_widths) - 1:
-            right = bbox[2]
-        else:
-            used_width += width
-            right = bbox[0] + int(table_width * used_width / total_col)
-        col_bounds.append((cursor, right))
-        cursor = right
-
-    row_bounds: List[Tuple[int, int]] = []
-    cursor = bbox[1]
-    used_height = 0
-    for idx, height in enumerate(row_heights):
-        if idx == len(row_heights) - 1:
-            bottom = bbox[3]
-        else:
-            used_height += height
-            bottom = bbox[1] + int(table_height * used_height / total_row)
-        row_bounds.append((cursor, bottom))
-        cursor = bottom
-
-    return col_bounds, row_bounds
-
-
-def find_table_cell_origin(
-    parsed_table: Dict[str, object],
-    row_idx: int,
-    col_idx: int,
-) -> Tuple[int, int]:
-    rows = parsed_table.get("rows")
-    if not isinstance(rows, list):
-        return row_idx, col_idx
-    if row_idx >= len(rows):
-        return row_idx, col_idx
-    row = rows[row_idx]
-    if not isinstance(row, list) or col_idx >= len(row):
-        return row_idx, col_idx
-    cell = row[col_idx]
-    if not isinstance(cell, dict):
-        return row_idx, col_idx
-    origin = cell.get("origin")
-    if cell.get("type") in {"hMerge", "vMerge"} and isinstance(origin, list) and len(origin) == 2:
-        if isinstance(origin[0], int) and isinstance(origin[1], int):
-            return origin[0], origin[1]
-    return row_idx, col_idx
-
-
-def inject_table_overlay_links(
-    parsed_table: Dict[str, object],
-    graphic_frame: ET.Element,
-    overlays: Sequence[Dict[str, object]],
-    output_dir: Optional[Path],
-    media_dir: Optional[Path] = None,
-    copied_media: Optional[Dict[str, Path]] = None,
-) -> Dict[str, object]:
-    if not overlays:
-        return parsed_table
-
-    bounds = compute_table_cell_bounds(graphic_frame)
-    if bounds is None:
-        return parsed_table
-    col_bounds, row_bounds = bounds
-
-    rows = parsed_table.get("rows")
-    if not isinstance(rows, list):
-        return parsed_table
-
-    for overlay in overlays:
-        bbox = overlay.get("bbox")
-        if not (isinstance(bbox, tuple) and len(bbox) == 4):
-            continue
-        center = bbox_center(bbox)
-        row_idx = next((idx for idx, (top, bottom) in enumerate(row_bounds) if top <= center[1] <= bottom), None)
-        col_idx = next((idx for idx, (left, right) in enumerate(col_bounds) if left <= center[0] <= right), None)
-        if row_idx is None or col_idx is None:
-            continue
-        origin_row, origin_col = find_table_cell_origin(parsed_table, row_idx, col_idx)
-        if origin_row >= len(rows):
-            continue
-        row = rows[origin_row]
-        if not isinstance(row, list) or origin_col >= len(row):
-            continue
-        cell = row[origin_col]
-        if not isinstance(cell, dict):
-            continue
-        existing = normalize_text(str(cell.get("text", "")))
-        link = overlay_link_text(
-            str(overlay.get("path", "")),
-            output_dir,
-            media_dir=media_dir,
-            copied_media=copied_media,
-        )
-        updated = f"{existing}\n{link}".strip() if existing else link
-        cell["text"] = updated
-
-    return parsed_table
-
-
-def table_overlay_picture_ids(sp_tree: ET.Element) -> set:
-    return set()
+) -> Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int]:
+    _ = slide_xml
+    return collect_table_overlay_pictures_core(
+        sp_tree,
+        rels_map,
+        rels_path,
+        ns=NS,
+        local_name_fn=local_name,
+        resolve_image_path_fn=resolve_image_path,
+    )
 
 
 def convert_table_to_markdown(
@@ -1193,77 +966,57 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    rels_path: Optional[Path] = None,
+    rels_map: Optional[Dict[str, str]] = None,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
 ) -> Tuple[Optional[str], Optional[str]]:
-    tbl = graphic_frame.find(".//a:tbl", NS)
-    if tbl is None:
-        return None, "graphicFrame without a:tbl"
-
-    import parse_table  # type: ignore
-    import tableMaker  # type: ignore
-
-    with tempfile.NamedTemporaryFile("wb", suffix=".xml", delete=True) as tmp:
-        tmp.write(ET.tostring(tbl, encoding="utf-8"))
-        tmp.flush()
-        parsed = parse_table.parse_table_xml(Path(tmp.name))
-        parsed = inject_table_overlay_links(
-            parsed,
-            graphic_frame,
-            overlays or [],
-            output_dir,
-            media_dir=media_dir,
-            copied_media=copied_media,
-        )
-        dense = tableMaker._dense_grid_from_parsed_table(parsed, fill_merged=tableMaker.FILL_BOTH)
-        md = tableMaker._render_markdown_flat(dense=dense, header_rows=1, use_header_rows=True)
-    return md, None
+    return convert_table_to_markdown_core(
+        graphic_frame,
+        overlays=overlays,
+        output_dir=output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
+        ns=NS,
+        normalize_text_fn=normalize_text,
+        overlay_content_text_fn=overlay_content_text,
+        resolve_image_path_fn=resolve_image_path,
+    )
 
 
-def _load_image_table_pipeline() -> Tuple[Optional[object], Optional[str]]:
-    global _IMAGE_TABLE_PIPELINE_MODULE, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
-    if _IMAGE_TABLE_PIPELINE_MODULE is not None:
-        return _IMAGE_TABLE_PIPELINE_MODULE, None
-    if _IMAGE_TABLE_PIPELINE_IMPORT_ERROR is not None:
-        return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
-
-    import_errors: List[str] = []
-    for module_name in ("image_pipeline.service", "image_table_pipeline"):
-        try:
-            _IMAGE_TABLE_PIPELINE_MODULE = importlib.import_module(module_name)
-            return _IMAGE_TABLE_PIPELINE_MODULE, None
-        except Exception as exc:  # noqa: BLE001
-            import_errors.append(f"{module_name}: {type(exc).__name__}: {exc}")
-
-    _IMAGE_TABLE_PIPELINE_IMPORT_ERROR = "; ".join(import_errors)
-    return None, _IMAGE_TABLE_PIPELINE_IMPORT_ERROR
-
-
-def convert_picture_to_table_markdown(
-    image_path: str,
-) -> Tuple[Optional[str], Optional[str], bool]:
-    module, import_error = _load_image_table_pipeline()
-    if module is None:
-        return None, f"image-table pipeline unavailable: {import_error}", True
-    try:
-        result = module.extract_table_markdown_from_image(Path(image_path), header_rows=1)
-    except Exception as exc:  # noqa: BLE001
-        return None, f"image-table pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}", False
-
-    if not isinstance(result, dict):
-        return None, f"image-table pipeline returned invalid payload: {type(result).__name__}", False
-
-    status = str(result.get("status", "error"))
-    if status == "table":
-        markdown = result.get("markdown")
-        if isinstance(markdown, str) and markdown.strip():
-            return markdown, None, False
-        return None, f"image-table pipeline rendered empty markdown: {Path(image_path).name}", False
-    if status == "not_table":
-        return None, None, False
-
-    error = result.get("error")
-    if not isinstance(error, str) or not error.strip():
-        error = "unknown image-table pipeline error"
-    return None, f"{Path(image_path).name}: {error}", False
+def _slide_conversion_deps() -> SlideConversionDeps:
+    return SlideConversionDeps(
+        local_name=local_name,
+        choose_rels_in_package=choose_rels_in_package,
+        build_rels_map=build_rels_map,
+        load_heading_hints=load_heading_hints,
+        collect_table_overlay_pictures=collect_table_overlay_pictures,
+        extract_shape_blocks=extract_shape_blocks,
+        render_shape_blocks=render_shape_blocks,
+        split_triangle_bullets=split_triangle_bullets,
+        normalize_text=normalize_text,
+        shape_id_of=shape_id_of,
+        resolve_image_path=resolve_image_path,
+        convert_picture_to_table_markdown=convert_picture_to_table_markdown,
+        copy_debug_image_asset=copy_debug_image_asset,
+        format_markdown_image=format_markdown_image,
+        convert_table_to_markdown=convert_table_to_markdown,
+        graphic_frame_kind=graphic_frame_kind,
+        diagram_data_path=diagram_data_path,
+        extract_diagram_texts=extract_diagram_texts,
+        format_diagram_as_markdown=format_diagram_as_markdown,
+        normalize_single_heading_to_h1=normalize_single_heading_to_h1,
+    )
 
 
 def convert_one_slide(
@@ -1273,323 +1026,47 @@ def convert_one_slide(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    enable_image_table_pipeline: bool = False,
+    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
+    image_vlm_model: Optional[str] = None,
+    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
+    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
     strict_headings: bool = False,
-) -> Tuple[str, Dict[str, object]]:
-    heading_policy = HeadingPolicy(strict=strict_headings)
-    root = ET.parse(slide_xml).getroot()
-    sp_tree = root.find("p:cSld/p:spTree", NS)
-    if sp_tree is None:
-        raise ValueError("missing p:cSld/p:spTree")
-
-    rels_path = choose_rels_in_package(slide_xml, source_slide_xml=source_slide_xml)
-    rels_map = build_rels_map(rels_path)
-    heading_hints = load_heading_hints(slide_xml)
-    table_overlay_map, consumed_picture_ids, overlay_warnings, overlay_resolved, overlay_unresolved = (
-        collect_table_overlay_pictures(sp_tree, slide_xml, rels_map, rels_path)
-    )
-
-    lines: List[str] = [f"[Page_{page_no}]", ""]
-    used_headings: set = set()
-    text_block_index = 0
-
-    stats = {
-        "blocks_total": 0,
-        "text_blocks": 0,
-        "image_blocks": 0,
-        "table_blocks": 0,
-        "unsupported_blocks": 0,
-        "skipped_blocks": 0,
-        "resolved_images": 0,
-        "unresolved_images": 0,
-        "warnings": list(overlay_warnings),
-        "rels_path": str(rels_path) if rels_path else None,
-    }
-    stats["resolved_images"] += overlay_resolved
-    stats["unresolved_images"] += overlay_unresolved
-    image_pipeline_unavailable_reported = False
-
-    for child in list(sp_tree):
-        tag = local_name(child.tag)
-        if tag not in {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}:
-            continue
-        stats["blocks_total"] += 1
-
-        if tag == "cxnSp":
-            stats["skipped_blocks"] += 1
-            continue
-
-        if tag in {"sp", "grpSp"}:
-            ph = child.find(".//p:ph", NS)
-            ph_type = ph.attrib.get("type") if ph is not None else None
-            if ph_type in {"sldNum", "ftr", "dt"}:
-                stats["skipped_blocks"] += 1
-                continue
-            shape_blocks = extract_shape_blocks(child)
-            has_list_semantics = any(kind in {"list_ul", "list_ol"} for kind, _, _ in shape_blocks)
-            text = render_shape_blocks(shape_blocks)
-            if not text:
-                stats["skipped_blocks"] += 1
-                continue
-            if re.fullmatch(r"\d+", text):
-                stats["skipped_blocks"] += 1
-                continue
-            sid = shape_id_of(child)
-            hint = heading_hints.get(sid, {})
-            depth = hint.get("heading_depth_hint")
-            score = float(hint.get("heading_score", 0.0))
-            is_candidate = bool(hint.get("is_heading_candidate", False))
-            raw_font_pt = hint.get("font_pt")
-            try:
-                font_pt = float(raw_font_pt) if raw_font_pt is not None else None
-            except (TypeError, ValueError):
-                font_pt = None
-
-            if strict_headings:
-                strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
-                strict_depth = strict_heading_depth_from_placeholder(strict_ph_type)
-                is_candidate = strict_depth is not None
-                depth = strict_depth
-                score = 1.0 if is_candidate else 0.0
-            else:
-                non_strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
-                non_strict_depth = strict_heading_depth_from_placeholder(non_strict_ph_type)
-                if non_strict_depth is not None:
-                    depth = non_strict_depth
-                    score = max(score, 0.9)
-                    is_candidate = True
-                if not is_candidate:
-                    fb_depth = infer_heading_depth_fallback(text, text_block_index, font_pt=font_pt)
-                    if fb_depth is not None:
-                        depth = fb_depth
-                        score = 0.8
-                        is_candidate = True
-
-            rendered = text
-            if not strict_headings:
-                if has_list_semantics:
-                    is_candidate = False
-                if looks_like_multi_numbered_items(rendered):
-                    is_candidate = False
-                if is_body_like_long_sentence(rendered):
-                    is_candidate = False
-            # Final markdown heading level rendering is converter responsibility.
-            heading_threshold = heading_policy.threshold
-            if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
-                heading_text = text if strict_headings else clean_heading_text_for_render(text)
-                key = normalize_text(heading_text)
-                if key not in used_headings:
-                    rendered = f"{'#' * depth} {heading_text}"
-                    used_headings.add(key)
-                else:
-                    # Deduplicate repeated heading text.
-                    stats["skipped_blocks"] += 1
-                    continue
-
-            if rendered.startswith("#"):
-                lines.append(rendered)
-                lines.append("")
-            else:
-                rendered_lines = split_triangle_bullets(rendered)
-                if rendered_lines:
-                    lines.extend(rendered_lines)
-                    lines.append("")
-                else:
-                    lines.append(rendered)
-                    lines.append("")
-            stats["text_blocks"] += 1
-            text_block_index += 1
-            continue
-
-        if tag == "pic":
-            sid = shape_id_of(child)
-            if sid and sid in consumed_picture_ids:
-                stats["skipped_blocks"] += 1
-                continue
-            blip = child.find(".//a:blip", NS)
-            embed = blip.attrib.get(f"{{{NS['r']}}}embed") if blip is not None else None
-            img_path, warn = resolve_image_path(slide_xml, rels_map, rels_path, embed)
-            if warn:
-                stats["unresolved_images"] += 1
-                stats["warnings"].append(warn)
-            else:
-                stats["resolved_images"] += 1
-
-            if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
-                table_md, table_warn, unavailable = convert_picture_to_table_markdown(img_path)
-                if table_md is not None:
-                    lines.append(table_md.strip())
-                    lines.append("")
-                    stats["table_blocks"] += 1
-                    continue
-                if table_warn:
-                    if unavailable:
-                        if not image_pipeline_unavailable_reported:
-                            stats["warnings"].append(table_warn)
-                            image_pipeline_unavailable_reported = True
-                    else:
-                        stats["warnings"].append(table_warn)
-
-            lines.append(
-                format_markdown_image(
-                    img_path,
-                    output_dir=output_dir,
-                    media_dir=media_dir,
-                    copied_media=copied_media,
-                )
-            )
-            lines.append("")
-            stats["image_blocks"] += 1
-            continue
-
-        if tag == "graphicFrame":
-            table_md, err = convert_table_to_markdown(
-                child,
-                overlays=table_overlay_map.get(shape_id_of(child), []),
-                output_dir=output_dir,
-                media_dir=media_dir,
-                copied_media=copied_media,
-            )
-            if table_md is not None:
-                lines.append(table_md.strip())
-                lines.append("")
-                stats["table_blocks"] += 1
-            else:
-                gf_kind = graphic_frame_kind(child)
-                if gf_kind == "diagram":
-                    diagram_path = diagram_data_path(child, rels_path, rels_map)
-                    diagram_text = format_diagram_as_markdown(
-                        extract_diagram_texts(diagram_path) if diagram_path else []
-                    )
-                    if diagram_text:
-                        lines.append(diagram_text)
-                        lines.append("")
-                        stats["text_blocks"] += 1
-                    else:
-                        lines.append("[unsupported: graphicFrame(non-table)]")
-                        lines.append("")
-                        stats["unsupported_blocks"] += 1
-                        stats["warnings"].append("diagram text extraction failed")
-                else:
-                    lines.append("[unsupported: graphicFrame(non-table)]")
-                    lines.append("")
-                    stats["unsupported_blocks"] += 1
-                if err:
-                    stats["warnings"].append(err)
-            continue
-
-    lines = normalize_single_heading_to_h1(lines)
-
-    md_text = "\n".join(lines).rstrip() + "\n"
-    return md_text, stats
-
-
-def resolve_surya_structure_dir(surya_root: Path, package_name: str) -> Path:
-    manifest_here = surya_root / "structure_analysis_manifest.json"
-    if manifest_here.exists():
-        return surya_root
-    candidate = surya_root / package_name
-    manifest_there = candidate / "structure_analysis_manifest.json"
-    if manifest_there.exists():
-        return candidate
-    raise FileNotFoundError(
-        f"surya structure-ready output not found for package '{package_name}' under {surya_root}"
+) -> Tuple[str, SlideStats]:
+    return convert_one_slide_core(
+        slide_xml,
+        page_no,
+        source_slide_xml=source_slide_xml,
+        output_dir=output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        image_vlm_provider=image_vlm_provider,
+        image_vlm_model=image_vlm_model,
+        image_vlm_prompt=image_vlm_prompt,
+        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
+        image_vlm_api_key_env=image_vlm_api_key_env,
+        surya_debug_dir=None,
+        copied_surya_debug_images=None,
+        enable_image_table_pipeline=False,
+        strict_headings=strict_headings,
+        deps=_slide_conversion_deps(),
+        ns=NS,
     )
 
 
-def run_surya_pipeline_stage(
-    repo_root: Path,
-    surya_root: Path,
-    force: bool = False,
-) -> Path:
-    run_script = repo_root / "surya_pipeline" / "run_surya_pipeline.py"
-    if not run_script.exists():
-        raise FileNotFoundError(f"surya pipeline script not found: {run_script}")
-
-    cmd = [
-        sys.executable,
-        str(run_script),
-        "--surya-dir",
-        str(surya_root),
-    ]
-    if force:
-        cmd.append("--force")
-
-    print(f"[surya] Running pipeline: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, text=True, cwd=str(repo_root))
-    if proc.returncode != 0:
-        raise RuntimeError(
-            "surya pipeline failed\n"
-            f"cmd: {' '.join(cmd)}\n"
-        )
-    structure_root = surya_root / "output" / "structure_ready"
-    if not structure_root.exists() or not structure_root.is_dir():
-        raise FileNotFoundError(f"surya structure-ready output not found after pipeline run: {structure_root}")
-    return structure_root
-
-
-def prepare_surya_structure_root(
-    repo_root: Path,
-    raw_surya_dir: Optional[Path],
-    force: bool = False,
-    use_existing_output: bool = False,
-) -> Path:
-    if raw_surya_dir is None:
-        candidate = repo_root / "surya_pipeline"
-    else:
-        candidate = raw_surya_dir
-
-    if use_existing_output:
-        # Structure-ready dir passed directly.
-        if (candidate / "structure_analysis_manifest.json").exists():
-            return candidate
-        # Package subdirs under structure_ready root.
-        if candidate.name == "structure_ready" and candidate.exists() and candidate.is_dir():
-            return candidate
-        structure_root = candidate / "output" / "structure_ready"
-        if structure_root.exists() and structure_root.is_dir():
-            return structure_root
-
-    # Surya pipeline root passed in or inferred.
-    if (candidate / "run_surya_pipeline.py").exists():
-        return run_surya_pipeline_stage(repo_root=repo_root, surya_root=candidate, force=force)
-
-    if use_existing_output:
-        structure_root = candidate / "output" / "structure_ready"
-        if structure_root.exists() and structure_root.is_dir():
-            return structure_root
-
-    raise FileNotFoundError(
-        "valid surya input not found. Pass surya_pipeline root, or use --use-existing-surya-output "
-        "with output/structure_ready: "
-        f"{candidate}"
-    )
-
-
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
+    # parser 생성 
     parser = argparse.ArgumentParser(
         description="Convert extracted PPTX package(s) to markdown."
     )
+    # 필요한 인자들 추가
     parser.add_argument(
         "inputs",
         nargs="*",
         help=(
-            "Package root dir(s) or .pptx file(s). "
-            "If --raw is used, these are treated as raw selections."
+            "Optional .pptx selections (e.g., sample3.pptx sample4.pptx). "
+            "If omitted, all .pptx files under main_converter/target_pptx are extracted/processed."
         ),
-    )
-    parser.add_argument(
-        "--raw",
-        action="store_true",
-        help=(
-            "Process .pptx files in ./raw_pptx by extracting into ./target_pptx first. "
-            "With positional args, process only selected raw files."
-        ),
-    )
-    parser.add_argument(
-        "--per-slide",
-        action="store_true",
-        help="Also write per-slide markdown files under ./output/.../<package>/per_slide.",
     )
     parser.add_argument(
         "--reading-order",
@@ -1603,276 +1080,352 @@ def main() -> int:
         help="Use strict heading detection in xml reading-order mode only.",
     )
     parser.add_argument(
-        "--surya-dir",
-        default=None,
-        help="Path to surya_pipeline root. If omitted, defaults to ../surya_pipeline.",
-    )
-    parser.add_argument(
-        "--force-surya-pipeline",
-        action="store_true",
-        help="Deprecated alias. Surya mode now re-runs the pipeline by default.",
-    )
-    parser.add_argument(
         "--reuse-surya-cache",
         action="store_true",
-        help="Reuse existing Surya outputs instead of re-running the pipeline.",
+        help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
     )
     parser.add_argument(
-        "--use-existing-surya-output",
+        "--image-vlm-provider",
+        choices=("local", "gemini"),
+        default=DEFAULT_IMAGE_VLM_PROVIDER,
+        help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API.",
+    )
+    parser.add_argument(
+        "--image-vlm-model",
+        help=(
+            "Image VLM model identifier. "
+            "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
+            "or a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini."
+        ),
+    )
+    parser.add_argument(
+        "--image-vlm-prompt",
+        default=DEFAULT_IMAGE_VLM_PROMPT,
+        help="Prompt passed to the image VLM when image conversion is enabled.",
+    )
+    parser.add_argument(
+        "--image-vlm-max-new-tokens",
+        type=int,
+        default=DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+        help="Maximum number of tokens to generate per image when image conversion is enabled.",
+    )
+    parser.add_argument(
+        "--image-vlm-api-key-env",
+        default=DEFAULT_GEMINI_API_KEY_ENV,
+        help="Environment variable name containing the Gemini API key when --image-vlm-provider gemini is used.",
+    )
+    parser.add_argument(
+        "--verbose",
         action="store_true",
-        help="Use existing output/structure_ready instead of running the Surya pipeline.",
+        help="Enable verbose debug logging.",
     )
-    parser.add_argument(
-        "--image-table-pipeline",
-        action="store_true",
-        help="Classify image blocks with PaddleOCR and parse table images with Surya.",
-    )
-    parser.add_argument(
-        "--output-file",
-        default=None,
-        help="Optional single markdown output path merged from processed package result(s).",
-    )
-    args = parser.parse_args()
-    cwd = Path.cwd()
-    output_root = cwd / "output"
-    output_dir = output_root / args.reading_order
-    output_dir.mkdir(parents=True, exist_ok=True)
+    return parser.parse_args()
 
+def _build_config(args: argparse.Namespace) -> ConverterConfig:
     repo_root = Path(__file__).resolve().parent.parent
-    ensure_imports(repo_root)
-    if args.raw:
-        raw_inputs = (
-            resolve_selected_raw_inputs(cwd, args.inputs) if args.inputs else collect_raw_pptx_inputs(cwd)
-        )
-        if not raw_inputs:
-            print(f"No .pptx files found in: {raw_pptx_dir(cwd).resolve()}")
-            return 0
-        prepared_inputs = prepare_package_inputs(cwd, raw_inputs, force_extract=True)
-    else:
-        prepared_inputs = prepare_package_inputs(cwd, args.inputs)
-    surya_dir = Path(args.surya_dir).resolve() if args.surya_dir else None
-    surya_structure_root: Optional[Path] = None
-    if args.reading_order == "surya":
-        if args.strict:
-            print("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
-        surya_structure_root = prepare_surya_structure_root(
-            repo_root=repo_root,
-            raw_surya_dir=surya_dir,
-            force=(not args.reuse_surya_cache) or args.force_surya_pipeline,
-            use_existing_output=args.use_existing_surya_output,
-        )
+    main_converter_root = repo_root / "main_converter"
+    return ConverterConfig(
+        cwd=main_converter_root,
+        repo_root=repo_root,
+        output_dir=main_converter_root / "output" / args.reading_order,
+        debug_output_dir=main_converter_root / "output" / args.reading_order,
+        inputs=list(args.inputs),
+        reading_order=str(args.reading_order),
+        strict=bool(args.strict),
+        reuse_surya_cache=bool(args.reuse_surya_cache),
+        image_vlm_provider=normalize_provider(args.image_vlm_provider),
+        image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
+        image_vlm_prompt=str(args.image_vlm_prompt),
+        image_vlm_max_new_tokens=max(1, int(args.image_vlm_max_new_tokens)),
+        image_vlm_api_key_env=str(args.image_vlm_api_key_env).strip() or DEFAULT_GEMINI_API_KEY_ENV,
+    )
 
-    target_dirs = default_target_dirs(cwd)
+
+def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
+    def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
+        if not missing_inputs:
+            return
+        logger.error("Input .pptx file not found.")
+        for row in missing_inputs:
+            requested = str(row.get("input", "")).strip()
+            if requested:
+                logger.error("- requested: %s", requested)
+            checked = row.get("checked")
+            if isinstance(checked, list):
+                for candidate in checked:
+                    logger.error("  checked: %s", candidate)
+
+    if config.inputs:
+        non_pptx_inputs = [x for x in config.inputs if Path(x).suffix.lower() != ".pptx"]
+        if non_pptx_inputs:
+            logger.error("Only .pptx inputs are allowed.")
+            logger.error("Provide files like: sample1.pptx sample2.pptx")
+            for item in non_pptx_inputs:
+                logger.error("- %s", item)
+            raise ValueError("invalid non-pptx inputs")
+        prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, config.inputs, force_extract=True)
+        if missing_inputs:
+            _log_missing_inputs(missing_inputs)
+            raise ValueError("missing pptx inputs")
+        return prepared_inputs
+
+    auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
+    if not auto_pptx_inputs:
+        logger.info("No .pptx files found in: %s", preferred_pptx_input_dir(config.cwd).resolve())
+        return []
+    prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
+    if missing_inputs:
+        _log_missing_inputs(missing_inputs)
+        raise ValueError("missing auto-discovered pptx inputs")
+    return prepared_inputs
+
+
+def _resolve_packages(config: ConverterConfig, prepared_inputs: Sequence[str]) -> List[Path]:
+    target_dirs = default_target_dirs(config.cwd)
     packages = pick_packages(target_dirs, prepared_inputs)
     if not packages:
-        print("No valid PPTX package directories found.")
+        logger.info("No valid PPTX package directories found.")
         if target_dirs:
-            print("Checked default directories:")
+            logger.info("Checked default directories:")
             for d in target_dirs:
-                print(f"- {d.resolve()}")
+                logger.info("- %s", d.resolve())
         else:
-            print("Checked default directories: none found (expected ./target_pptx).")
+            logger.info("Checked default directories: none found (expected ./target_slides).")
+    return packages
+
+
+def _prepare_surya_context(config: ConverterConfig, packages: Sequence[Path]) -> Optional[Path]:
+    if config.reading_order != "surya":
+        return None
+    if config.strict:
+        logger.info("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
+    shared_target_slides_dir = preferred_target_dir(config.cwd).resolve()
+    shared_target_pptx_dir = preferred_pptx_input_dir(config.cwd).resolve()
+    return prepare_surya_structure_root(
+        force=not config.reuse_surya_cache,
+        reuse_existing_output=config.reuse_surya_cache,
+        targets=[pkg.name for pkg in packages],
+        target_pptx_dir=shared_target_pptx_dir,
+        target_slides_dir=shared_target_slides_dir,
+    )
+
+
+def _new_manifest() -> ConversionManifest:
+    return ConversionManifest()
+
+
+def _append_package_stage_failure(
+    pkg_row: Dict[str, object],
+    slide_xmls: Sequence[Path],
+    error_message: str,
+    manifest: ConversionManifest,
+    package_name: str,
+    stage_label: str,
+) -> None:
+    for slide_xml in slide_xmls:
+        row = {
+            "page": parse_slide_number(slide_xml.name, 0),
+            "source_xml": str(slide_xml),
+            "status": "failed",
+            "error": error_message,
+            "warnings": [],
+        }
+        slides = pkg_row.get("slides")
+        if isinstance(slides, list):
+            slides.append(row)
+        manifest.summary.failed += 1
+    manifest.packages.append(pkg_row)
+    logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
+
+
+def _log_slide_warnings(package_name: str, slide_xml: Path, page_no: int, warnings: Sequence[str]) -> None:
+    seen: set[str] = set()
+    for warning in warnings:
+        text = str(warning or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        logger.warning("[%s] Warning: %s (page=%s, slide=%s)", package_name, text, page_no, slide_xml.name)
+
+
+def _convert_package(
+    config: ConverterConfig,
+    pkg: Path,
+    surya_structure_root: Optional[Path],
+    manifest: ConversionManifest,
+) -> None:
+    pkg_name = pkg.name
+    slides_dir = pkg / "ppt" / "slides"
+    slide_xmls = sorted(
+        [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
+        key=lambda p: natural_key(p.name),
+    )
+    pkg_out = config.output_dir / pkg_name
+    media_dir = pkg_out / "media"
+    copied_media: Dict[str, Path] = {}
+    pkg_out.mkdir(parents=True, exist_ok=True)
+
+    pkg_row: Dict[str, object] = {
+        "package": str(pkg),
+        "name": pkg_name,
+        "slides": [],
+        "result_md": str(pkg_out / "result.md"),
+        "pipeline_mode": config.reading_order,
+        "image_vlm_provider": config.image_vlm_provider,
+        "image_vlm_model": config.image_vlm_model,
+    }
+
+    all_chunks: List[str] = []
+    ro_map: Dict[str, Path] = {}
+    structure_output_dir: Optional[Path] = None
+    if config.reading_order == "xml":
+        try:
+            ro_map, ro_output = run_structure_analysis_stage(
+                repo_root=config.repo_root,
+                package_name=pkg_name,
+                slide_xmls=slide_xmls,
+                strict=config.strict,
+            )
+            pkg_row["structure_analysis_output_dir"] = str(ro_output)
+        except Exception as e:  # noqa: BLE001
+            _append_package_stage_failure(
+                pkg_row=pkg_row,
+                slide_xmls=slide_xmls,
+                error_message=f"structure_analysis stage failed: {e}",
+                manifest=manifest,
+                package_name=pkg_name,
+                stage_label="structure_analysis",
+            )
+            return
+    else:
+        try:
+            structure_output_dir = resolve_surya_structure_dir(surya_structure_root, pkg_name) if surya_structure_root else None
+            pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
+        except Exception as e:  # noqa: BLE001
+            _append_package_stage_failure(
+                pkg_row=pkg_row,
+                slide_xmls=slide_xmls,
+                error_message=f"surya structure-ready stage failed: {e}",
+                manifest=manifest,
+                package_name=pkg_name,
+                stage_label="surya structure-ready",
+            )
+            return
+
+    for i, slide_xml in enumerate(slide_xmls, 1):
+        slide_started_at = time.perf_counter()
+        page_no = parse_slide_number(slide_xml.name, i)
+        ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
+        if config.reading_order == "surya" and structure_output_dir is not None:
+            ordered_slide_xml = structure_output_dir / f"{slide_xml.stem}.reordered.xml"
+        row: Dict[str, object] = {
+            "page": page_no,
+            "source_xml": str(slide_xml),
+            "structure_analysis_xml": str(ordered_slide_xml),
+            "status": "ok",
+            "warnings": [],
+        }
+        try:
+            if not ordered_slide_xml.exists():
+                raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
+            merged_md_text, stats = convert_one_slide(
+                ordered_slide_xml,
+                page_no,
+                source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
+                output_dir=pkg_out,
+                media_dir=media_dir,
+                copied_media=copied_media,
+                image_vlm_provider=config.image_vlm_provider,
+                image_vlm_model=config.image_vlm_model,
+                image_vlm_prompt=config.image_vlm_prompt,
+                image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
+                image_vlm_api_key_env=config.image_vlm_api_key_env,
+                strict_headings=(config.reading_order == "xml" and config.strict),
+            )
+            if config.reading_order == "surya":
+                row["surya_source"] = str(structure_output_dir)
+            all_chunks.append(merged_md_text.rstrip())
+
+            row.update(
+                {"status": "ok", **stats.to_slide_row_fields()}
+            )
+            manifest.summary.add_slide(stats)
+            logger.info("[%s] [md-convert] Processed: %s", pkg_name, slide_xml.name)
+            if stats.warnings:
+                _log_slide_warnings(pkg_name, slide_xml, page_no, stats.warnings)
+        except Exception as e:  # noqa: BLE001
+            row.update({"status": "failed", "error": str(e)})
+            manifest.summary.failed += 1
+            logger.error("[%s] Failed: %s -> %s", pkg_name, slide_xml.name, e)
+        slides = pkg_row.get("slides")
+        if isinstance(slides, list):
+            slides.append(row)
+
+    merged = "\n\n".join(all_chunks).strip()
+    if merged:
+        merged += "\n"
+    merged_path = pkg_out / "result.md"
+    merged_path.write_text(merged, encoding="utf-8")
+    manifest.summary.processed_packages += 1
+    manifest.packages.append(pkg_row)
+
+
+def _write_manifest(output_dir: Path, manifest: ConversionManifest) -> Path:
+    manifest.mark_finished()
+    manifest_path = output_dir / "convert_manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest.model_dump(mode="python"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def main() -> int:
+    args = _parse_args() 
+    _configure_logging(verbose=bool(getattr(args, "verbose", False)))
+    config = _build_config(args)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
+    config.debug_output_dir.mkdir(parents=True, exist_ok=True)
+
+    ensure_imports(config.repo_root)
+    try:
+        prepared_inputs = _resolve_prepared_inputs(config)
+    except ValueError:
+        return 1
+    if not prepared_inputs:
         return 0
 
-    manifest = {
-        "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "packages": [],
-        "summary": {
-            "processed_packages": 0,
-            "processed_slides": 0,
-            "failed": 0,
-            "resolved_images": 0,
-            "unresolved_images": 0,
-            "table_blocks": 0,
-        },
-    }
-    merged_packages: List[Tuple[str, str]] = []
+    packages = _resolve_packages(config, prepared_inputs)
+    if not packages:
+        return 0
 
+    surya_structure_root = _prepare_surya_context(config, packages)
+    manifest = _new_manifest()
     for pkg in packages:
-        pkg_name = pkg.name
-        slides_dir = pkg / "ppt" / "slides"
-        slide_xmls = sorted(
-            [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
-            key=lambda p: natural_key(p.name),
-        )
-        pkg_out = output_dir / pkg_name
-        per_slide_dir = pkg_out / "per_slide"
-        media_dir = pkg_out / "media"
-        copied_media: Dict[str, Path] = {}
-        pkg_out.mkdir(parents=True, exist_ok=True)
-        if args.per_slide:
-            per_slide_dir.mkdir(parents=True, exist_ok=True)
-        elif per_slide_dir.exists():
-            shutil.rmtree(per_slide_dir)
+        _convert_package(config, pkg, surya_structure_root, manifest)
 
-        pkg_row = {
-            "package": str(pkg),
-            "name": pkg_name,
-            "slides": [],
-            "result_md": str(pkg_out / "result.md"),
-            "pipeline_mode": args.reading_order,
-        }
+    manifest_path = _write_manifest(config.output_dir, manifest)
 
-        all_chunks: List[str] = []
-        ro_map: Dict[str, Path] = {}
-        structure_output_dir: Optional[Path] = None
-        if args.reading_order == "xml":
-            try:
-                ro_map, ro_output = run_structure_analysis_stage(
-                    repo_root=repo_root,
-                    slide_xmls=slide_xmls,
-                    strict=args.strict,
-                )
-                pkg_row["structure_analysis_output_dir"] = str(ro_output)
-            except Exception as e:  # noqa: BLE001
-                for slide_xml in slide_xmls:
-                    row = {
-                        "page": parse_slide_number(slide_xml.name, 0),
-                        "source_xml": str(slide_xml),
-                        "status": "failed",
-                        "error": f"structure_analysis stage failed: {e}",
-                        "warnings": [],
-                    }
-                    pkg_row["slides"].append(row)
-                    manifest["summary"]["failed"] += 1
-                manifest["packages"].append(pkg_row)
-                print(f"[{pkg_name}] structure_analysis failed: {e}")
-                continue
-        else:
-            try:
-                structure_output_dir = (
-                    resolve_surya_structure_dir(surya_structure_root, pkg_name) if surya_structure_root else None
-                )
-                pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
-            except Exception as e:  # noqa: BLE001
-                for slide_xml in slide_xmls:
-                    row = {
-                        "page": parse_slide_number(slide_xml.name, 0),
-                        "source_xml": str(slide_xml),
-                        "status": "failed",
-                        "error": f"surya structure-ready stage failed: {e}",
-                        "warnings": [],
-                    }
-                    pkg_row["slides"].append(row)
-                    manifest["summary"]["failed"] += 1
-                manifest["packages"].append(pkg_row)
-                print(f"[{pkg_name}] surya structure-ready failed: {e}")
-                continue
-
-        for i, slide_xml in enumerate(slide_xmls, 1):
-            page_no = parse_slide_number(slide_xml.name, i)
-            ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
-            if args.reading_order == "surya" and structure_output_dir is not None:
-                ordered_slide_xml = structure_output_dir / f"{slide_xml.stem}.reordered.xml"
-            row = {
-                "page": page_no,
-                "source_xml": str(slide_xml),
-                "structure_analysis_xml": str(ordered_slide_xml),
-                "status": "ok",
-                "warnings": [],
-            }
-            try:
-                if not ordered_slide_xml.exists():
-                    raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
-                merged_md_text, stats = convert_one_slide(
-                    ordered_slide_xml,
-                    page_no,
-                    source_slide_xml=(slide_xml if args.reading_order == "surya" else None),
-                    output_dir=pkg_out,
-                    media_dir=media_dir,
-                    copied_media=copied_media,
-                    enable_image_table_pipeline=args.image_table_pipeline,
-                    strict_headings=(args.reading_order == "xml" and args.strict),
-                )
-                if args.reading_order == "surya":
-                    row["surya_source"] = str(structure_output_dir)
-                if args.per_slide:
-                    md_text, _ = convert_one_slide(
-                        ordered_slide_xml,
-                        page_no,
-                        source_slide_xml=(slide_xml if args.reading_order == "surya" else None),
-                        output_dir=per_slide_dir,
-                        media_dir=media_dir,
-                        copied_media=copied_media,
-                        enable_image_table_pipeline=args.image_table_pipeline,
-                        strict_headings=(args.reading_order == "xml" and args.strict),
-                    )
-                    out_md = per_slide_dir / f"{slide_xml.stem}.md"
-                    out_md.write_text(md_text, encoding="utf-8")
-                all_chunks.append(merged_md_text.rstrip())
-
-                row.update(
-                    {
-                        "status": "ok",
-                        "blocks_total": stats["blocks_total"],
-                        "text_blocks": stats["text_blocks"],
-                        "image_blocks": stats["image_blocks"],
-                        "table_blocks": stats["table_blocks"],
-                        "unsupported_blocks": stats["unsupported_blocks"],
-                        "skipped_blocks": stats["skipped_blocks"],
-                        "rels_path": stats["rels_path"],
-                        "warnings": stats["warnings"],
-                    }
-                )
-                if args.per_slide:
-                    row["output_md"] = str(out_md)
-                manifest["summary"]["processed_slides"] += 1
-                manifest["summary"]["resolved_images"] += stats["resolved_images"]
-                manifest["summary"]["unresolved_images"] += stats["unresolved_images"]
-                manifest["summary"]["table_blocks"] += stats["table_blocks"]
-                print(f"[{pkg_name}] Processed: {slide_xml.name}")
-            except Exception as e:  # noqa: BLE001
-                row.update({"status": "failed", "error": str(e)})
-                manifest["summary"]["failed"] += 1
-                print(f"[{pkg_name}] Failed: {slide_xml.name} -> {e}")
-            pkg_row["slides"].append(row)
-
-        merged = "\n\n".join(all_chunks).strip()
-        if merged:
-            merged += "\n"
-        merged_path = pkg_out / "result.md"
-        merged_path.write_text(merged, encoding="utf-8")
-        merged_packages.append((pkg_name, merged))
-        manifest["summary"]["processed_packages"] += 1
-        manifest["packages"].append(pkg_row)
-
-    manifest["finished_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    manifest_path = output_dir / "convert_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    if args.output_file:
-        out_path = Path(args.output_file).expanduser()
-        if not out_path.is_absolute():
-            out_path = (cwd / out_path).resolve()
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-
-        if len(merged_packages) <= 1:
-            merged_text = merged_packages[0][1] if merged_packages else ""
-        else:
-            blocks: List[str] = []
-            for pkg_name, pkg_md in merged_packages:
-                block = f"## Package: {pkg_name}\n\n{pkg_md.strip()}".strip()
-                if block:
-                    blocks.append(block)
-            merged_text = "\n\n".join(blocks)
-            if merged_text:
-                merged_text += "\n"
-
-        out_path.write_text(merged_text, encoding="utf-8")
-        print(f"Wrote combined markdown: {out_path.resolve()}")
-
-    print(f"Wrote package outputs under: {output_dir.resolve()}")
-    print(f"Wrote: {manifest_path.resolve()}")
-    print(
+    logger.info("Wrote package outputs under: %s", config.output_dir.resolve())
+    logger.info("Wrote: %s", manifest_path.resolve())
+    logger.info(
         "Summary: "
-        f"packages={manifest['summary']['processed_packages']} "
-        f"slides={manifest['summary']['processed_slides']} "
-        f"failed={manifest['summary']['failed']} "
-        f"tables={manifest['summary']['table_blocks']} "
-        f"images_resolved={manifest['summary']['resolved_images']} "
-        f"images_unresolved={manifest['summary']['unresolved_images']}"
+        "packages=%s "
+        "slides=%s "
+        "failed=%s "
+        "tables=%s "
+        "table_skipped=%s "
+        "images_resolved=%s "
+        "images_unresolved=%s",
+        manifest.summary.processed_packages,
+        manifest.summary.processed_slides,
+        manifest.summary.failed,
+        manifest.summary.table_blocks,
+        manifest.summary.table_skipped_blocks,
+        manifest.summary.resolved_images,
+        manifest.summary.unresolved_images,
     )
-    return 1 if manifest["summary"]["failed"] > 0 else 0
+    return 1 if manifest.summary.failed > 0 else 0
 
 
 if __name__ == "__main__":

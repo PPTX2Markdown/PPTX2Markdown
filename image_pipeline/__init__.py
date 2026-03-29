@@ -1,5 +1,25 @@
-﻿"""Image pipeline package for image classification + Surya table extraction."""
+"""Image pipeline package for image-to-markdown conversion."""
 
-from .service import classify_image, extract_table_markdown_from_image
+from .service import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_MAX_NEW_TOKENS,
+    DEFAULT_PROMPT,
+    DEFAULT_PROVIDER,
+    IMAGE_VLM_PROVIDERS,
+    extract_markdown_from_image,
+    normalize_provider,
+    resolve_model_id,
+)
 
-__all__ = ["classify_image", "extract_table_markdown_from_image"]
+__all__ = [
+    "DEFAULT_GEMINI_API_KEY_ENV",
+    "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_MAX_NEW_TOKENS",
+    "DEFAULT_PROMPT",
+    "DEFAULT_PROVIDER",
+    "IMAGE_VLM_PROVIDERS",
+    "extract_markdown_from_image",
+    "normalize_provider",
+    "resolve_model_id",
+]

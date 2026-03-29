@@ -21,6 +21,9 @@ from typing import List
 
 def resolve_soffice_cmd() -> str | None:
     candidates: List[Path] = []
+    env_path = os.getenv("SOFFICE_PATH", "").strip()
+    if env_path:
+        candidates.append(Path(env_path))
     if sys.platform == "darwin":
         candidates.extend(
             [
@@ -28,9 +31,19 @@ def resolve_soffice_cmd() -> str | None:
                 Path.home() / "Applications" / "LibreOffice.app" / "Contents" / "MacOS" / "soffice",
             ]
         )
+    elif sys.platform.startswith("win"):
+        candidates.extend(
+            [
+                Path("C:/Program Files/LibreOffice/program/soffice.exe"),
+                Path("C:/Program Files (x86)/LibreOffice/program/soffice.exe"),
+            ]
+        )
     soffice_in_path = shutil.which("soffice")
     if soffice_in_path:
         candidates.append(Path(soffice_in_path))
+    soffice_exe_in_path = shutil.which("soffice.exe")
+    if soffice_exe_in_path:
+        candidates.append(Path(soffice_exe_in_path))
     for cand in candidates:
         if cand.exists() and cand.is_file():
             return str(cand)

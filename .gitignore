@@ -1,6 +1,10 @@
 # macOS
 .DS_Store
 
+# python evironment 
+.python-version
+.venv
+
 # Do not commit local XML,JSON sources/results
 /table_extractor/extract_results/*.xml
 /table_extractor/extract_results/manifest.json
@@ -12,52 +16,57 @@
 *.md
 !/README.md
 !/README.eg.md
-.venv
 
-# Sensitive source PPTX and generated artifacts (must not be published)
-/main_converter/raw_pptx/
-/main_converter/raw_pptx.zip
+# Inputs / outputs (never commit)
+/main_converter/raw_pptx/**
+/main_converter/target_pptx/**
+/main_converter/target_slides/**
+/main_converter/output/**
+/surya_pipeline/target_pptx/**
+/surya_pipeline/target_pdf/**
+/surya_pipeline/target_slides/**
+/surya_pipeline/output/**
+/structure_analyzer/target_slides/**
+/structure_analyzer/output/**
+/table_extractor/target_slides/**
+/table_extractor/extract_results/**
+/table_parser/parsing_results/**
+/table_parser/tables/**
 /main_converter/*.zip
-/main_converter/target_pptx/
-/main_converter/output/
-/surya_pipeline/target_pptx/
-/surya_pipeline/target_pdf/
-/surya_pipeline/output/
+/main_converter/raw_pptx.zip
 *.pptx
 *.ppt
 *.pdf
 
-# Keep empty input/output directory skeletons in git (.gitkeep only)
+# Keep required directory skeletons via .gitkeep only
 !/main_converter/raw_pptx/
-/main_converter/raw_pptx/*
 !/main_converter/raw_pptx/.gitkeep
 !/main_converter/target_pptx/
-/main_converter/target_pptx/*
 !/main_converter/target_pptx/.gitkeep
 !/main_converter/target_slides/
-/main_converter/target_slides/*
 !/main_converter/target_slides/.gitkeep
 !/main_converter/output/
-/main_converter/output/*
 !/main_converter/output/.gitkeep
 !/structure_analyzer/target_slides/
-/structure_analyzer/target_slides/*
 !/structure_analyzer/target_slides/.gitkeep
 !/structure_analyzer/output/
-/structure_analyzer/output/*
 !/structure_analyzer/output/.gitkeep
 !/table_extractor/target_slides/
-/table_extractor/target_slides/*
 !/table_extractor/target_slides/.gitkeep
 !/table_extractor/extract_results/
-/table_extractor/extract_results/*
 !/table_extractor/extract_results/.gitkeep
 !/table_parser/parsing_results/
-/table_parser/parsing_results/*
 !/table_parser/parsing_results/.gitkeep
 !/table_parser/tables/
-/table_parser/tables/*
 !/table_parser/tables/.gitkeep
+!/surya_pipeline/target_pptx/
+!/surya_pipeline/target_pptx/.gitkeep
+!/surya_pipeline/target_pdf/
+!/surya_pipeline/target_pdf/.gitkeep
+!/surya_pipeline/target_slides/
+!/surya_pipeline/target_slides/.gitkeep
+!/surya_pipeline/output/
+!/surya_pipeline/output/.gitkeep
 
 # Python cache
 __pycache__/
