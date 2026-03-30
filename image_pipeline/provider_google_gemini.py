@@ -2,17 +2,45 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional
 
 from .client_google_genai import GoogleGenAIClientError, extract_text, generate_content, resolve_api_key
-from .constants import DEFAULT_GEMINI_API_KEY_ENV, DEFAULT_GEMINI_MODEL
+from .constants import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_BASE_BACKOFF_SEC,
+    DEFAULT_GEMINI_MAX_BACKOFF_SEC,
+    DEFAULT_GEMINI_MAX_RETRIES,
+    DEFAULT_GEMINI_MIN_REQUEST_INTERVAL_SEC,
+    DEFAULT_GEMINI_MODEL,
+)
 from .markdown_postprocess import normalize_markdown
 from .schemas import ImageMarkdownResult, ModelResolution
 
 
 class GoogleGeminiImageProvider:
     provider_name = "gemini"
+
+    @staticmethod
+    def _read_int_env(name: str, default: int) -> int:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            return default
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return default
+
+    @staticmethod
+    def _read_float_env(name: str, default: float) -> float:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            return default
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return default
 
     def resolve_model_id(self, model_spec: Optional[str]) -> ModelResolution:
         normalized = str(model_spec or "").strip()
@@ -52,6 +80,19 @@ class GoogleGeminiImageProvider:
                 prompt=prompt,
                 max_output_tokens=max_new_tokens,
                 api_key=resolved_api_key,
+                max_retries=self._read_int_env("GEMINI_MAX_RETRIES", DEFAULT_GEMINI_MAX_RETRIES),
+                base_backoff_sec=self._read_float_env(
+                    "GEMINI_BASE_BACKOFF_SEC",
+                    DEFAULT_GEMINI_BASE_BACKOFF_SEC,
+                ),
+                max_backoff_sec=self._read_float_env(
+                    "GEMINI_MAX_BACKOFF_SEC",
+                    DEFAULT_GEMINI_MAX_BACKOFF_SEC,
+                ),
+                min_request_interval_sec=self._read_float_env(
+                    "GEMINI_MIN_REQUEST_INTERVAL_SEC",
+                    DEFAULT_GEMINI_MIN_REQUEST_INTERVAL_SEC,
+                ),
             )
         except GoogleGenAIClientError as exc:
             return {
