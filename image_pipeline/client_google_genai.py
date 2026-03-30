@@ -11,6 +11,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from dotenv import find_dotenv, load_dotenv
+
 from .image_preprocess import gemini_ready_image_path
 
 
@@ -18,10 +20,24 @@ class GoogleGenAIClientError(RuntimeError):
     """Raised when a Google GenAI request fails."""
 
 
+_DOTENV_LOADED = False
+
+
+def _load_project_dotenv() -> None:
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    dotenv_path = find_dotenv(usecwd=True)
+    if dotenv_path:
+        load_dotenv(dotenv_path=dotenv_path, override=False)
+    _DOTENV_LOADED = True
+
+
 def resolve_api_key(api_key: Optional[str], env_name: str) -> str:
     direct = str(api_key or "").strip()
     if direct:
         return direct
+    _load_project_dotenv()
     return os.getenv(env_name, "").strip()
 
 

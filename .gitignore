@@ -1,5 +1,11 @@
+# Private 
+/test
+
 # macOS
 .DS_Store
+
+# evironment
+.env
 
 # python evironment 
 .python-version
