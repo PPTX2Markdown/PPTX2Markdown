@@ -3,7 +3,7 @@
 Convert extracted PPTX package(s) to markdown.
 
 Usage:
-  python convert_slides_to_md.py [package_name|file.pptx ...]
+  python run_pptx_to_markdown.py [package_name|file.pptx ...]
 
 Rules:
   - If no positional args are provided, process all package roots in ./target_slides.
@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+# REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -71,39 +72,39 @@ REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 logger = logging.getLogger(__name__)
 
 
+# 로거 출력 레벨과 포맷을 한 번에 설정한다.
+# verbose 여부에 따라 DEBUG/INFO를 전환하고, 이후 전체 변환 파이프라인의 로그 형식을 통일한다.
 def _configure_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=level, format="%(message)s")
 
 
-def ensure_imports(repo_root: Path) -> None:
-    # Ensure project root is importable for local packages.
-    candidates = [
-        repo_root,
-    ]
-    for cand in candidates:
-        if cand.exists() and cand.is_dir() and str(cand) not in sys.path:
-            sys.path.insert(0, str(cand))
-
-
-def default_target_dirs(base_dir: Path) -> List[Path]:
+# 추출된 PPTX 패키지를 저장할 기본 디렉터리를 반환한다.
+# 항상 main_converter/target_slides 아래를 사용하며, 디렉터리가 없으면 생성하고
+# 같은 이름의 일반 파일이 있으면 잘못된 상태로 보고 예외를 발생시킨다.
+def default_target_dir(base_dir: Path) -> Path:
     # Always anchor under main_converter/.
     local_target = base_dir / "target_slides"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_slides path exists but is not a directory: {local_target}")
     local_target.mkdir(parents=True, exist_ok=True)
-    return [local_target]
+    return local_target
 
 
-def default_pptx_input_dirs(base_dir: Path) -> List[Path]:
+# 원본 PPTX 입력 파일을 모아둘 기본 디렉터리를 반환한다.
+# 항상 main_converter/target_pptx 아래를 사용하며, 디렉터리 존재를 보장해
+# 이후 자동 탐색 로직이 별도 분기 없이 동작하게 만든다.
+def default_pptx_input_dir(base_dir: Path) -> Path:
     # Always anchor under main_converter/.
     local_target = base_dir / "target_pptx"
     if local_target.exists() and not local_target.is_dir():
         raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
     local_target.mkdir(parents=True, exist_ok=True)
-    return [local_target]
+    return local_target
 
 
+# 파일명 안의 숫자를 자연 정렬 기준으로 바꿔준다.
+# 예를 들어 slide2, slide10 같은 이름을 문자열 순서가 아니라 사람이 기대하는 순서대로 정렬할 때 사용한다.
 def natural_key(name: str) -> Tuple:
     parts = re.split(r"(\d+)", name)
     out: List[object] = []
@@ -115,24 +116,29 @@ def natural_key(name: str) -> Tuple:
     return tuple(out)
 
 
+# XML 태그에서 네임스페이스를 제거하고 로컬 태그명만 꺼낸다.
+# ElementTree가 {namespace}tag 형태를 사용하므로, 분기 처리를 단순하게 만들기 위한 유틸이다.
 def local_name(tag: str) -> str:
     return tag.split("}", 1)[-1]
 
 
+# 여러 줄과 중복 공백을 하나의 읽기 쉬운 문자열로 정규화한다.
+# XML 텍스트 노드나 오버레이 텍스트를 Markdown으로 옮기기 전에 공백 잡음을 줄이는 데 쓴다.
 def normalize_text(s: str) -> str:
     s = s.replace("\n", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
-def pick_packages(target_dirs: Sequence[Path], raw_inputs: Sequence[str]) -> List[Path]:
+# 실제로 처리할 PPTX 패키지 디렉터리 목록을 결정한다.
+# 사용자가 특정 입력을 넘기면 그 후보만 찾고, 아무 입력이 없으면 기본 target_slides 아래의 모든 패키지를 스캔한다.
+# 마지막에는 ppt/slides가 존재하는 유효 패키지만 남기고 중복도 제거한다.
+def pick_packages(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path]:
     pkgs: List[Path] = []
     if raw_inputs:
         for item in raw_inputs:
             p = Path(item)
-            candidates = [p]
-            for td in target_dirs:
-                candidates.append(td / item)
+            candidates = [p, target_dir / item]
             picked = None
             for c in candidates:
                 if c.exists() and c.is_dir():
@@ -141,10 +147,9 @@ def pick_packages(target_dirs: Sequence[Path], raw_inputs: Sequence[str]) -> Lis
             if picked is not None:
                 pkgs.append(picked)
     else:
-        for target_dir in target_dirs:
-            for p in sorted(target_dir.iterdir(), key=lambda x: natural_key(x.name)):
-                if p.is_dir():
-                    pkgs.append(p.resolve())
+        for p in sorted(target_dir.iterdir(), key=lambda x: natural_key(x.name)):
+            if p.is_dir():
+                pkgs.append(p.resolve())
 
     out: List[Path] = []
     uniq: Dict[str, Path] = {}
@@ -157,31 +162,17 @@ def pick_packages(target_dirs: Sequence[Path], raw_inputs: Sequence[str]) -> Lis
     return out
 
 
+# 파일명이나 패키지명으로 쓰기 안전한 문자열로 정규화한다.
+# PPTX stem에 공백이나 특수문자가 있어도 target_slides 아래 디렉터리명으로 안전하게 쓰기 위한 처리다.
 def sanitize_package_name(name: str) -> str:
     cleaned = re.sub(r"[^0-9A-Za-z._-]+", "_", name).strip("._")
     return cleaned or "package"
 
 
-def preferred_target_dir(base_dir: Path) -> Path:
-    cands = default_target_dirs(base_dir)
-    if cands:
-        return cands[0]
-    return base_dir / "target_slides"
-
-
-def preferred_pptx_input_dir(base_dir: Path) -> Path:
-    cands = default_pptx_input_dirs(base_dir)
-    if cands:
-        return cands[0]
-    return base_dir / "target_pptx"
-
-
-def package_marker_path(pkg_dir: Path) -> Path:
-    return pkg_dir / ".pptx_source.json"
-
-
+# 이미 추출된 패키지 디렉터리가 현재 PPTX 원본과 동일한 입력에서 만들어졌는지 검사한다.
+# .pptx_source.json 안의 경로/크기/mtime 정보를 원본 파일의 현재 상태와 비교해 캐시 재사용 가능 여부를 판단한다.
 def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
-    marker = package_marker_path(pkg_dir)
+    marker = pkg_dir / ".pptx_source.json"
     if not marker.exists():
         return False
     try:
@@ -204,6 +195,8 @@ def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
     )
 
 
+# PPTX(zip) 내부 엔트리를 안전하게 검증한 뒤 지정한 폴더에 압축 해제한다.
+# 상대경로 탈출 같은 위험한 엔트리를 막아서, 외부 경로로 파일이 풀리는 zip slip 문제를 방지한다.
 def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
     with zipfile.ZipFile(pptx_path) as zf:
         for member in zf.infolist():
@@ -213,6 +206,9 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
         zf.extractall(dest_dir)
 
 
+# 원본 PPTX 파일을 target_slides 아래 관리되는 패키지 디렉터리로 추출한다.
+# 기존 추출 결과가 같은 원본에서 생성된 경우 재사용하고, 아니라면 필요 시 삭제 후 다시 풀며,
+# 추적용 marker 파일과 target_pptx 쪽의 staged 복사본도 함께 맞춰 둔다.
 def extract_pptx_to_target(
     pptx_path: Path,
     extraction_root: Path,
@@ -253,7 +249,7 @@ def extract_pptx_to_target(
             shutil.copy2(pptx_path, staged_pptx)
         return pkg_dir.resolve()
 
-    marker = package_marker_path(pkg_dir)
+    marker = pkg_dir / ".pptx_source.json"
     if pkg_dir.exists():
         if marker.exists():
             shutil.rmtree(pkg_dir)
@@ -293,23 +289,23 @@ def extract_pptx_to_target(
     return pkg_dir.resolve()
 
 
+# Office가 임시로 만드는 잠금 파일인지 판별한다.
+# "~$"로 시작하는 PPTX는 실제 입력으로 처리하면 안 되므로 자동 탐색에서 제외한다.
 def is_ignored_pptx_file(path: Path) -> bool:
     # Skip Office lock/temp files like "~$sample1.pptx".
     return path.name.startswith("~$")
 
 
+# 사용자가 넘긴 입력 문자열을 실제 PPTX 파일 경로로 해석한다.
+# 현재 작업 디렉터리, 기본 입력 디렉터리, 추출 디렉터리를 차례로 후보에 넣고
+# 확장자가 생략된 경우 ".pptx"를 보완해서 찾는다. 실패 시에는 확인한 후보 목록도 함께 돌려준다.
 def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
-    search_roots = [cwd]
-    for root in default_pptx_input_dirs(cwd):
-        if root not in search_roots:
-            search_roots.append(root)
-    for root in default_target_dirs(cwd):
-        if root not in search_roots:
-            search_roots.append(root)
+    search_roots = [cwd, default_pptx_input_dir(cwd), default_target_dir(cwd)]
 
     candidates: List[Path] = []
     seen: set[str] = set()
 
+    # 같은 경로 후보가 여러 번 들어오지 않도록 중복을 제거하면서 순서를 유지한다.
     def add_candidate(path: Path) -> None:
         key = str(path)
         if key not in seen:
@@ -333,6 +329,9 @@ def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[
     return None, candidates
 
 
+# 입력 인자를 실제 추출 대상 패키지 경로 목록으로 준비한다.
+# 각 입력을 PPTX 파일로 해석한 뒤 target_slides 아래로 추출하고,
+# 못 찾은 입력은 어떤 경로들을 확인했는지와 함께 별도로 수집한다.
 def prepare_package_inputs(
     cwd: Path,
     raw_inputs: Sequence[str],
@@ -343,8 +342,8 @@ def prepare_package_inputs(
 
     prepared: List[str] = []
     missing_inputs: List[Dict[str, object]] = []
-    extraction_root = preferred_target_dir(cwd)
-    staged_pptx_root = preferred_pptx_input_dir(cwd)
+    extraction_root = default_target_dir(cwd)
+    staged_pptx_root = default_pptx_input_dir(cwd)
 
     for item in raw_inputs:
         picked_file, candidates = resolve_input_pptx_path(cwd, item)
@@ -366,17 +365,20 @@ def prepare_package_inputs(
     return prepared, missing_inputs
 
 
+# 기본 입력 디렉터리 아래의 모든 PPTX 파일을 자동 수집한다.
+# 잠금 파일은 제외하고, 파일명은 자연 정렬한 뒤 중복 없는 절대경로 문자열 목록으로 반환한다.
 def collect_target_pptx_inputs(cwd: Path) -> List[str]:
     files: List[Path] = []
-    for root in default_pptx_input_dirs(cwd):
-        for path in root.glob("*.pptx"):
-            if path.is_file() and not is_ignored_pptx_file(path):
-                files.append(path.resolve())
+    for path in default_pptx_input_dir(cwd).glob("*.pptx"):
+        if path.is_file() and not is_ignored_pptx_file(path):
+            files.append(path.resolve())
     files = sorted(files, key=lambda p: natural_key(p.name))
     uniq: Dict[str, Path] = {str(p): p for p in files}
     return [str(p) for p in uniq.values()]
 
 
+# slide12.xml 같은 파일명에서 슬라이드 번호를 추출한다.
+# 정규식으로 번호를 찾지 못하는 예외 케이스에서는 호출자가 넘긴 기본 인덱스를 대신 사용한다.
 def parse_slide_number(filename: str, default_idx: int) -> int:
     m = re.search(r"slide(\d+)", filename, re.IGNORECASE)
     if m:
@@ -384,6 +386,8 @@ def parse_slide_number(filename: str, default_idx: int) -> int:
     return default_idx
 
 
+# reordered XML 같은 파생 파일에서도 원본 슬라이드 기준 이름을 복원한다.
+# slide2.reordered.xml -> slide2.xml 형태로 맞춰서 rels나 sidecar 파일을 찾을 때 사용한다.
 def slide_base_name(slide_xml: Path) -> str:
     m = re.search(r"(slide\d+)", slide_xml.stem, re.IGNORECASE)
     if m:
@@ -391,6 +395,8 @@ def slide_base_name(slide_xml: Path) -> str:
     return slide_xml.name
 
 
+# 슬라이드 XML 옆에 생성된 구조 분석 sidecar JSON 파일을 찾는다.
+# reordered 버전과 원본 버전 모두 고려하며, structure_analysis.json과 reading_order.json 두 이름 체계를 모두 지원한다.
 def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
     # e.g. slide2.reordered.xml -> slide2.structure_analysis.json
     stem = slide_xml.stem
@@ -406,6 +412,8 @@ def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
     return None
 
 
+# 구조 분석 단계에서 생성한 heading 힌트를 읽어 shape_id 기준 맵으로 바꾼다.
+# 이후 본문/제목 판별 로직이 XML을 다시 계산하지 않고도 점수, depth, placeholder 정보를 바로 참조할 수 있게 한다.
 def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     """
     Load heading hints produced by structure analysis stage.
@@ -442,6 +450,8 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     return out
 
 
+# sidecar JSON 안의 input_xml 정보를 이용해 원본 슬라이드의 rels 파일을 찾는다.
+# reordered 슬라이드처럼 현재 파일 위치만으로는 관계 파일을 바로 찾기 어려운 경우를 보완하는 용도다.
 def rels_from_sidecar(slide_xml: Path) -> Optional[Path]:
     sidecar = find_sidecar_json(slide_xml)
     if sidecar is None:
@@ -472,6 +482,8 @@ def rels_from_sidecar(slide_xml: Path) -> Optional[Path]:
     return None
 
 
+# 현재 슬라이드 XML 주변의 전형적인 위치들에서 rels 파일을 찾는다.
+# sidecar 정보가 없을 때 같은 패키지 안에서 가장 자연스러운 후보들을 순서대로 확인하는 fallback 역할이다.
 def fallback_rels(slide_xml: Path) -> Optional[Path]:
     base = slide_base_name(slide_xml)
     cands = [
@@ -485,6 +497,8 @@ def fallback_rels(slide_xml: Path) -> Optional[Path]:
     return None
 
 
+# 원본 슬라이드 XML이 따로 주어진 경우 그 파일의 rels 경로를 계산한다.
+# Surya처럼 reordered XML과 source XML이 분리되는 모드에서 마지막 보조 수단으로 사용된다.
 def source_slide_rels(source_slide_xml: Optional[Path]) -> Optional[Path]:
     if source_slide_xml is None or not source_slide_xml.exists():
         return None
@@ -494,6 +508,11 @@ def source_slide_rels(source_slide_xml: Optional[Path]) -> Optional[Path]:
     return None
 
 
+# slide rels XML을 rId -> target 경로 맵으로 파싱한다.
+# 이미지, 다이어그램, 기타 임베디드 리소스의 실제 파일 위치를 나중에 빠르게 해석하기 위한 전처리 단계다.
+# slide rels XML을 rId -> target 경로 맵으로 파싱한다.
+# 이미지, 다이어그램, 기타 임베디드 리소스의 실제 파일 위치를
+# 나중에 빠르게 해석하기 위한 전처리 단계다.
 def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     if rels_path is None or not rels_path.exists():
         return {}
@@ -507,6 +526,11 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     return out
 
 
+# 슬라이드 하나를 처리할 때 사용할 rels 파일을 우선순위에 따라 결정한다.
+# sidecar 기반 경로를 먼저 시도하고, 실패하면 현재 슬라이드 주변 fallback, 마지막으로 source slide rels까지 본다.
+# 슬라이드 하나를 처리할 때 사용할 rels 파일을 우선순위에 따라 결정한다.
+# sidecar 기반 경로를 먼저 시도하고, 실패하면 현재 슬라이드 주변 fallback,
+# 마지막으로 source slide rels까지 확인한다.
 def choose_rels_in_package(
     slide_xml: Path,
     source_slide_xml: Optional[Path] = None,
@@ -521,6 +545,12 @@ def choose_rels_in_package(
     return source_slide_rels(source_slide_xml)
 
 
+# r:embed 값과 rels 정보를 이용해 실제 이미지 파일 경로를 결정한다.
+# 실패 시에는 [unresolved-image:*] 형태의 플레이스홀더와 이유를 반환하고,
+# 성공 시에는 target_slides 패키지 구조까지 반영한 절대경로를 돌려준다.
+# r:embed 값과 rels 정보를 이용해 실제 이미지 파일 경로를 결정한다.
+# 실패 시에는 [unresolved-image:*] 형태의 플레이스홀더와 이유를 반환하고,
+# 성공 시에는 target_slides 패키지 구조까지 반영한 절대경로를 돌려준다.
 def resolve_image_path(
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
@@ -552,6 +582,8 @@ def resolve_image_path(
     return str(abs_path), None
 
 
+# 절대경로나 외부 기준 경로를 출력 Markdown 기준 상대경로로 바꾼다.
+# unresolved placeholder는 그대로 두고, 실제 파일 경로만 output 디렉터리 기준으로 재기록한다.
 def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
     if path.startswith("[unresolved-image") or output_dir is None:
         return path
@@ -561,6 +593,9 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
+# 단일 이미지 파일을 VLM에 보내 Markdown 설명으로 바꾼다.
+# provider/model 설정을 정리하고, 파이프라인 예외를 사용자 경고 메시지와
+# "사용 불가" 여부로 정규화해 반환한다.
 def convert_picture_to_markdown(
     image_path: str,
     *,
@@ -570,6 +605,7 @@ def convert_picture_to_markdown(
     max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
 ) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
+    # 의존성 미설치나 API 키 누락처럼 설정 문제로 파이프라인이 아예 못 도는 경우를 분류한다.
     def is_pipeline_unavailable(message: str) -> bool:
         normalized = str(message or "").strip().lower()
         return (
@@ -619,6 +655,9 @@ def convert_picture_to_markdown(
     return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
 
 
+# 이미지 경로를 Markdown 이미지 문법으로 렌더링한다.
+# 필요하면 media 디렉터리로 복사하고, 이미지 VLM이 켜져 있으면
+# 단순 링크 대신 생성된 Markdown 설명을 우선 사용한다.
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],
@@ -657,6 +696,8 @@ def format_markdown_image(
     return f"![{alt_text}]({relative_path})", None, False, False, False
 
 
+# 문단 XML에서 사람이 읽을 텍스트만 추출해 하나의 문자열로 합친다.
+# run 단위로 흩어진 텍스트를 모으고 공백을 정리해 이후 리스트/제목 판정의 입력으로 사용한다.
 def paragraph_text(paragraph: ET.Element) -> str:
     runs = []
     for t in paragraph.findall(".//a:t", NS):
@@ -665,6 +706,8 @@ def paragraph_text(paragraph: ET.Element) -> str:
     return normalize_text(" ".join(x for x in runs if x))
 
 
+# 문단의 목록 레벨(lvl)을 읽어 Markdown 들여쓰기 깊이 계산에 쓴다.
+# lvl이 없거나 숫자로 해석할 수 없으면 None을 반환한다.
 def paragraph_level(paragraph: ET.Element) -> Optional[int]:
     p_pr = paragraph.find("./a:pPr", NS)
     if p_pr is None:
@@ -678,6 +721,8 @@ def paragraph_level(paragraph: ET.Element) -> Optional[int]:
         return None
 
 
+# 문단이 단순 텍스트가 아니라 목록 항목 의미를 가지는지 판정한다.
+# lvl, buChar, buAutoNum 존재 여부를 통해 unordered/ordered list 후보를 식별한다.
 def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     p_pr = paragraph.find("./a:pPr", NS)
     if p_pr is None:
@@ -691,6 +736,8 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     return False
 
 
+# shape 내부 블록들 중 짧은 일반 텍스트를 주변 리스트 문맥에 맞춰 리스트 항목으로 승격한다.
+# PowerPoint가 시각적으로만 맞춰 둔 문단을 Markdown 리스트 구조로 더 자연스럽게 복원하기 위한 보정이다.
 def promote_plain_text_to_list(
     blocks: Sequence[Tuple[str, str, Optional[int]]],
 ) -> List[Tuple[str, str, Optional[int]]]:
@@ -710,6 +757,8 @@ def promote_plain_text_to_list(
     return promoted
 
 
+# PowerPoint의 불연속 목록 레벨을 0,1,2... 형태의 연속 깊이로 정규화한다.
+# 원본 lvl 값이 듬성듬성해도 Markdown 렌더링 들여쓰기가 과도하게 깊어지지 않도록 막는다.
 def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
     levels = sorted({int(level or 0) for kind, _, level in blocks if kind in {"list_ul", "list_ol"}})
     if not levels:
@@ -725,6 +774,8 @@ def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> L
     return normalized
 
 
+# shape 하나에서 텍스트 문단들을 추출해 중간 표현 블록 목록으로 바꾼다.
+# 각 문단을 plain text / unordered list / ordered list로 분류하고 필요한 level도 함께 기록한다.
 def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optional[int]]]:
     blocks: List[Tuple[str, str, Optional[int]]] = []
     for p in shape_elem.findall(".//p:txBody/a:p", NS):
@@ -741,6 +792,8 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optiona
     return blocks
 
 
+# 중간 표현 블록 목록을 최종 Markdown 문자열로 렌더링한다.
+# 리스트 번호 재계산, 들여쓰기, 일반 문단 출력까지 한 번에 수행한다.
 def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str:
     if not blocks:
         return ""
@@ -780,6 +833,8 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
     return "\n".join(rendered).strip()
 
 
+# graphicFrame이 어떤 종류의 객체인지 식별한다.
+# 현재는 diagram/chart를 구분해 이후 전용 처리 로직으로 분기하는 데 사용한다.
 def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     graphic_data = graphic_frame.find("./a:graphic/a:graphicData", NS)
     if graphic_data is None:
@@ -792,6 +847,8 @@ def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     return None
 
 
+# 다이어그램 graphicFrame에서 실제 데이터 XML 파일 경로를 해석한다.
+# rels를 따라가 dgm data model 파일을 찾고, 존재하는 실제 파일일 때만 반환한다.
 def diagram_data_path(graphic_frame: ET.Element, rels_path: Optional[Path], rels_map: Dict[str, str]) -> Optional[Path]:
     if rels_path is None:
         return None
@@ -810,6 +867,8 @@ def diagram_data_path(graphic_frame: ET.Element, rels_path: Optional[Path], rels
     return None
 
 
+# 다이어그램 데이터 XML에서 중복 없는 텍스트 목록을 추출한다.
+# SmartArt 계열 도형의 숨겨진 텍스트를 Markdown으로 옮기기 위한 전처리 단계다.
 def extract_diagram_texts(diagram_data_xml: Path) -> List[str]:
     try:
         root = ET.parse(diagram_data_xml).getroot()
@@ -828,6 +887,8 @@ def extract_diagram_texts(diagram_data_xml: Path) -> List[str]:
     return texts
 
 
+# 추출한 다이어그램 텍스트들을 Markdown 블록으로 정리한다.
+# 항목이 하나면 단일 문단으로, 여러 개면 불릿 목록으로 렌더링한다.
 def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
     cleaned = [normalize_text(text) for text in texts if normalize_text(text)]
     if not cleaned:
@@ -837,6 +898,8 @@ def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
     return "\n".join(f"- {text}" for text in cleaned)
 
 
+# 삼각형 기호로 시작하는 가짜 불릿 텍스트를 표준 Markdown 불릿 형태로 바꾼다.
+# 시각적 문자 불릿을 구조적 리스트로 복원하기 위한 1차 정규화 함수다.
 def normalize_triangle_bullet(text: str) -> str:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
@@ -847,6 +910,8 @@ def normalize_triangle_bullet(text: str) -> str:
     return raw
 
 
+# 한 줄 안에 여러 개의 삼각형 불릿이 이어진 경우 개별 리스트 항목으로 분리한다.
+# 결과는 render 단계에서 바로 붙일 수 있는 Markdown 라인 목록이다.
 def split_triangle_bullets(text: str) -> List[str]:
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
     if not lines:
@@ -873,10 +938,14 @@ def split_triangle_bullets(text: str) -> List[str]:
     return rendered_lines
 
 
+# XML 요소에서 PowerPoint 내부 shape id를 꺼낸다.
+# heading hints, overlay 매핑 등 다른 분석 결과와 현재 shape를 연결하는 공통 키다.
 def shape_id_of(elem: ET.Element) -> str:
     return shape_id_of_core(elem, NS)
 
 
+# 테이블 오버레이 이미지를 Markdown 링크 문자열로 바꾼다.
+# 필요 시 media 디렉터리로 복사하고, 문서 출력 위치 기준 상대경로로 다시 쓴다.
 def overlay_link_text(
     path: str,
     output_dir: Optional[Path],
@@ -890,6 +959,8 @@ def overlay_link_text(
     return f"[image]({path})"
 
 
+# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 출처 정보를 덧붙인다.
+# 사람이 결과를 검토할 때 어떤 파일에서 생성된 설명인지 추적할 수 있게 한다.
 def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
     image_name = Path(image_path).name
     body = markdown.strip()
@@ -898,6 +969,8 @@ def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
     return f"[image-vlm-source: {image_name}]\n\n{body}"
 
 
+# 테이블 오버레이 이미지 하나를 최종 텍스트로 변환한다.
+# VLM 설명을 우선 시도하고, 실패하거나 비활성화된 경우에는 파일 링크로 대체한다.
 def overlay_content_text(
     path: str,
     output_dir: Optional[Path],
@@ -943,6 +1016,9 @@ def overlay_content_text(
     )
 
 
+# 슬라이드 전체에서 테이블 위에 겹쳐진 picture overlay들을 수집한다.
+# 실제 구현은 table_overlay 모듈에 두고, 여기서는 현재 파일의 namespace와
+# 이미지 경로 해석 함수를 주입하는 어댑터 역할만 맡는다.
 def collect_table_overlay_pictures(
     sp_tree: ET.Element,
     slide_xml: Path,
@@ -960,6 +1036,9 @@ def collect_table_overlay_pictures(
     )
 
 
+# graphicFrame 테이블을 Markdown 표 문자열로 변환한다.
+# 오버레이 텍스트 생성, 이미지 경로 해석, 텍스트 정규화 같은
+# 현재 모듈의 정책 함수를 core 구현에 넘겨주는 어댑터다.
 def convert_table_to_markdown(
     graphic_frame: ET.Element,
     overlays: Optional[Sequence[Dict[str, object]]] = None,
@@ -994,6 +1073,8 @@ def convert_table_to_markdown(
     )
 
 
+# slide_converter core가 필요로 하는 의존성 묶음을 구성한다.
+# 이 파일에 정의된 XML 파싱/렌더링 정책을 하나의 객체로 모아 core 구현에 주입한다.
 def _slide_conversion_deps() -> SlideConversionDeps:
     return SlideConversionDeps(
         local_name=local_name,
@@ -1019,6 +1100,8 @@ def _slide_conversion_deps() -> SlideConversionDeps:
     )
 
 
+# 슬라이드 XML 하나를 Markdown과 통계 정보로 변환하는 진입점이다.
+# 실제 본문 순회는 core 구현이 담당하고, 이 함수는 현재 모듈의 정책과 옵션을 연결한다.
 def convert_one_slide(
     slide_xml: Path,
     page_no: int,
@@ -1054,6 +1137,9 @@ def convert_one_slide(
     )
 
 
+# CLI 인자를 정의하고 파싱한다.
+# 입력 PPTX 목록, 읽기 순서 모드, heading strict 모드, 이미지 VLM 옵션 등
+# 전체 변환 파이프라인을 제어하는 설정을 여기서 받는다.
 def _parse_args() -> argparse.Namespace:
     # parser 생성 
     parser = argparse.ArgumentParser(
@@ -1121,6 +1207,9 @@ def _parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+# 파싱된 CLI 인자를 내부 설정 모델로 변환한다.
+# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을
+# 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
     repo_root = Path(__file__).resolve().parent.parent
     main_converter_root = repo_root / "main_converter"
@@ -1141,7 +1230,11 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
     )
 
 
+# 실제 처리에 사용할 입력 패키지 경로 목록을 확정한다.
+# 사용자가 직접 넘긴 입력이 있으면 그것만 검증/추출하고,
+# 없으면 target_pptx 아래 파일들을 자동 탐색해서 동일한 형식으로 준비한다.
 def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
+    # 누락된 입력에 대해 어떤 경로들을 확인했는지 자세히 로그로 남긴다.
     def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
         if not missing_inputs:
             return
@@ -1171,7 +1264,7 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
 
     auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
     if not auto_pptx_inputs:
-        logger.info("No .pptx files found in: %s", preferred_pptx_input_dir(config.cwd).resolve())
+        logger.info("No .pptx files found in: %s", default_pptx_input_dir(config.cwd).resolve())
         return []
     prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
     if missing_inputs:
@@ -1180,40 +1273,8 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
     return prepared_inputs
 
 
-def _resolve_packages(config: ConverterConfig, prepared_inputs: Sequence[str]) -> List[Path]:
-    target_dirs = default_target_dirs(config.cwd)
-    packages = pick_packages(target_dirs, prepared_inputs)
-    if not packages:
-        logger.info("No valid PPTX package directories found.")
-        if target_dirs:
-            logger.info("Checked default directories:")
-            for d in target_dirs:
-                logger.info("- %s", d.resolve())
-        else:
-            logger.info("Checked default directories: none found (expected ./target_slides).")
-    return packages
-
-
-def _prepare_surya_context(config: ConverterConfig, packages: Sequence[Path]) -> Optional[Path]:
-    if config.reading_order != "surya":
-        return None
-    if config.strict:
-        logger.info("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
-    shared_target_slides_dir = preferred_target_dir(config.cwd).resolve()
-    shared_target_pptx_dir = preferred_pptx_input_dir(config.cwd).resolve()
-    return prepare_surya_structure_root(
-        force=not config.reuse_surya_cache,
-        reuse_existing_output=config.reuse_surya_cache,
-        targets=[pkg.name for pkg in packages],
-        target_pptx_dir=shared_target_pptx_dir,
-        target_slides_dir=shared_target_slides_dir,
-    )
-
-
-def _new_manifest() -> ConversionManifest:
-    return ConversionManifest()
-
-
+# 패키지 단위의 선행 stage가 실패했을 때, 해당 패키지의 모든 슬라이드를 실패로 기록한다.
+# 예를 들어 구조 분석 단계에서 패키지 전체가 막히면 슬라이드별 결과 대신 공통 실패 행을 남긴다.
 def _append_package_stage_failure(
     pkg_row: Dict[str, object],
     slide_xmls: Sequence[Path],
@@ -1230,24 +1291,15 @@ def _append_package_stage_failure(
             "error": error_message,
             "warnings": [],
         }
-        slides = pkg_row.get("slides")
-        if isinstance(slides, list):
-            slides.append(row)
+        pkg_row["slides"].append(row)
         manifest.summary.failed += 1
     manifest.packages.append(pkg_row)
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
 
-def _log_slide_warnings(package_name: str, slide_xml: Path, page_no: int, warnings: Sequence[str]) -> None:
-    seen: set[str] = set()
-    for warning in warnings:
-        text = str(warning or "").strip()
-        if not text or text in seen:
-            continue
-        seen.add(text)
-        logger.warning("[%s] Warning: %s (page=%s, slide=%s)", package_name, text, page_no, slide_xml.name)
-
-
+# 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
+# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환,
+# 패키지 단위 result.md 생성과 manifest 누적까지 담당한다.
 def _convert_package(
     config: ConverterConfig,
     pkg: Path,
@@ -1352,14 +1404,24 @@ def _convert_package(
             manifest.summary.add_slide(stats)
             logger.info("[%s] [md-convert] Processed: %s", pkg_name, slide_xml.name)
             if stats.warnings:
-                _log_slide_warnings(pkg_name, slide_xml, page_no, stats.warnings)
+                seen_warnings: set[str] = set()
+                for warning in stats.warnings:
+                    text = str(warning or "").strip()
+                    if not text or text in seen_warnings:
+                        continue
+                    seen_warnings.add(text)
+                    logger.warning(
+                        "[%s] Warning: %s (page=%s, slide=%s)",
+                        pkg_name,
+                        text,
+                        page_no,
+                        slide_xml.name,
+                    )
         except Exception as e:  # noqa: BLE001
             row.update({"status": "failed", "error": str(e)})
             manifest.summary.failed += 1
             logger.error("[%s] Failed: %s -> %s", pkg_name, slide_xml.name, e)
-        slides = pkg_row.get("slides")
-        if isinstance(slides, list):
-            slides.append(row)
+        pkg_row["slides"].append(row)
 
     merged = "\n\n".join(all_chunks).strip()
     if merged:
@@ -1370,16 +1432,9 @@ def _convert_package(
     manifest.packages.append(pkg_row)
 
 
-def _write_manifest(output_dir: Path, manifest: ConversionManifest) -> Path:
-    manifest.mark_finished()
-    manifest_path = output_dir / "convert_manifest.json"
-    manifest_path.write_text(
-        json.dumps(manifest.model_dump(mode="python"), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return manifest_path
-
-
+# 전체 변환 파이프라인의 CLI 엔트리포인트다.
+# 인자 파싱, 입력 준비, 패키지 선택, Surya 준비, manifest 저장,
+# 최종 요약 로그 출력까지 전체 흐름을 조율한다.
 def main() -> int:
     args = _parse_args() 
     _configure_logging(verbose=bool(getattr(args, "verbose", False)))
@@ -1387,7 +1442,8 @@ def main() -> int:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     config.debug_output_dir.mkdir(parents=True, exist_ok=True)
 
-    ensure_imports(config.repo_root)
+    if str(config.repo_root) not in sys.path:
+        sys.path.insert(0, str(config.repo_root))
     try:
         prepared_inputs = _resolve_prepared_inputs(config)
     except ValueError:
@@ -1395,16 +1451,36 @@ def main() -> int:
     if not prepared_inputs:
         return 0
 
-    packages = _resolve_packages(config, prepared_inputs)
+    target_dir = default_target_dir(config.cwd)
+    packages = pick_packages(target_dir, prepared_inputs)
     if not packages:
+        logger.info("No valid PPTX package directories found.")
+        logger.info("Checked default directory:")
+        logger.info("- %s", target_dir.resolve())
         return 0
 
-    surya_structure_root = _prepare_surya_context(config, packages)
-    manifest = _new_manifest()
+    surya_structure_root: Optional[Path] = None
+    if config.reading_order == "surya":
+        if config.strict:
+            logger.info("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
+        surya_structure_root = prepare_surya_structure_root(
+            force=not config.reuse_surya_cache,
+            reuse_existing_output=config.reuse_surya_cache,
+            targets=[pkg.name for pkg in packages],
+            target_pptx_dir=default_pptx_input_dir(config.cwd).resolve(),
+            target_slides_dir=default_target_dir(config.cwd).resolve(),
+        )
+
+    manifest = ConversionManifest()
     for pkg in packages:
         _convert_package(config, pkg, surya_structure_root, manifest)
 
-    manifest_path = _write_manifest(config.output_dir, manifest)
+    manifest.mark_finished()
+    manifest_path = config.output_dir / "convert_manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest.model_dump(mode="python"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     logger.info("Wrote package outputs under: %s", config.output_dir.resolve())
     logger.info("Wrote: %s", manifest_path.resolve())

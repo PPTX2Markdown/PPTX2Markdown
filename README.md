@@ -27,7 +27,7 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
   - `requirements.txt` 설치 필요
   - GPU 환경 권장
 - Gemini 모드 사용 시
-  - `GEMINI_API_KEY` 환경변수 필요
+  - `GEMINI_API_KEY` 환경변수 또는 프로젝트 `.env` 파일 필요
 
 #### 저장소 클론 후 환경 구성
 
@@ -125,21 +125,21 @@ docker compose exec app bash
 ### 기본 실행
 
 ```bash
-python main_converter/convert_slides_to_md.py [INPUT_PPTX ...]
+python main_converter/run_pptx_to_markdown.py [INPUT_PPTX ...]
 ```
 
 예시:
 
 ```bash
-python main_converter/convert_slides_to_md.py
-python main_converter/convert_slides_to_md.py sample1.pptx sample2.pptx
+python main_converter/run_pptx_to_markdown.py
+python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.pptx
 ```
 
 ### Reading Order 옵션
 
 ```bash
-python main_converter/convert_slides_to_md.py --reading-order xml sample1.pptx
-python main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
+python main_converter/run_pptx_to_markdown.py --reading-order xml sample1.pptx
+python main_converter/run_pptx_to_markdown.py --reading-order surya sample1.pptx
 ```
 
 ### 이미지 VLM 옵션
@@ -163,7 +163,7 @@ python main_converter/convert_slides_to_md.py --reading-order surya sample1.pptx
 3B 별칭 사용:
 
 ```bash
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider local \
   --image-vlm-model 3b \
   sample1.pptx
@@ -172,7 +172,7 @@ python main_converter/convert_slides_to_md.py \
 직접 Hugging Face 모델 ID 지정:
 
 ```bash
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider local \
   --image-vlm-model Qwen/Qwen2.5-VL-7B-Instruct \
   sample1.pptx
@@ -199,10 +199,16 @@ export GEMINI_MAX_BACKOFF_SEC=30
 - `GEMINI_MIN_REQUEST_INTERVAL_SEC`로 요청 간 최소 간격을 강제할 수 있습니다.
 - quota가 빡빡하면 `GEMINI_MIN_REQUEST_INTERVAL_SEC=3` 또는 `5`로 늘리는 편이 안정적입니다.
 
+또는 프로젝트 루트 `.env` 파일:
+
+```dotenv
+GEMINI_API_KEY=your-api-key
+```
+
 기본 Gemini 모델 사용:
 
 ```bash
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider gemini \
   sample1.pptx
 ```
@@ -210,7 +216,7 @@ python main_converter/convert_slides_to_md.py \
 명시적으로 모델 지정:
 
 ```bash
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
   sample1.pptx
@@ -220,7 +226,7 @@ API 키 환경변수 이름을 바꾸는 경우:
 
 ```bash
 MY_GEMINI_KEY="your-api-key" \
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider gemini \
   --image-vlm-api-key-env MY_GEMINI_KEY \
   sample1.pptx
@@ -229,7 +235,7 @@ python main_converter/convert_slides_to_md.py \
 #### 프롬프트 및 토큰 제어
 
 ```bash
-python main_converter/convert_slides_to_md.py \
+python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider gemini \
   --image-vlm-model gemini-2.5-flash \
   --image-vlm-prompt "Custom prompt here" \
@@ -270,5 +276,5 @@ python -m py_compile \
   image_pipeline/service.py \
   main_converter/converter_models.py \
   main_converter/slide_converter.py \
-  main_converter/convert_slides_to_md.py
+  main_converter/run_pptx_to_markdown.py
 ```
