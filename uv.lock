@@ -599,6 +599,11 @@ wheels = [
 ]
 
 [[package]]
+name = "omml2latex"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main#0d163c5291cc0e396db21c713573bbcfdc5232b2" }
+
+[[package]]
 name = "opencv-python-headless"
 version = "4.11.0.86"
 source = { registry = "https://pypi.org/simple" }
@@ -681,10 +686,12 @@ source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "numpy" },
+    { name = "omml2latex" },
     { name = "opencv-python-headless" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pypdfium2" },
+    { name = "python-dotenv" },
     { name = "surya-ocr" },
     { name = "torch" },
     { name = "torchvision" },
@@ -695,10 +702,12 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.0.0,<2" },
     { name = "numpy", specifier = "==2.2.6" },
+    { name = "omml2latex", git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main" },
     { name = "opencv-python-headless", specifier = "==4.11.0.86" },
     { name = "pillow", specifier = "==10.4.0" },
     { name = "pydantic", specifier = ">=2.10.0,<3" },
     { name = "pypdfium2", specifier = "==4.30.0" },
+    { name = "python-dotenv", specifier = ">=1.0.1,<2" },
     { name = "surya-ocr", specifier = "==0.17.1" },
     { name = "torch", specifier = "==2.10.0" },
     { name = "torchvision", specifier = "==0.25.0" },

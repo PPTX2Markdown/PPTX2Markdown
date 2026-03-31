@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -11,11 +12,58 @@ def utc_now_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+@dataclass(frozen=True)
+class ParagraphSegment:
+    kind: str
+    text: str
+
+
+@dataclass(frozen=True)
+class ShapeBlock:
+    kind: str
+    segments: List[ParagraphSegment] = field(default_factory=list)
+    level: Optional[int] = None
+
+    @property
+    def plain_text(self) -> str:
+        parts = [segment.text for segment in self.segments if segment.kind != "break" and segment.text.strip()]
+        return " ".join(parts).strip()
+
+    @property
+    def markdown_text(self) -> str:
+        rendered: List[str] = []
+        for segment in self.segments:
+            if segment.kind == "break":
+                if rendered and not rendered[-1].endswith("\n"):
+                    rendered.append("\n")
+                continue
+            text = segment.text.strip()
+            if not text:
+                continue
+            if rendered and not rendered[-1].endswith("\n"):
+                rendered.append(" ")
+            rendered.append(text)
+        return "".join(rendered).strip()
+
+    @property
+    def has_math(self) -> bool:
+        return any(segment.kind in {"math_inline", "math_block"} for segment in self.segments)
+
+    @property
+    def is_math_only(self) -> bool:
+        non_empty = [segment for segment in self.segments if segment.text.strip()]
+        return bool(non_empty) and all(segment.kind in {"math_inline", "math_block"} for segment in non_empty)
+
+
 class SlideStats(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     blocks_total: int = 0
     text_blocks: int = 0
+    math_blocks: int = 0
+    inline_math_segments: int = 0
+    block_math_segments: int = 0
+    math_conversion_failures: int = 0
     image_blocks: int = 0
     table_blocks: int = 0
     table_skipped_blocks: int = 0
@@ -30,6 +78,10 @@ class SlideStats(BaseModel):
         return {
             "blocks_total": self.blocks_total,
             "text_blocks": self.text_blocks,
+            "math_blocks": self.math_blocks,
+            "inline_math_segments": self.inline_math_segments,
+            "block_math_segments": self.block_math_segments,
+            "math_conversion_failures": self.math_conversion_failures,
             "image_blocks": self.image_blocks,
             "table_blocks": self.table_blocks,
             "table_skipped_blocks": self.table_skipped_blocks,
@@ -46,6 +98,10 @@ class ManifestSummary(BaseModel):
     processed_packages: int = 0
     processed_slides: int = 0
     failed: int = 0
+    math_blocks: int = 0
+    inline_math_segments: int = 0
+    block_math_segments: int = 0
+    math_conversion_failures: int = 0
     resolved_images: int = 0
     unresolved_images: int = 0
     table_blocks: int = 0
@@ -53,6 +109,10 @@ class ManifestSummary(BaseModel):
 
     def add_slide(self, stats: SlideStats) -> None:
         self.processed_slides += 1
+        self.math_blocks += stats.math_blocks
+        self.inline_math_segments += stats.inline_math_segments
+        self.block_math_segments += stats.block_math_segments
+        self.math_conversion_failures += stats.math_conversion_failures
         self.resolved_images += stats.resolved_images
         self.unresolved_images += stats.unresolved_images
         self.table_blocks += stats.table_blocks
