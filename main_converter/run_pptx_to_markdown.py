@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
-from omml2latex import convert_omml_to_latex
+from omml2latex import convert_omml
 
 # REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -693,18 +693,19 @@ def _sanitize_block_latex(latex: str) -> str:
     sanitized = latex.strip()
     if sanitized.startswith("$$") and sanitized.endswith("$$"):
         sanitized = sanitized[2:-2].strip()
+    sanitized = sanitized.strip("$").strip()
     return sanitized
 
 
 def _build_inline_math_segment(math_elem: ET.Element) -> ParagraphSegment:
-    latex = _sanitize_inline_latex(convert_omml_to_latex(math_elem))
+    latex = _sanitize_inline_latex(convert_omml(math_elem))
     if not latex:
         raise ValueError("empty latex")
     return ParagraphSegment(kind="math_inline", text=f"${latex}$")
 
 
 def _build_block_math_segment(math_elem: ET.Element) -> ParagraphSegment:
-    latex = _sanitize_block_latex(convert_omml_to_latex(math_elem))
+    latex = _sanitize_block_latex(convert_omml(math_elem))
     if not latex:
         raise ValueError("empty latex")
     return ParagraphSegment(kind="math_block", text=f"$$\n{latex}\n$$")

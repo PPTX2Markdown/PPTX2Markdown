@@ -601,7 +601,7 @@ wheels = [
 [[package]]
 name = "omml2latex"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=dev#61c4f15fed41af0862480f5a66c5b7a25e54239f" }
+source = { git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main#0d163c5291cc0e396db21c713573bbcfdc5232b2" }
 
 [[package]]
 name = "opencv-python-headless"
@@ -702,7 +702,7 @@ dependencies = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.0.0,<2" },
     { name = "numpy", specifier = "==2.2.6" },
-    { name = "omml2latex", git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=dev" },
+    { name = "omml2latex", git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main" },
     { name = "opencv-python-headless", specifier = "==4.11.0.86" },
     { name = "pillow", specifier = "==10.4.0" },
     { name = "pydantic", specifier = ">=2.10.0,<3" },
