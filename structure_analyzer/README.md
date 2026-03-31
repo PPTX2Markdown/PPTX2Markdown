@@ -4,19 +4,18 @@
 
 ## 내부 구조 (리팩토링)
 
-스크립트 단일 파일에서 모듈 기반으로 분리되었습니다.
+현재는 구조 판단 관련 로직을 한 파일에 모아 둔 상태입니다.
 
 - `constants.py`: XML namespace/태그/placeholder 상수
-- `models.py`: `SlideObject`, `OrderContext`
+- `structure.py`: `SlideObject`, `OrderContext`, 읽기 순서 판단, heading depth/score 계산
 - `xml_primitives.py`: XML 공통 유틸 (`local_name`, bbox 추출 등)
 - `text_rules.py`: 텍스트 normalize/번호형 heading 규칙
 - `extractor.py`: XML -> `SlideObject` 추출
-- `ordering.py`: 읽기 순서 버킷/정렬 로직
-- `headings.py`: heading depth/score 계산
 - `pipeline.py`: 리포트 생성, XML 재정렬, 파일 입출력
-- `extract_structure_analysis.py`: CLI 엔트리포인트(기존 인터페이스 유지)
+- `extract_structure_analysis.py`: 구조 분석 CLI 엔트리포인트
+- `check_native_table_support.py`: native table 우선 전략 점검용 보조 CLI
 
-추가로 `check_native_table_support.py`도 `xml_primitives.py`를 공유합니다.
+`extractor.py`, `pipeline.py`, `check_native_table_support.py`는 공통 XML 유틸을 공유합니다.
 
 아래 경로 예시는 저장소 루트에서 실행하는 기준입니다.
 

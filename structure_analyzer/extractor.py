@@ -16,7 +16,7 @@ from .constants import (
     STRICT_HEADING_PLACEHOLDER_TYPES,
     TITLE_TYPES,
 )
-from .models import SlideObject
+from .structure import SlideObject
 from .text_rules import is_numbered_heading_text, normalize_text
 from .xml_primitives import (
     extract_bbox_emu,
@@ -83,12 +83,6 @@ def parse_layout_placeholders(layout_xml: Optional[Path]) -> Dict[Tuple[str, str
     return out
 
 
-def strict_heading_semantic_guard(text: str) -> bool:
-    # TODO: Add sentence-ending and punctuation-density checks for strict mode.
-    _ = text
-    return True
-
-
 def looks_heading(text: str, ph_type: Optional[str], strict: bool = False) -> bool:
     raw = (text or "").strip()
     if raw.startswith(("▶", "-", "*", "√")):
@@ -104,8 +98,6 @@ def looks_heading(text: str, ph_type: Optional[str], strict: bool = False) -> bo
         if ph_type not in STRICT_HEADING_PLACEHOLDER_TYPES:
             return False
         if len(normalized) < 3 or len(normalized) > 60:
-            return False
-        if not strict_heading_semantic_guard(text):
             return False
         return True
 
@@ -257,15 +249,4 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
         "xml_tables": xml_tables,
         "xml_images": xml_images,
     }
-    return objects, meta
-
-
-def extract_slide_objects(
-    slide_xml: Path,
-    mode: str,
-    strict: bool = False,
-) -> Tuple[List[SlideObject], Dict[str, object]]:
-    objects, meta = extract_slide_objects_xml(slide_xml, strict=strict)
-    meta["mode"] = mode
-    meta["strict"] = strict
     return objects, meta
