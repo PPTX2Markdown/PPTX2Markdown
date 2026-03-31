@@ -71,6 +71,36 @@ class ConversionManifest(BaseModel):
         self.finished_at = utc_now_z()
 
 
+class PreparedPackage(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
+    package_dir: Path
+    source_pptx_path: Path
+
+    @property
+    def source_stem(self) -> str:
+        stem = self.source_pptx_path.stem.strip()
+        return stem or self.package_dir.name
+
+    @property
+    def package_dir_name(self) -> str:
+        return self.source_stem
+
+    @property
+    def name(self) -> str:
+        return self.package_dir.name
+
+    @property
+    def output_markdown_name(self) -> str:
+        return f"{self.source_stem}.md"
+
+    def output_markdown_path(self, output_dir: Path) -> Path:
+        return output_dir / self.name / self.output_markdown_name
+
+    def with_package_dir(self, package_dir: Path) -> "PreparedPackage":
+        return self.model_copy(update={"package_dir": package_dir})
+
+
 # main_convert 로직을 실행에 필요한 설정값들을 모아둔 내부 모델
 # 입/출력 경로, 명령어 옵션 정보 등을 저장한다. 
 class ConverterConfig(BaseModel):

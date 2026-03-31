@@ -36,7 +36,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from asset_utils import copy_debug_image_asset, copy_media_asset
-from converter_models import ConversionManifest, ConverterConfig, SlideStats
+from converter_models import ConversionManifest, ConverterConfig, PreparedPackage, SlideStats
 from reading_order_pipeline import (
     prepare_surya_structure_root,
     resolve_surya_structure_dir,
@@ -130,45 +130,6 @@ def normalize_text(s: str) -> str:
     return s
 
 
-# 실제로 처리할 PPTX 패키지 디렉터리 목록을 결정한다.
-# 사용자가 특정 입력을 넘기면 그 후보만 찾고, 아무 입력이 없으면 기본 target_slides 아래의 모든 패키지를 스캔한다.
-# 마지막에는 ppt/slides가 존재하는 유효 패키지만 남기고 중복도 제거한다.
-def pick_packages(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path]:
-    pkgs: List[Path] = []
-    if raw_inputs:
-        for item in raw_inputs:
-            p = Path(item)
-            candidates = [p, target_dir / item]
-            picked = None
-            for c in candidates:
-                if c.exists() and c.is_dir():
-                    picked = c.resolve()
-                    break
-            if picked is not None:
-                pkgs.append(picked)
-    else:
-        for p in sorted(target_dir.iterdir(), key=lambda x: natural_key(x.name)):
-            if p.is_dir():
-                pkgs.append(p.resolve())
-
-    out: List[Path] = []
-    uniq: Dict[str, Path] = {}
-    for pkg in pkgs:
-        slides_dir = pkg / "ppt" / "slides"
-        if slides_dir.exists() and slides_dir.is_dir():
-            uniq[str(pkg)] = pkg
-    for _, v in uniq.items():
-        out.append(v)
-    return out
-
-
-# 파일명이나 패키지명으로 쓰기 안전한 문자열로 정규화한다.
-# PPTX stem에 공백이나 특수문자가 있어도 target_slides 아래 디렉터리명으로 안전하게 쓰기 위한 처리다.
-def sanitize_package_name(name: str) -> str:
-    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "_", name).strip("._")
-    return cleaned or "package"
-
-
 # 이미 추출된 패키지 디렉터리가 현재 PPTX 원본과 동일한 입력에서 만들어졌는지 검사한다.
 # .pptx_source.json 안의 경로/크기/mtime 정보를 원본 파일의 현재 상태와 비교해 캐시 재사용 가능 여부를 판단한다.
 def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
@@ -210,14 +171,15 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 # 기존 추출 결과가 같은 원본에서 생성된 경우 재사용하고, 아니라면 필요 시 삭제 후 다시 풀며,
 # 추적용 marker 파일과 target_pptx 쪽의 staged 복사본도 함께 맞춰 둔다.
 def extract_pptx_to_target(
-    pptx_path: Path,
+    package: PreparedPackage,
     extraction_root: Path,
     staged_pptx_root: Path,
     allow_replace_unmanaged: bool = False,
-) -> Path:
+) -> PreparedPackage:
+    pptx_path = package.source_pptx_path
     stat = pptx_path.stat()
     extraction_root.mkdir(parents=True, exist_ok=True)
-    pkg_name = sanitize_package_name(pptx_path.stem)
+    pkg_name = package.package_dir_name
     pkg_dir = extraction_root / pkg_name
 
     # Raw extraction target should be a real managed directory, never a symlink.
@@ -247,7 +209,7 @@ def extract_pptx_to_target(
         staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
         if staged_pptx.resolve() != pptx_path.resolve():
             shutil.copy2(pptx_path, staged_pptx)
-        return pkg_dir.resolve()
+        return package.with_package_dir(pkg_dir.resolve())
 
     marker = pkg_dir / ".pptx_source.json"
     if pkg_dir.exists():
@@ -286,7 +248,7 @@ def extract_pptx_to_target(
     if staged_pptx.resolve() != pptx_path.resolve():
         shutil.copy2(pptx_path, staged_pptx)
 
-    return pkg_dir.resolve()
+    return package.with_package_dir(pkg_dir.resolve())
 
 
 # Office가 임시로 만드는 잠금 파일인지 판별한다.
@@ -336,11 +298,11 @@ def prepare_package_inputs(
     cwd: Path,
     raw_inputs: Sequence[str],
     force_extract: bool = False,
-) -> Tuple[List[str], List[Dict[str, object]]]:
+) -> Tuple[List[PreparedPackage], List[Dict[str, object]]]:
     if not raw_inputs:
-        return list(raw_inputs), []
+        return [], []
 
-    prepared: List[str] = []
+    prepared: List[PreparedPackage] = []
     missing_inputs: List[Dict[str, object]] = []
     extraction_root = default_target_dir(cwd)
     staged_pptx_root = default_pptx_input_dir(cwd)
@@ -355,13 +317,17 @@ def prepare_package_inputs(
                 }
             )
             continue
-        pkg_dir = extract_pptx_to_target(
-            picked_file,
+        package = PreparedPackage(
+            package_dir=extraction_root / picked_file.stem,
+            source_pptx_path=picked_file,
+        )
+        package = extract_pptx_to_target(
+            package,
             extraction_root,
             staged_pptx_root=staged_pptx_root,
             allow_replace_unmanaged=force_extract,
         )
-        prepared.append(str(pkg_dir))
+        prepared.append(package)
     return prepared, missing_inputs
 
 
@@ -655,7 +621,13 @@ def convert_picture_to_markdown(
     return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
 
 
-# 이미지 경로를 Markdown 이미지 문법으로 렌더링한다.
+# 이미지 경로를 커스텀 이미지 태그 문자열로 렌더링한다.
+# downstream 파서가 기대하는 [img(src="...")] 포맷으로 통일한다.
+def render_image_tag(path: str) -> str:
+    return f'[img(src="{path}")]'
+
+
+# 이미지 경로를 커스텀 이미지 태그로 렌더링한다.
 # 필요하면 media 디렉터리로 복사하고, 이미지 VLM이 켜져 있으면
 # 단순 링크 대신 생성된 Markdown 설명을 우선 사용한다.
 def format_markdown_image(
@@ -689,11 +661,11 @@ def format_markdown_image(
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
         relative_path = relativize_markdown_path(copied_path, output_dir)
-        return f"![{alt_text}]({relative_path})", image_warn, unavailable, False, skipped_no_markdown
+        return render_image_tag(relative_path), image_warn, unavailable, False, skipped_no_markdown
 
     copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
     relative_path = relativize_markdown_path(copied_path, output_dir)
-    return f"![{alt_text}]({relative_path})", None, False, False, False
+    return render_image_tag(relative_path), None, False, False, False
 
 
 # 문단 XML에서 사람이 읽을 텍스트만 추출해 하나의 문자열로 합친다.
@@ -944,7 +916,7 @@ def shape_id_of(elem: ET.Element) -> str:
     return shape_id_of_core(elem, NS)
 
 
-# 테이블 오버레이 이미지를 Markdown 링크 문자열로 바꾼다.
+# 테이블 오버레이 이미지를 커스텀 이미지 태그 문자열로 바꾼다.
 # 필요 시 media 디렉터리로 복사하고, 문서 출력 위치 기준 상대경로로 다시 쓴다.
 def overlay_link_text(
     path: str,
@@ -956,7 +928,7 @@ def overlay_link_text(
         return path
     path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
     path = relativize_markdown_path(path, output_dir)
-    return f"[image]({path})"
+    return render_image_tag(path)
 
 
 # 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 출처 정보를 덧붙인다.
@@ -1230,7 +1202,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
 # 실제 처리에 사용할 입력 패키지 경로 목록을 확정한다.
 # 사용자가 직접 넘긴 입력이 있으면 그것만 검증/추출하고,
 # 없으면 target_pptx 아래 파일들을 자동 탐색해서 동일한 형식으로 준비한다.
-def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
+def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
     # 누락된 입력에 대해 어떤 경로들을 확인했는지 자세히 로그로 남긴다.
     def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
         if not missing_inputs:
@@ -1293,15 +1265,15 @@ def _append_package_stage_failure(
     manifest.packages.append(pkg_row)
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
-
 # PPTX를 압축 해제한 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
-# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환, 패키지 단위 result.md 생성과 manifest 누적까지 담당한다.
+# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환, 패키지 단위 Markdown 생성과 manifest 누적까지 담당한다.
 def _convert_package(
     config: ConverterConfig,
-    pkg: Path,
+    package: PreparedPackage,
     surya_structure_root: Optional[Path],
     manifest: ConversionManifest,
 ) -> None:
+    pkg = package.package_dir
     pkg_name = pkg.name
     slides_dir = pkg / "ppt" / "slides"
     slide_xmls = sorted(
@@ -1309,6 +1281,7 @@ def _convert_package(
         key=lambda p: natural_key(p.name),
     )
     pkg_out = config.output_dir / pkg_name
+    output_md_path = package.output_markdown_path(config.output_dir)
     media_dir = pkg_out / "media"
     copied_media: Dict[str, Path] = {}
     pkg_out.mkdir(parents=True, exist_ok=True)
@@ -1317,7 +1290,7 @@ def _convert_package(
         "package": str(pkg),
         "name": pkg_name,
         "slides": [],
-        "result_md": str(pkg_out / "result.md"),
+        "result_md": str(output_md_path),
         "pipeline_mode": config.reading_order,
         "image_vlm_provider": config.image_vlm_provider,
         "image_vlm_model": config.image_vlm_model,
@@ -1422,8 +1395,7 @@ def _convert_package(
     merged = "\n\n".join(all_chunks).strip()
     if merged:
         merged += "\n"
-    merged_path = pkg_out / "result.md"
-    merged_path.write_text(merged, encoding="utf-8")
+    output_md_path.write_text(merged, encoding="utf-8")
     manifest.summary.processed_packages += 1
     manifest.packages.append(pkg_row)
 
@@ -1446,12 +1418,11 @@ def main() -> int:
     if not prepared_inputs:
         return 0
 
-    target_dir = default_target_dir(config.cwd)
-    packages = pick_packages(target_dir, prepared_inputs)
+    packages = prepared_inputs
     if not packages:
         logger.info("No valid PPTX package directories found.")
         logger.info("Checked default directory:")
-        logger.info("- %s", target_dir.resolve())
+        logger.info("- %s", default_target_dir(config.cwd).resolve())
         return 0
 
     surya_structure_root: Optional[Path] = None
