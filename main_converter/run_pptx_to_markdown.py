@@ -1208,16 +1208,13 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 # 파싱된 CLI 인자를 내부 설정 모델로 변환한다.
-# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을
-# 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
+# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
-    repo_root = Path(__file__).resolve().parent.parent
-    main_converter_root = repo_root / "main_converter"
+    main_converter_root = REPO_ROOT/ "main_converter"
     return ConverterConfig(
         cwd=main_converter_root,
-        repo_root=repo_root,
+        repo_root=REPO_ROOT,
         output_dir=main_converter_root / "output" / args.reading_order,
-        debug_output_dir=main_converter_root / "output" / args.reading_order,
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
@@ -1297,9 +1294,8 @@ def _append_package_stage_failure(
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
 
-# 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
-# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환,
-# 패키지 단위 result.md 생성과 manifest 누적까지 담당한다.
+# PPTX를 압축 해제한 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
+# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환, 패키지 단위 result.md 생성과 manifest 누적까지 담당한다.
 def _convert_package(
     config: ConverterConfig,
     pkg: Path,
@@ -1440,7 +1436,6 @@ def main() -> int:
     _configure_logging(verbose=bool(getattr(args, "verbose", False)))
     config = _build_config(args)
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    config.debug_output_dir.mkdir(parents=True, exist_ok=True)
 
     if str(config.repo_root) not in sys.path:
         sys.path.insert(0, str(config.repo_root))
@@ -1472,6 +1467,8 @@ def main() -> int:
         )
 
     manifest = ConversionManifest()
+
+    # 각 패키지에 대하여 일괄적으로 메인 컨버터 로직인 _convert_package를 수행한다.
     for pkg in packages:
         _convert_package(config, pkg, surya_structure_root, manifest)
 

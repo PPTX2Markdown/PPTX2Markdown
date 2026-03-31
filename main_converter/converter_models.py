@@ -71,14 +71,18 @@ class ConversionManifest(BaseModel):
         self.finished_at = utc_now_z()
 
 
+# main_convert 로직을 실행에 필요한 설정값들을 모아둔 내부 모델
+# 입/출력 경로, 명령어 옵션 정보 등을 저장한다. 
 class ConverterConfig(BaseModel):
+    # Pydantic 모델 설정 
+    # - arbitrary_types_allowed=True : Pydantic이 기본 내장타입만이 아니라 Path같은 파이썬 객체 타입도 필드 타입으로 받아들이게 설정
+    # - extra="forbid" : Pydantic 모델에서 정의하지 않은 필드 값이 들어오면 허용하지 않고 에러를 내겠다.
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    cwd: Path
-    repo_root: Path
-    output_dir: Path
-    debug_output_dir: Path
-    inputs: List[str] = Field(default_factory=list)
+    cwd: Path # main_converter 기준 작업 디렉토리 경로
+    repo_root: Path # 프로젝트 루트 디렉터리 경로 : pptx2markdown/
+    output_dir: Path # 변환 결과를 저장할 디렉터리 경로 : main_converter/<file_name>/<xml | surya>
+    inputs: List[str] = Field(default_factory=list) # 사용자가 CLI로 지정한 입력 PPTX 목록
     reading_order: str = "xml"
     strict: bool = False
     reuse_surya_cache: bool = False
