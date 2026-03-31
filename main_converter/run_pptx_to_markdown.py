@@ -30,13 +30,22 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from omml2latex import convert_omml_to_latex
+
 # REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from asset_utils import copy_debug_image_asset, copy_media_asset
-from converter_models import ConversionManifest, ConverterConfig, PreparedPackage, SlideStats
+from converter_models import (
+    ConversionManifest,
+    ConverterConfig,
+    ParagraphSegment,
+    PreparedPackage,
+    ShapeBlock,
+    SlideStats,
+)
 from reading_order_pipeline import (
     prepare_surya_structure_root,
     resolve_surya_structure_dir,
@@ -53,7 +62,12 @@ from image_pipeline.service import (
     normalize_provider,
 )
 from image_table_pipeline_adapter import convert_picture_to_table_markdown
-from slide_converter import SlideConversionDeps, convert_one_slide as convert_one_slide_core
+from slide_converter import (
+    SlideConversionContext,
+    SlideConversionDeps,
+    SlideRenderAssets,
+    convert_one_slide as convert_one_slide_core,
+)
 from table_overlay import (
     collect_table_overlay_pictures as collect_table_overlay_pictures_core,
     convert_table_to_markdown as convert_table_to_markdown_core,
@@ -64,6 +78,7 @@ from table_overlay import (
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "dgm": "http://schemas.openxmlformats.org/drawingml/2006/diagram",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
@@ -668,14 +683,113 @@ def format_markdown_image(
     return render_image_tag(relative_path), None, False, False, False
 
 
-# 문단 XML에서 사람이 읽을 텍스트만 추출해 하나의 문자열로 합친다.
-# run 단위로 흩어진 텍스트를 모으고 공백을 정리해 이후 리스트/제목 판정의 입력으로 사용한다.
+def _sanitize_inline_latex(latex: str) -> str:
+    sanitized = " ".join(part.strip() for part in latex.splitlines() if part.strip())
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized.strip("$").strip()
+
+
+def _sanitize_block_latex(latex: str) -> str:
+    sanitized = latex.strip()
+    if sanitized.startswith("$$") and sanitized.endswith("$$"):
+        sanitized = sanitized[2:-2].strip()
+    return sanitized
+
+
+def _build_inline_math_segment(math_elem: ET.Element) -> ParagraphSegment:
+    latex = _sanitize_inline_latex(convert_omml_to_latex(math_elem))
+    if not latex:
+        raise ValueError("empty latex")
+    return ParagraphSegment(kind="math_inline", text=f"${latex}$")
+
+
+def _build_block_math_segment(math_elem: ET.Element) -> ParagraphSegment:
+    latex = _sanitize_block_latex(convert_omml_to_latex(math_elem))
+    if not latex:
+        raise ValueError("empty latex")
+    return ParagraphSegment(kind="math_block", text=f"$$\n{latex}\n$$")
+
+
+def _extract_run_text(run_elem: ET.Element) -> str:
+    texts = [node.text or "" for node in run_elem.findall(".//a:t", NS) if (node.text or "").strip()]
+    return normalize_text(" ".join(texts))
+
+
+def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment]) -> bool:
+    container_tag = local_name(container.tag)
+    if container_tag == "oMath":
+        try:
+            segments.append(_build_inline_math_segment(container))
+        except Exception:
+            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
+            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+        return True
+    if container_tag == "oMathPara":
+        try:
+            segments.append(_build_block_math_segment(container))
+        except Exception:
+            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
+            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+        return True
+
+    appended = False
+    for math_elem in list(container):
+        tag = local_name(math_elem.tag)
+        if tag == "oMath":
+            appended = True
+            try:
+                segments.append(_build_inline_math_segment(math_elem))
+            except Exception:
+                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
+                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            continue
+        if tag == "oMathPara":
+            appended = True
+            try:
+                segments.append(_build_block_math_segment(math_elem))
+            except Exception:
+                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
+                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            continue
+    return appended
+
+
+def parse_paragraph_segments(paragraph: ET.Element) -> List[ParagraphSegment]:
+    segments: List[ParagraphSegment] = []
+    for child in list(paragraph):
+        tag = local_name(child.tag)
+        if tag in {"r", "fld"}:
+            text = _extract_run_text(child)
+            if text:
+                segments.append(ParagraphSegment(kind="text", text=text))
+            continue
+        if tag == "br":
+            segments.append(ParagraphSegment(kind="break", text=""))
+            continue
+        if tag == "m":
+            if _append_math_segments(child, segments):
+                continue
+        if tag == "oMath":
+            _append_math_segments(child, segments)
+            continue
+        if tag == "oMathPara":
+            _append_math_segments(child, segments)
+            continue
+    return segments
+
+
 def paragraph_text(paragraph: ET.Element) -> str:
-    runs = []
-    for t in paragraph.findall(".//a:t", NS):
-        if t.text:
-            runs.append(t.text.strip())
-    return normalize_text(" ".join(x for x in runs if x))
+    parts: List[str] = []
+    for segment in parse_paragraph_segments(paragraph):
+        if segment.kind == "break":
+            continue
+        plain = segment.text
+        if segment.kind in {"math_inline", "math_block"}:
+            plain = plain.replace("$", " ")
+        normalized = normalize_text(plain)
+        if normalized:
+            parts.append(normalized)
+    return normalize_text(" ".join(parts))
 
 
 # 문단의 목록 레벨(lvl)을 읽어 Markdown 들여쓰기 깊이 계산에 쓴다.
@@ -711,74 +825,84 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
 # shape 내부 블록들 중 짧은 일반 텍스트를 주변 리스트 문맥에 맞춰 리스트 항목으로 승격한다.
 # PowerPoint가 시각적으로만 맞춰 둔 문단을 Markdown 리스트 구조로 더 자연스럽게 복원하기 위한 보정이다.
 def promote_plain_text_to_list(
-    blocks: Sequence[Tuple[str, str, Optional[int]]],
-) -> List[Tuple[str, str, Optional[int]]]:
-    if not any(kind in {"list_ul", "list_ol"} for kind, _, _ in blocks):
+    blocks: Sequence[ShapeBlock],
+) -> List[ShapeBlock]:
+    if not any(block.kind in {"list_ul", "list_ol"} for block in blocks):
         return list(blocks)
 
-    text_blocks = [(idx, text) for idx, (kind, text, _) in enumerate(blocks) if kind == "text"]
+    text_blocks = [(idx, block.plain_text) for idx, block in enumerate(blocks) if block.kind == "text"]
     if len(text_blocks) < 3:
         return list(blocks)
 
-    first_list_kind = next((kind for kind, _, _ in blocks if kind in {"list_ul", "list_ol"}), "list_ul")
+    first_list_kind = next((block.kind for block in blocks if block.kind in {"list_ul", "list_ol"}), "list_ul")
     promoted = list(blocks)
     for idx, text in text_blocks:
         if len(text) > 80 or text.endswith((".", ":")):
             continue
-        promoted[idx] = (first_list_kind, text, 0)
+        promoted[idx] = ShapeBlock(kind=first_list_kind, segments=promoted[idx].segments, level=0)
     return promoted
 
 
 # PowerPoint의 불연속 목록 레벨을 0,1,2... 형태의 연속 깊이로 정규화한다.
 # 원본 lvl 값이 듬성듬성해도 Markdown 렌더링 들여쓰기가 과도하게 깊어지지 않도록 막는다.
-def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    levels = sorted({int(level or 0) for kind, _, level in blocks if kind in {"list_ul", "list_ol"}})
+def normalize_list_levels(blocks: Sequence[ShapeBlock]) -> List[ShapeBlock]:
+    levels = sorted({int(block.level or 0) for block in blocks if block.kind in {"list_ul", "list_ol"}})
     if not levels:
         return list(blocks)
     remap = {level: idx for idx, level in enumerate(levels)}
-    normalized: List[Tuple[str, str, Optional[int]]] = []
-    for kind, text, level in blocks:
-        if kind not in {"list_ul", "list_ol"}:
-            normalized.append((kind, text, level))
+    normalized: List[ShapeBlock] = []
+    for block in blocks:
+        if block.kind not in {"list_ul", "list_ol"}:
+            normalized.append(block)
             continue
-        mapped = remap[int(level or 0)]
-        normalized.append((kind, text, mapped))
+        mapped = remap[int(block.level or 0)]
+        normalized.append(ShapeBlock(kind=block.kind, segments=block.segments, level=mapped))
     return normalized
 
 
 # shape 하나에서 텍스트 문단들을 추출해 중간 표현 블록 목록으로 바꾼다.
 # 각 문단을 plain text / unordered list / ordered list로 분류하고 필요한 level도 함께 기록한다.
-def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optional[int]]]:
-    blocks: List[Tuple[str, str, Optional[int]]] = []
+def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
+    blocks: List[ShapeBlock] = []
     for p in shape_elem.findall(".//p:txBody/a:p", NS):
-        text = paragraph_text(p)
-        if not text:
+        segments = parse_paragraph_segments(p)
+        if not segments:
+            continue
+        plain_text = paragraph_text(p)
+        if not plain_text and not any(segment.kind in {"math_inline", "math_block"} for segment in segments):
             continue
         p_pr = p.find("./a:pPr", NS)
         has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
         if paragraph_has_list_semantics(p):
             level = paragraph_level(p)
-            blocks.append(("list_ol" if has_auto_num else "list_ul", text, 0 if level is None else level))
+            blocks.append(
+                ShapeBlock(
+                    kind=("list_ol" if has_auto_num else "list_ul"),
+                    segments=segments,
+                    level=0 if level is None else level,
+                )
+            )
         else:
-            blocks.append(("text", text, None))
+            blocks.append(ShapeBlock(kind="text", segments=segments, level=None))
     return blocks
 
 
 # 중간 표현 블록 목록을 최종 Markdown 문자열로 렌더링한다.
 # 리스트 번호 재계산, 들여쓰기, 일반 문단 출력까지 한 번에 수행한다.
-def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str:
+def render_shape_blocks(blocks: Sequence[ShapeBlock]) -> str:
     if not blocks:
         return ""
     blocks = normalize_list_levels(promote_plain_text_to_list(blocks))
 
     rendered: List[str] = []
     ordered_counters: Dict[int, int] = {}
-    for idx, (kind, text, level) in enumerate(blocks):
-        if kind in {"list_ul", "list_ol"}:
-            indent = "  " * max(0, int(level or 0))
-            if kind == "list_ol":
+    for idx, block in enumerate(blocks):
+        text = block.markdown_text
+        if block.kind in {"list_ul", "list_ol"}:
+            indent = "  " * max(0, int(block.level or 0))
+            if block.kind == "list_ol":
                 clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
-                lvl = max(0, int(level or 0))
+                lvl = max(0, int(block.level or 0))
                 ordered_counters[lvl] = ordered_counters.get(lvl, 0) + 1
                 for deeper in [k for k in ordered_counters.keys() if k > lvl]:
                     del ordered_counters[deeper]
@@ -787,10 +911,10 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
                 rendered.append(f"{indent}- {text}")
             continue
 
-        prev_kind = blocks[idx - 1][0] if idx > 0 else None
-        next_kind = blocks[idx + 1][0] if idx + 1 < len(blocks) else None
+        prev_kind = blocks[idx - 1].kind if idx > 0 else None
+        next_kind = blocks[idx + 1].kind if idx + 1 < len(blocks) else None
         if prev_kind in {"list_ul", "list_ol"} and next_kind in {"list_ul", "list_ol"}:
-            prev_level = max(0, int(blocks[idx - 1][2] or 0))
+            prev_level = max(0, int(blocks[idx - 1].level or 0))
             indent = "  " * prev_level
             if prev_kind == "list_ol":
                 clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
@@ -1075,37 +1199,16 @@ def _slide_conversion_deps() -> SlideConversionDeps:
 # 슬라이드 XML 하나를 Markdown과 통계 정보로 변환하는 진입점이다.
 # 실제 본문 순회는 core 구현이 담당하고, 이 함수는 현재 모듈의 정책과 옵션을 연결한다.
 def convert_one_slide(
-    slide_xml: Path,
-    page_no: int,
-    source_slide_xml: Optional[Path] = None,
-    output_dir: Optional[Path] = None,
-    media_dir: Optional[Path] = None,
-    copied_media: Optional[Dict[str, Path]] = None,
-    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    *,
+    context: SlideConversionContext,
+    assets: SlideRenderAssets,
     strict_headings: bool = False,
 ) -> Tuple[str, SlideStats]:
     return convert_one_slide_core(
-        slide_xml,
-        page_no,
-        source_slide_xml=source_slide_xml,
-        output_dir=output_dir,
-        media_dir=media_dir,
-        copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        surya_debug_dir=None,
-        copied_surya_debug_images=None,
-        enable_image_table_pipeline=False,
+        context=context,
+        assets=assets,
         strict_headings=strict_headings,
         deps=_slide_conversion_deps(),
-        ns=NS,
     )
 
 
@@ -1349,10 +1452,13 @@ def _convert_package(
         try:
             if not ordered_slide_xml.exists():
                 raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
-            merged_md_text, stats = convert_one_slide(
-                ordered_slide_xml,
-                page_no,
+            context = SlideConversionContext(
+                slide_xml=ordered_slide_xml,
+                page_no=page_no,
+                ns=NS,
                 source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
+            )
+            assets = SlideRenderAssets(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
@@ -1361,6 +1467,10 @@ def _convert_package(
                 image_vlm_prompt=config.image_vlm_prompt,
                 image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
                 image_vlm_api_key_env=config.image_vlm_api_key_env,
+            )
+            merged_md_text, stats = convert_one_slide(
+                context=context,
+                assets=assets,
                 strict_headings=(config.reading_order == "xml" and config.strict),
             )
             if config.reading_order == "surya":
