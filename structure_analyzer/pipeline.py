@@ -6,12 +6,15 @@ from typing import Dict, List, Optional, Sequence
 import xml.etree.ElementTree as ET
 
 from .constants import NS, REORDERABLE
-from .extractor import extract_slide_objects
-from .headings import compute_heading_depths, heading_score, heading_threshold
-from .models import OrderContext, SlideObject
-from .ordering import (
+from .extractor import extract_slide_objects_xml
+from .structure import (
+    OrderContext,
+    SlideObject,
+    compute_heading_depths,
     build_order_context,
     bucket,
+    heading_score,
+    heading_threshold,
     order_objects,
     reason,
 )
@@ -138,7 +141,9 @@ def write_outputs(
     mode: str,
     strict: bool = False,
 ) -> Dict[str, object]:
-    objects, meta = extract_slide_objects(slide_xml, mode=mode, strict=strict)
+    objects, meta = extract_slide_objects_xml(slide_xml, strict=strict)
+    meta["mode"] = mode
+    meta["strict"] = strict
     context = build_order_context(objects)
     ordered = order_objects(objects, mode=mode)
 

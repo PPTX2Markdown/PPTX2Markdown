@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
 
+from fs_utils import remove_tree_robust
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,7 +75,7 @@ def run_structure_analysis_stage(
 
     ro_output = repo_root / "structure_analyzer" / "output" / package_name
     if ro_output.exists():
-        shutil.rmtree(ro_output)
+        remove_tree_robust(ro_output)
     ro_output.mkdir(parents=True, exist_ok=True)
 
     py_exe = resolve_python_executable(repo_root)

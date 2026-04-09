@@ -30,13 +30,22 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from omml2latex import convert_omml
+
 # REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from asset_utils import copy_debug_image_asset, copy_media_asset
-from converter_models import ConversionManifest, ConverterConfig, SlideStats
+from converter_models import (
+    ConversionManifest,
+    ConverterConfig,
+    ParagraphSegment,
+    PreparedPackage,
+    ShapeBlock,
+    SlideStats,
+)
 from reading_order_pipeline import (
     prepare_surya_structure_root,
     resolve_surya_structure_dir,
@@ -53,7 +62,12 @@ from image_pipeline.service import (
     normalize_provider,
 )
 from image_table_pipeline_adapter import convert_picture_to_table_markdown
-from slide_converter import SlideConversionDeps, convert_one_slide as convert_one_slide_core
+from slide_converter import (
+    SlideConversionContext,
+    SlideConversionDeps,
+    SlideRenderAssets,
+    convert_one_slide as convert_one_slide_core,
+)
 from table_overlay import (
     collect_table_overlay_pictures as collect_table_overlay_pictures_core,
     convert_table_to_markdown as convert_table_to_markdown_core,
@@ -64,6 +78,7 @@ from table_overlay import (
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "dgm": "http://schemas.openxmlformats.org/drawingml/2006/diagram",
+    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
     "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
@@ -130,45 +145,6 @@ def normalize_text(s: str) -> str:
     return s
 
 
-# 실제로 처리할 PPTX 패키지 디렉터리 목록을 결정한다.
-# 사용자가 특정 입력을 넘기면 그 후보만 찾고, 아무 입력이 없으면 기본 target_slides 아래의 모든 패키지를 스캔한다.
-# 마지막에는 ppt/slides가 존재하는 유효 패키지만 남기고 중복도 제거한다.
-def pick_packages(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path]:
-    pkgs: List[Path] = []
-    if raw_inputs:
-        for item in raw_inputs:
-            p = Path(item)
-            candidates = [p, target_dir / item]
-            picked = None
-            for c in candidates:
-                if c.exists() and c.is_dir():
-                    picked = c.resolve()
-                    break
-            if picked is not None:
-                pkgs.append(picked)
-    else:
-        for p in sorted(target_dir.iterdir(), key=lambda x: natural_key(x.name)):
-            if p.is_dir():
-                pkgs.append(p.resolve())
-
-    out: List[Path] = []
-    uniq: Dict[str, Path] = {}
-    for pkg in pkgs:
-        slides_dir = pkg / "ppt" / "slides"
-        if slides_dir.exists() and slides_dir.is_dir():
-            uniq[str(pkg)] = pkg
-    for _, v in uniq.items():
-        out.append(v)
-    return out
-
-
-# 파일명이나 패키지명으로 쓰기 안전한 문자열로 정규화한다.
-# PPTX stem에 공백이나 특수문자가 있어도 target_slides 아래 디렉터리명으로 안전하게 쓰기 위한 처리다.
-def sanitize_package_name(name: str) -> str:
-    cleaned = re.sub(r"[^0-9A-Za-z._-]+", "_", name).strip("._")
-    return cleaned or "package"
-
-
 # 이미 추출된 패키지 디렉터리가 현재 PPTX 원본과 동일한 입력에서 만들어졌는지 검사한다.
 # .pptx_source.json 안의 경로/크기/mtime 정보를 원본 파일의 현재 상태와 비교해 캐시 재사용 가능 여부를 판단한다.
 def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
@@ -210,14 +186,15 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 # 기존 추출 결과가 같은 원본에서 생성된 경우 재사용하고, 아니라면 필요 시 삭제 후 다시 풀며,
 # 추적용 marker 파일과 target_pptx 쪽의 staged 복사본도 함께 맞춰 둔다.
 def extract_pptx_to_target(
-    pptx_path: Path,
+    package: PreparedPackage,
     extraction_root: Path,
     staged_pptx_root: Path,
     allow_replace_unmanaged: bool = False,
-) -> Path:
+) -> PreparedPackage:
+    pptx_path = package.source_pptx_path
     stat = pptx_path.stat()
     extraction_root.mkdir(parents=True, exist_ok=True)
-    pkg_name = sanitize_package_name(pptx_path.stem)
+    pkg_name = package.package_dir_name
     pkg_dir = extraction_root / pkg_name
 
     # Raw extraction target should be a real managed directory, never a symlink.
@@ -247,7 +224,7 @@ def extract_pptx_to_target(
         staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
         if staged_pptx.resolve() != pptx_path.resolve():
             shutil.copy2(pptx_path, staged_pptx)
-        return pkg_dir.resolve()
+        return package.with_package_dir(pkg_dir.resolve())
 
     marker = pkg_dir / ".pptx_source.json"
     if pkg_dir.exists():
@@ -286,7 +263,7 @@ def extract_pptx_to_target(
     if staged_pptx.resolve() != pptx_path.resolve():
         shutil.copy2(pptx_path, staged_pptx)
 
-    return pkg_dir.resolve()
+    return package.with_package_dir(pkg_dir.resolve())
 
 
 # Office가 임시로 만드는 잠금 파일인지 판별한다.
@@ -336,11 +313,11 @@ def prepare_package_inputs(
     cwd: Path,
     raw_inputs: Sequence[str],
     force_extract: bool = False,
-) -> Tuple[List[str], List[Dict[str, object]]]:
+) -> Tuple[List[PreparedPackage], List[Dict[str, object]]]:
     if not raw_inputs:
-        return list(raw_inputs), []
+        return [], []
 
-    prepared: List[str] = []
+    prepared: List[PreparedPackage] = []
     missing_inputs: List[Dict[str, object]] = []
     extraction_root = default_target_dir(cwd)
     staged_pptx_root = default_pptx_input_dir(cwd)
@@ -355,13 +332,17 @@ def prepare_package_inputs(
                 }
             )
             continue
-        pkg_dir = extract_pptx_to_target(
-            picked_file,
+        package = PreparedPackage(
+            package_dir=extraction_root / picked_file.stem,
+            source_pptx_path=picked_file,
+        )
+        package = extract_pptx_to_target(
+            package,
             extraction_root,
             staged_pptx_root=staged_pptx_root,
             allow_replace_unmanaged=force_extract,
         )
-        prepared.append(str(pkg_dir))
+        prepared.append(package)
     return prepared, missing_inputs
 
 
@@ -655,7 +636,13 @@ def convert_picture_to_markdown(
     return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
 
 
-# 이미지 경로를 Markdown 이미지 문법으로 렌더링한다.
+# 이미지 경로를 커스텀 이미지 태그 문자열로 렌더링한다.
+# downstream 파서가 기대하는 [img(src="...")] 포맷으로 통일한다.
+def render_image_tag(path: str) -> str:
+    return f'[img(src="{path}")]'
+
+
+# 이미지 경로를 커스텀 이미지 태그로 렌더링한다.
 # 필요하면 media 디렉터리로 복사하고, 이미지 VLM이 켜져 있으면
 # 단순 링크 대신 생성된 Markdown 설명을 우선 사용한다.
 def format_markdown_image(
@@ -689,21 +676,121 @@ def format_markdown_image(
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
         relative_path = relativize_markdown_path(copied_path, output_dir)
-        return f"![{alt_text}]({relative_path})", image_warn, unavailable, False, skipped_no_markdown
+        return render_image_tag(relative_path), image_warn, unavailable, False, skipped_no_markdown
 
     copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
     relative_path = relativize_markdown_path(copied_path, output_dir)
-    return f"![{alt_text}]({relative_path})", None, False, False, False
+    return render_image_tag(relative_path), None, False, False, False
 
 
-# 문단 XML에서 사람이 읽을 텍스트만 추출해 하나의 문자열로 합친다.
-# run 단위로 흩어진 텍스트를 모으고 공백을 정리해 이후 리스트/제목 판정의 입력으로 사용한다.
+def _sanitize_inline_latex(latex: str) -> str:
+    sanitized = " ".join(part.strip() for part in latex.splitlines() if part.strip())
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized.strip("$").strip()
+
+
+def _sanitize_block_latex(latex: str) -> str:
+    sanitized = latex.strip()
+    if sanitized.startswith("$$") and sanitized.endswith("$$"):
+        sanitized = sanitized[2:-2].strip()
+    sanitized = sanitized.strip("$").strip()
+    return sanitized
+
+
+def _build_inline_math_segment(math_elem: ET.Element) -> ParagraphSegment:
+    latex = _sanitize_inline_latex(convert_omml(math_elem))
+    if not latex:
+        raise ValueError("empty latex")
+    return ParagraphSegment(kind="math_inline", text=f"${latex}$")
+
+
+def _build_block_math_segment(math_elem: ET.Element) -> ParagraphSegment:
+    latex = _sanitize_block_latex(convert_omml(math_elem))
+    if not latex:
+        raise ValueError("empty latex")
+    return ParagraphSegment(kind="math_block", text=f"$$\n{latex}\n$$")
+
+
+def _extract_run_text(run_elem: ET.Element) -> str:
+    texts = [node.text or "" for node in run_elem.findall(".//a:t", NS) if (node.text or "").strip()]
+    return normalize_text(" ".join(texts))
+
+
+def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment]) -> bool:
+    container_tag = local_name(container.tag)
+    if container_tag == "oMath":
+        try:
+            segments.append(_build_inline_math_segment(container))
+        except Exception:
+            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
+            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+        return True
+    if container_tag == "oMathPara":
+        try:
+            segments.append(_build_block_math_segment(container))
+        except Exception:
+            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
+            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+        return True
+
+    appended = False
+    for math_elem in list(container):
+        tag = local_name(math_elem.tag)
+        if tag == "oMath":
+            appended = True
+            try:
+                segments.append(_build_inline_math_segment(math_elem))
+            except Exception:
+                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
+                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            continue
+        if tag == "oMathPara":
+            appended = True
+            try:
+                segments.append(_build_block_math_segment(math_elem))
+            except Exception:
+                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
+                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            continue
+    return appended
+
+
+def parse_paragraph_segments(paragraph: ET.Element) -> List[ParagraphSegment]:
+    segments: List[ParagraphSegment] = []
+    for child in list(paragraph):
+        tag = local_name(child.tag)
+        if tag in {"r", "fld"}:
+            text = _extract_run_text(child)
+            if text:
+                segments.append(ParagraphSegment(kind="text", text=text))
+            continue
+        if tag == "br":
+            segments.append(ParagraphSegment(kind="break", text=""))
+            continue
+        if tag == "m":
+            if _append_math_segments(child, segments):
+                continue
+        if tag == "oMath":
+            _append_math_segments(child, segments)
+            continue
+        if tag == "oMathPara":
+            _append_math_segments(child, segments)
+            continue
+    return segments
+
+
 def paragraph_text(paragraph: ET.Element) -> str:
-    runs = []
-    for t in paragraph.findall(".//a:t", NS):
-        if t.text:
-            runs.append(t.text.strip())
-    return normalize_text(" ".join(x for x in runs if x))
+    parts: List[str] = []
+    for segment in parse_paragraph_segments(paragraph):
+        if segment.kind == "break":
+            continue
+        plain = segment.text
+        if segment.kind in {"math_inline", "math_block"}:
+            plain = plain.replace("$", " ")
+        normalized = normalize_text(plain)
+        if normalized:
+            parts.append(normalized)
+    return normalize_text(" ".join(parts))
 
 
 # 문단의 목록 레벨(lvl)을 읽어 Markdown 들여쓰기 깊이 계산에 쓴다.
@@ -739,74 +826,84 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
 # shape 내부 블록들 중 짧은 일반 텍스트를 주변 리스트 문맥에 맞춰 리스트 항목으로 승격한다.
 # PowerPoint가 시각적으로만 맞춰 둔 문단을 Markdown 리스트 구조로 더 자연스럽게 복원하기 위한 보정이다.
 def promote_plain_text_to_list(
-    blocks: Sequence[Tuple[str, str, Optional[int]]],
-) -> List[Tuple[str, str, Optional[int]]]:
-    if not any(kind in {"list_ul", "list_ol"} for kind, _, _ in blocks):
+    blocks: Sequence[ShapeBlock],
+) -> List[ShapeBlock]:
+    if not any(block.kind in {"list_ul", "list_ol"} for block in blocks):
         return list(blocks)
 
-    text_blocks = [(idx, text) for idx, (kind, text, _) in enumerate(blocks) if kind == "text"]
+    text_blocks = [(idx, block.plain_text) for idx, block in enumerate(blocks) if block.kind == "text"]
     if len(text_blocks) < 3:
         return list(blocks)
 
-    first_list_kind = next((kind for kind, _, _ in blocks if kind in {"list_ul", "list_ol"}), "list_ul")
+    first_list_kind = next((block.kind for block in blocks if block.kind in {"list_ul", "list_ol"}), "list_ul")
     promoted = list(blocks)
     for idx, text in text_blocks:
         if len(text) > 80 or text.endswith((".", ":")):
             continue
-        promoted[idx] = (first_list_kind, text, 0)
+        promoted[idx] = ShapeBlock(kind=first_list_kind, segments=promoted[idx].segments, level=0)
     return promoted
 
 
 # PowerPoint의 불연속 목록 레벨을 0,1,2... 형태의 연속 깊이로 정규화한다.
 # 원본 lvl 값이 듬성듬성해도 Markdown 렌더링 들여쓰기가 과도하게 깊어지지 않도록 막는다.
-def normalize_list_levels(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> List[Tuple[str, str, Optional[int]]]:
-    levels = sorted({int(level or 0) for kind, _, level in blocks if kind in {"list_ul", "list_ol"}})
+def normalize_list_levels(blocks: Sequence[ShapeBlock]) -> List[ShapeBlock]:
+    levels = sorted({int(block.level or 0) for block in blocks if block.kind in {"list_ul", "list_ol"}})
     if not levels:
         return list(blocks)
     remap = {level: idx for idx, level in enumerate(levels)}
-    normalized: List[Tuple[str, str, Optional[int]]] = []
-    for kind, text, level in blocks:
-        if kind not in {"list_ul", "list_ol"}:
-            normalized.append((kind, text, level))
+    normalized: List[ShapeBlock] = []
+    for block in blocks:
+        if block.kind not in {"list_ul", "list_ol"}:
+            normalized.append(block)
             continue
-        mapped = remap[int(level or 0)]
-        normalized.append((kind, text, mapped))
+        mapped = remap[int(block.level or 0)]
+        normalized.append(ShapeBlock(kind=block.kind, segments=block.segments, level=mapped))
     return normalized
 
 
 # shape 하나에서 텍스트 문단들을 추출해 중간 표현 블록 목록으로 바꾼다.
 # 각 문단을 plain text / unordered list / ordered list로 분류하고 필요한 level도 함께 기록한다.
-def extract_shape_blocks(shape_elem: ET.Element) -> List[Tuple[str, str, Optional[int]]]:
-    blocks: List[Tuple[str, str, Optional[int]]] = []
+def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
+    blocks: List[ShapeBlock] = []
     for p in shape_elem.findall(".//p:txBody/a:p", NS):
-        text = paragraph_text(p)
-        if not text:
+        segments = parse_paragraph_segments(p)
+        if not segments:
+            continue
+        plain_text = paragraph_text(p)
+        if not plain_text and not any(segment.kind in {"math_inline", "math_block"} for segment in segments):
             continue
         p_pr = p.find("./a:pPr", NS)
         has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
         if paragraph_has_list_semantics(p):
             level = paragraph_level(p)
-            blocks.append(("list_ol" if has_auto_num else "list_ul", text, 0 if level is None else level))
+            blocks.append(
+                ShapeBlock(
+                    kind=("list_ol" if has_auto_num else "list_ul"),
+                    segments=segments,
+                    level=0 if level is None else level,
+                )
+            )
         else:
-            blocks.append(("text", text, None))
+            blocks.append(ShapeBlock(kind="text", segments=segments, level=None))
     return blocks
 
 
 # 중간 표현 블록 목록을 최종 Markdown 문자열로 렌더링한다.
 # 리스트 번호 재계산, 들여쓰기, 일반 문단 출력까지 한 번에 수행한다.
-def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str:
+def render_shape_blocks(blocks: Sequence[ShapeBlock]) -> str:
     if not blocks:
         return ""
     blocks = normalize_list_levels(promote_plain_text_to_list(blocks))
 
     rendered: List[str] = []
     ordered_counters: Dict[int, int] = {}
-    for idx, (kind, text, level) in enumerate(blocks):
-        if kind in {"list_ul", "list_ol"}:
-            indent = "  " * max(0, int(level or 0))
-            if kind == "list_ol":
+    for idx, block in enumerate(blocks):
+        text = block.markdown_text
+        if block.kind in {"list_ul", "list_ol"}:
+            indent = "  " * max(0, int(block.level or 0))
+            if block.kind == "list_ol":
                 clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
-                lvl = max(0, int(level or 0))
+                lvl = max(0, int(block.level or 0))
                 ordered_counters[lvl] = ordered_counters.get(lvl, 0) + 1
                 for deeper in [k for k in ordered_counters.keys() if k > lvl]:
                     del ordered_counters[deeper]
@@ -815,10 +912,10 @@ def render_shape_blocks(blocks: Sequence[Tuple[str, str, Optional[int]]]) -> str
                 rendered.append(f"{indent}- {text}")
             continue
 
-        prev_kind = blocks[idx - 1][0] if idx > 0 else None
-        next_kind = blocks[idx + 1][0] if idx + 1 < len(blocks) else None
+        prev_kind = blocks[idx - 1].kind if idx > 0 else None
+        next_kind = blocks[idx + 1].kind if idx + 1 < len(blocks) else None
         if prev_kind in {"list_ul", "list_ol"} and next_kind in {"list_ul", "list_ol"}:
-            prev_level = max(0, int(blocks[idx - 1][2] or 0))
+            prev_level = max(0, int(blocks[idx - 1].level or 0))
             indent = "  " * prev_level
             if prev_kind == "list_ol":
                 clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
@@ -944,7 +1041,7 @@ def shape_id_of(elem: ET.Element) -> str:
     return shape_id_of_core(elem, NS)
 
 
-# 테이블 오버레이 이미지를 Markdown 링크 문자열로 바꾼다.
+# 테이블 오버레이 이미지를 커스텀 이미지 태그 문자열로 바꾼다.
 # 필요 시 media 디렉터리로 복사하고, 문서 출력 위치 기준 상대경로로 다시 쓴다.
 def overlay_link_text(
     path: str,
@@ -956,7 +1053,7 @@ def overlay_link_text(
         return path
     path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
     path = relativize_markdown_path(path, output_dir)
-    return f"[image]({path})"
+    return render_image_tag(path)
 
 
 # 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 출처 정보를 덧붙인다.
@@ -1103,37 +1200,16 @@ def _slide_conversion_deps() -> SlideConversionDeps:
 # 슬라이드 XML 하나를 Markdown과 통계 정보로 변환하는 진입점이다.
 # 실제 본문 순회는 core 구현이 담당하고, 이 함수는 현재 모듈의 정책과 옵션을 연결한다.
 def convert_one_slide(
-    slide_xml: Path,
-    page_no: int,
-    source_slide_xml: Optional[Path] = None,
-    output_dir: Optional[Path] = None,
-    media_dir: Optional[Path] = None,
-    copied_media: Optional[Dict[str, Path]] = None,
-    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    *,
+    context: SlideConversionContext,
+    assets: SlideRenderAssets,
     strict_headings: bool = False,
 ) -> Tuple[str, SlideStats]:
     return convert_one_slide_core(
-        slide_xml,
-        page_no,
-        source_slide_xml=source_slide_xml,
-        output_dir=output_dir,
-        media_dir=media_dir,
-        copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        surya_debug_dir=None,
-        copied_surya_debug_images=None,
-        enable_image_table_pipeline=False,
+        context=context,
+        assets=assets,
         strict_headings=strict_headings,
         deps=_slide_conversion_deps(),
-        ns=NS,
     )
 
 
@@ -1208,16 +1284,13 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 # 파싱된 CLI 인자를 내부 설정 모델로 변환한다.
-# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을
-# 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
+# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
-    repo_root = Path(__file__).resolve().parent.parent
-    main_converter_root = repo_root / "main_converter"
+    main_converter_root = REPO_ROOT/ "main_converter"
     return ConverterConfig(
         cwd=main_converter_root,
-        repo_root=repo_root,
+        repo_root=REPO_ROOT,
         output_dir=main_converter_root / "output" / args.reading_order,
-        debug_output_dir=main_converter_root / "output" / args.reading_order,
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
@@ -1233,7 +1306,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
 # 실제 처리에 사용할 입력 패키지 경로 목록을 확정한다.
 # 사용자가 직접 넘긴 입력이 있으면 그것만 검증/추출하고,
 # 없으면 target_pptx 아래 파일들을 자동 탐색해서 동일한 형식으로 준비한다.
-def _resolve_prepared_inputs(config: ConverterConfig) -> List[str]:
+def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
     # 누락된 입력에 대해 어떤 경로들을 확인했는지 자세히 로그로 남긴다.
     def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
         if not missing_inputs:
@@ -1296,16 +1369,15 @@ def _append_package_stage_failure(
     manifest.packages.append(pkg_row)
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
-
-# 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
-# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환,
-# 패키지 단위 result.md 생성과 manifest 누적까지 담당한다.
+# PPTX를 압축 해제한 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
+# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환, 패키지 단위 Markdown 생성과 manifest 누적까지 담당한다.
 def _convert_package(
     config: ConverterConfig,
-    pkg: Path,
+    package: PreparedPackage,
     surya_structure_root: Optional[Path],
     manifest: ConversionManifest,
 ) -> None:
+    pkg = package.package_dir
     pkg_name = pkg.name
     slides_dir = pkg / "ppt" / "slides"
     slide_xmls = sorted(
@@ -1313,6 +1385,7 @@ def _convert_package(
         key=lambda p: natural_key(p.name),
     )
     pkg_out = config.output_dir / pkg_name
+    output_md_path = package.output_markdown_path(config.output_dir)
     media_dir = pkg_out / "media"
     copied_media: Dict[str, Path] = {}
     pkg_out.mkdir(parents=True, exist_ok=True)
@@ -1321,7 +1394,7 @@ def _convert_package(
         "package": str(pkg),
         "name": pkg_name,
         "slides": [],
-        "result_md": str(pkg_out / "result.md"),
+        "result_md": str(output_md_path),
         "pipeline_mode": config.reading_order,
         "image_vlm_provider": config.image_vlm_provider,
         "image_vlm_model": config.image_vlm_model,
@@ -1380,10 +1453,13 @@ def _convert_package(
         try:
             if not ordered_slide_xml.exists():
                 raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
-            merged_md_text, stats = convert_one_slide(
-                ordered_slide_xml,
-                page_no,
+            context = SlideConversionContext(
+                slide_xml=ordered_slide_xml,
+                page_no=page_no,
+                ns=NS,
                 source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
+            )
+            assets = SlideRenderAssets(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
@@ -1392,6 +1468,10 @@ def _convert_package(
                 image_vlm_prompt=config.image_vlm_prompt,
                 image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
                 image_vlm_api_key_env=config.image_vlm_api_key_env,
+            )
+            merged_md_text, stats = convert_one_slide(
+                context=context,
+                assets=assets,
                 strict_headings=(config.reading_order == "xml" and config.strict),
             )
             if config.reading_order == "surya":
@@ -1426,8 +1506,7 @@ def _convert_package(
     merged = "\n\n".join(all_chunks).strip()
     if merged:
         merged += "\n"
-    merged_path = pkg_out / "result.md"
-    merged_path.write_text(merged, encoding="utf-8")
+    output_md_path.write_text(merged, encoding="utf-8")
     manifest.summary.processed_packages += 1
     manifest.packages.append(pkg_row)
 
@@ -1440,7 +1519,6 @@ def main() -> int:
     _configure_logging(verbose=bool(getattr(args, "verbose", False)))
     config = _build_config(args)
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    config.debug_output_dir.mkdir(parents=True, exist_ok=True)
 
     if str(config.repo_root) not in sys.path:
         sys.path.insert(0, str(config.repo_root))
@@ -1451,12 +1529,11 @@ def main() -> int:
     if not prepared_inputs:
         return 0
 
-    target_dir = default_target_dir(config.cwd)
-    packages = pick_packages(target_dir, prepared_inputs)
+    packages = prepared_inputs
     if not packages:
         logger.info("No valid PPTX package directories found.")
         logger.info("Checked default directory:")
-        logger.info("- %s", target_dir.resolve())
+        logger.info("- %s", default_target_dir(config.cwd).resolve())
         return 0
 
     surya_structure_root: Optional[Path] = None
@@ -1472,6 +1549,8 @@ def main() -> int:
         )
 
     manifest = ConversionManifest()
+
+    # 각 패키지에 대하여 일괄적으로 메인 컨버터 로직인 _convert_package를 수행한다.
     for pkg in packages:
         _convert_package(config, pkg, surya_structure_root, manifest)
 

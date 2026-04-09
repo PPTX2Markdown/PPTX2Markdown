@@ -15,7 +15,7 @@ from heading_rules import (
     strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
 )
 
-from converter_models import SlideStats
+from converter_models import ShapeBlock, SlideStats
 
 
 @dataclass
@@ -35,8 +35,8 @@ class SlideConversionDeps:
         [ET.Element, Path, Dict[str, str], Optional[Path]],
         Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int],
     ]
-    extract_shape_blocks: Callable[[ET.Element], List[Tuple[str, str, Optional[int]]]]
-    render_shape_blocks: Callable[[Sequence[Tuple[str, str, Optional[int]]]], str]
+    extract_shape_blocks: Callable[[ET.Element], List[ShapeBlock]]
+    render_shape_blocks: Callable[[Sequence[ShapeBlock]], str]
     split_triangle_bullets: Callable[[str], List[str]]
     normalize_text: Callable[[str], str]
     shape_id_of: Callable[[ET.Element], str]
@@ -53,6 +53,51 @@ class SlideConversionDeps:
     extract_diagram_texts: Callable[[Path], List[str]]
     format_diagram_as_markdown: Callable[[Sequence[str]], Optional[str]]
     normalize_single_heading_to_h1: Callable[[List[str]], List[str]]
+
+
+@dataclass
+class SlideRenderAssets:
+    output_dir: Optional[Path] = None
+    media_dir: Optional[Path] = None
+    copied_media: Optional[Dict[str, Path]] = None
+    surya_debug_dir: Optional[Path] = None
+    copied_surya_debug_images: Optional[Dict[str, Path]] = None
+    image_vlm_provider: str = "local"
+    image_vlm_model: Optional[str] = None
+    image_vlm_prompt: str = ""
+    image_vlm_max_new_tokens: int = 1024
+    image_vlm_api_key_env: str = "GEMINI_API_KEY"
+    enable_image_table_pipeline: bool = False
+
+
+@dataclass
+class SlideConversionContext:
+    slide_xml: Path
+    page_no: int
+    ns: Dict[str, str]
+    source_slide_xml: Optional[Path] = None
+    rels_path: Optional[Path] = None
+    rels_map: Dict[str, str] = field(default_factory=dict)
+    heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    table_overlay_map: Dict[str, List[Dict[str, object]]] = field(default_factory=dict)
+    consumed_picture_ids: set[str] = field(default_factory=set)
+
+
+def _iter_sp_tree_children(sp_tree: ET.Element, deps: SlideConversionDeps) -> List[ET.Element]:
+    expanded: List[ET.Element] = []
+    for child in list(sp_tree):
+        tag = deps.local_name(child.tag)
+        if tag != "AlternateContent":
+            expanded.append(child)
+            continue
+
+        selected = child.find("./{*}Choice")
+        if selected is None:
+            selected = child.find("./{*}Fallback")
+        if selected is None:
+            continue
+        expanded.extend(list(selected))
+    return expanded
 
 
 def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConversionDeps) -> None:
@@ -73,32 +118,45 @@ def _handle_text_shape_block(
     child: ET.Element,
     *,
     lines: List[str],
-    heading_hints: Dict[str, Dict[str, object]],
     heading_policy: HeadingPolicy,
     strict_headings: bool,
     state: SlideRenderState,
     stats: SlideStats,
+    context: SlideConversionContext,
     deps: SlideConversionDeps,
-    ns: Dict[str, str],
 ) -> None:
-    ph = child.find(".//p:ph", ns)
+    ph = child.find(".//p:ph", context.ns)
     ph_type = ph.attrib.get("type") if ph is not None else None
     if ph_type in {"sldNum", "ftr", "dt"}:
         stats.skipped_blocks += 1
         return
 
     shape_blocks = deps.extract_shape_blocks(child)
-    has_list_semantics = any(kind in {"list_ul", "list_ol"} for kind, _, _ in shape_blocks)
+    has_list_semantics = any(block.kind in {"list_ul", "list_ol"} for block in shape_blocks)
+    has_math_shape = any(block.has_math for block in shape_blocks)
     text = deps.render_shape_blocks(shape_blocks)
-    if not text:
+    plain_text = " ".join(block.plain_text for block in shape_blocks if block.plain_text).strip()
+    if not text or not plain_text:
         stats.skipped_blocks += 1
         return
-    if re.fullmatch(r"\d+", text):
+    if re.fullmatch(r"\d+", plain_text):
         stats.skipped_blocks += 1
         return
 
+    if has_math_shape:
+        stats.math_blocks += 1
+    for block in shape_blocks:
+        for segment in block.segments:
+            if segment.kind == "math_inline":
+                stats.inline_math_segments += 1
+            elif segment.kind == "math_block":
+                stats.block_math_segments += 1
+            elif segment.kind == "math_error":
+                stats.math_conversion_failures += 1
+                stats.warnings.append("OMML to LaTeX conversion failed; used math fallback text")
+
     sid = deps.shape_id_of(child)
-    hint = heading_hints.get(sid, {})
+    hint = context.heading_hints.get(sid, {})
     depth = hint.get("heading_depth_hint")
     score = float(hint.get("heading_score", 0.0))
     is_candidate = bool(hint.get("is_heading_candidate", False))
@@ -114,15 +172,23 @@ def _handle_text_shape_block(
         is_candidate = strict_depth is not None
         depth = strict_depth
         score = 1.0 if is_candidate else 0.0
+        if has_math_shape:
+            is_candidate = False
+            depth = None
+            score = 0.0
     else:
         non_strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
         non_strict_depth = hr_strict_heading_depth_from_placeholder(non_strict_ph_type)
-        if non_strict_depth is not None:
+        if not has_math_shape and non_strict_depth is not None:
             depth = non_strict_depth
             score = max(score, 0.9)
             is_candidate = True
-        if not is_candidate:
-            fb_depth = hr_infer_heading_depth_fallback(text, state.text_block_index, font_pt=font_pt)
+        if has_math_shape:
+            is_candidate = False
+            depth = None
+            score = 0.0
+        if not has_math_shape and not is_candidate:
+            fb_depth = hr_infer_heading_depth_fallback(plain_text, state.text_block_index, font_pt=font_pt)
             if fb_depth is not None:
                 depth = fb_depth
                 score = 0.8
@@ -132,14 +198,14 @@ def _handle_text_shape_block(
     if not strict_headings:
         if has_list_semantics:
             is_candidate = False
-        if hr_looks_like_multi_numbered_items(rendered):
+        if hr_looks_like_multi_numbered_items(plain_text):
             is_candidate = False
-        if hr_is_body_like_long_sentence(rendered):
+        if hr_is_body_like_long_sentence(plain_text):
             is_candidate = False
 
     heading_threshold = heading_policy.threshold
     if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
-        heading_text = text if strict_headings else hr_clean_heading_text_for_render(text)
+        heading_text = plain_text if strict_headings else hr_clean_heading_text_for_render(plain_text)
         key = deps.normalize_text(heading_text)
         if key not in state.used_headings:
             rendered = f"{'#' * depth} {heading_text}"
@@ -157,48 +223,35 @@ def _handle_picture_block(
     child: ET.Element,
     *,
     lines: List[str],
-    rels_map: Dict[str, str],
-    rels_path: Optional[Path],
-    consumed_picture_ids: set[str],
-    output_dir: Optional[Path],
-    media_dir: Optional[Path],
-    copied_media: Optional[Dict[str, Path]],
-    image_vlm_provider: str,
-    image_vlm_model: Optional[str],
-    image_vlm_prompt: str,
-    image_vlm_max_new_tokens: int,
-    image_vlm_api_key_env: str,
-    surya_debug_dir: Optional[Path],
-    copied_surya_debug_images: Optional[Dict[str, Path]],
-    enable_image_table_pipeline: bool,
     state: SlideRenderState,
     stats: SlideStats,
+    context: SlideConversionContext,
+    assets: SlideRenderAssets,
     deps: SlideConversionDeps,
-    ns: Dict[str, str],
 ) -> None:
     sid = deps.shape_id_of(child)
-    if sid and sid in consumed_picture_ids:
+    if sid and sid in context.consumed_picture_ids:
         stats.skipped_blocks += 1
         return
 
-    blip = child.find(".//a:blip", ns)
-    embed = blip.attrib.get(f"{{{ns['r']}}}embed") if blip is not None else None
-    img_path, warn = deps.resolve_image_path(rels_map, rels_path, embed)
+    blip = child.find(".//a:blip", context.ns)
+    embed = blip.attrib.get(f"{{{context.ns['r']}}}embed") if blip is not None else None
+    img_path, warn = deps.resolve_image_path(context.rels_map, context.rels_path, embed)
     if warn:
         stats.unresolved_images += 1
         stats.warnings.append(warn)
     else:
         stats.resolved_images += 1
 
-    if enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
+    if assets.enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
         table_md, table_warn, unavailable, table_result = deps.convert_picture_to_table_markdown(img_path)
         if isinstance(table_result, dict) and (
             bool(table_result.get("surya_attempted")) or str(table_result.get("status", "")) == "table_skipped"
         ):
             deps.copy_debug_image_asset(
                 img_path,
-                debug_dir=surya_debug_dir,
-                copied_debug_images=copied_surya_debug_images,
+                debug_dir=assets.surya_debug_dir,
+                copied_debug_images=assets.copied_surya_debug_images,
             )
         if table_md is not None:
             lines.append(table_md.strip())
@@ -217,14 +270,14 @@ def _handle_picture_block(
 
     rendered_image, image_warn, unavailable, _, _ = deps.format_markdown_image(
         img_path,
-        output_dir=output_dir,
-        media_dir=media_dir,
-        copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
+        output_dir=assets.output_dir,
+        media_dir=assets.media_dir,
+        copied_media=assets.copied_media,
+        image_vlm_provider=assets.image_vlm_provider,
+        image_vlm_model=assets.image_vlm_model,
+        image_vlm_prompt=assets.image_vlm_prompt,
+        image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
+        image_vlm_api_key_env=assets.image_vlm_api_key_env,
     )
     if image_warn:
         if unavailable:
@@ -249,34 +302,25 @@ def _handle_graphic_frame_block(
     child: ET.Element,
     *,
     lines: List[str],
-    table_overlay_map: Dict[str, List[Dict[str, object]]],
-    rels_path: Optional[Path],
-    rels_map: Dict[str, str],
-    output_dir: Optional[Path],
-    media_dir: Optional[Path],
-    copied_media: Optional[Dict[str, Path]],
-    image_vlm_provider: str,
-    image_vlm_model: Optional[str],
-    image_vlm_prompt: str,
-    image_vlm_max_new_tokens: int,
-    image_vlm_api_key_env: str,
     state: SlideRenderState,
     stats: SlideStats,
+    context: SlideConversionContext,
+    assets: SlideRenderAssets,
     deps: SlideConversionDeps,
 ) -> None:
     table_md, err = deps.convert_table_to_markdown(
         child,
-        overlays=table_overlay_map.get(deps.shape_id_of(child), []),
-        output_dir=output_dir,
-        media_dir=media_dir,
-        copied_media=copied_media,
-        rels_path=rels_path,
-        rels_map=rels_map,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
+        overlays=context.table_overlay_map.get(deps.shape_id_of(child), []),
+        output_dir=assets.output_dir,
+        media_dir=assets.media_dir,
+        copied_media=assets.copied_media,
+        rels_path=context.rels_path,
+        rels_map=context.rels_map,
+        image_vlm_provider=assets.image_vlm_provider,
+        image_vlm_model=assets.image_vlm_model,
+        image_vlm_prompt=assets.image_vlm_prompt,
+        image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
+        image_vlm_api_key_env=assets.image_vlm_api_key_env,
     )
     if table_md is not None:
         lines.append(table_md.strip())
@@ -286,7 +330,7 @@ def _handle_graphic_frame_block(
 
     gf_kind = deps.graphic_frame_kind(child)
     if gf_kind == "diagram":
-        diagram_path = deps.diagram_data_path(child, rels_path, rels_map)
+        diagram_path = deps.diagram_data_path(child, context.rels_path, context.rels_map)
         diagram_text = deps.format_diagram_as_markdown(
             deps.extract_diagram_texts(diagram_path) if diagram_path else []
         )
@@ -310,49 +354,41 @@ def _handle_graphic_frame_block(
 
 
 def convert_one_slide(
-    slide_xml: Path,
-    page_no: int,
     *,
-    source_slide_xml: Optional[Path] = None,
-    output_dir: Optional[Path] = None,
-    media_dir: Optional[Path] = None,
-    copied_media: Optional[Dict[str, Path]] = None,
-    image_vlm_provider: str = "local",
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = "",
-    image_vlm_max_new_tokens: int = 1024,
-    image_vlm_api_key_env: str = "GEMINI_API_KEY",
-    surya_debug_dir: Optional[Path] = None,
-    copied_surya_debug_images: Optional[Dict[str, Path]] = None,
-    enable_image_table_pipeline: bool = False,
+    context: SlideConversionContext,
+    assets: SlideRenderAssets,
     strict_headings: bool = False,
     deps: SlideConversionDeps,
-    ns: Dict[str, str],
 ) -> Tuple[str, SlideStats]:
     heading_policy = HeadingPolicy(strict=strict_headings)
-    root = ET.parse(slide_xml).getroot()
-    sp_tree = root.find("p:cSld/p:spTree", ns)
+
+    root = ET.parse(context.slide_xml).getroot()
+    sp_tree = root.find("p:cSld/p:spTree", context.ns)
     if sp_tree is None:
         raise ValueError("missing p:cSld/p:spTree")
 
-    rels_path = deps.choose_rels_in_package(slide_xml, source_slide_xml=source_slide_xml)
-    rels_map = deps.build_rels_map(rels_path)
-    heading_hints = deps.load_heading_hints(slide_xml)
-    table_overlay_map, consumed_picture_ids, overlay_warnings, overlay_resolved, overlay_unresolved = (
-        deps.collect_table_overlay_pictures(sp_tree, slide_xml, rels_map, rels_path)
-    )
+    context.rels_path = deps.choose_rels_in_package(context.slide_xml, source_slide_xml=context.source_slide_xml)
+    context.rels_map = deps.build_rels_map(context.rels_path)
+    context.heading_hints = deps.load_heading_hints(context.slide_xml)
+    (
+        context.table_overlay_map,
+        context.consumed_picture_ids,
+        overlay_warnings,
+        overlay_resolved,
+        overlay_unresolved,
+    ) = deps.collect_table_overlay_pictures(sp_tree, context.slide_xml, context.rels_map, context.rels_path)
 
-    lines: List[str] = [f"[Page_{page_no}]", ""]
+    lines: List[str] = [f"[Page_{context.page_no}]", ""]
     state = SlideRenderState()
 
     stats = SlideStats(
         warnings=list(overlay_warnings),
-        rels_path=(str(rels_path) if rels_path else None),
+        rels_path=(str(context.rels_path) if context.rels_path else None),
     )
     stats.resolved_images += overlay_resolved
     stats.unresolved_images += overlay_unresolved
 
-    for child in list(sp_tree):
+    for child in _iter_sp_tree_children(sp_tree, deps):
         tag = deps.local_name(child.tag)
         if tag not in {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}:
             continue
@@ -366,13 +402,12 @@ def convert_one_slide(
             _handle_text_shape_block(
                 child,
                 lines=lines,
-                heading_hints=heading_hints,
                 heading_policy=heading_policy,
                 strict_headings=strict_headings,
                 state=state,
                 stats=stats,
+                context=context,
                 deps=deps,
-                ns=ns,
             )
             continue
 
@@ -380,24 +415,11 @@ def convert_one_slide(
             _handle_picture_block(
                 child,
                 lines=lines,
-                rels_map=rels_map,
-                rels_path=rels_path,
-                consumed_picture_ids=consumed_picture_ids,
-                output_dir=output_dir,
-                media_dir=media_dir,
-                copied_media=copied_media,
-                image_vlm_provider=image_vlm_provider,
-                image_vlm_model=image_vlm_model,
-                image_vlm_prompt=image_vlm_prompt,
-                image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-                image_vlm_api_key_env=image_vlm_api_key_env,
-                surya_debug_dir=surya_debug_dir,
-                copied_surya_debug_images=copied_surya_debug_images,
-                enable_image_table_pipeline=enable_image_table_pipeline,
                 state=state,
                 stats=stats,
+                context=context,
+                assets=assets,
                 deps=deps,
-                ns=ns,
             )
             continue
 
@@ -405,19 +427,10 @@ def convert_one_slide(
             _handle_graphic_frame_block(
                 child,
                 lines=lines,
-                table_overlay_map=table_overlay_map,
-                rels_path=rels_path,
-                rels_map=rels_map,
-                output_dir=output_dir,
-                media_dir=media_dir,
-                copied_media=copied_media,
-                image_vlm_provider=image_vlm_provider,
-                image_vlm_model=image_vlm_model,
-                image_vlm_prompt=image_vlm_prompt,
-                image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-                image_vlm_api_key_env=image_vlm_api_key_env,
                 state=state,
                 stats=stats,
+                context=context,
+                assets=assets,
                 deps=deps,
             )
             continue
