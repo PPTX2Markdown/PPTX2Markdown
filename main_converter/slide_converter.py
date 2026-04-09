@@ -49,6 +49,11 @@ class SlideConversionDeps:
     format_markdown_image: Callable[..., Tuple[str, Optional[str], bool, bool, bool]]
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
+    convert_chart_to_markdown: Callable[[ET.Element, Optional[Path], Dict[str, str], Optional[Path]], Tuple[Optional[str], Optional[str]]]
+    convert_smartart_to_markdown: Callable[
+        [ET.Element, Optional[Path], Dict[str, str], Optional[Path], Optional[Path], Optional[Path]],
+        Tuple[Optional[str], Optional[str]],
+    ]
     diagram_data_path: Callable[[ET.Element, Optional[Path], Dict[str, str]], Optional[Path]]
     extract_diagram_texts: Callable[[Path], List[str]]
     format_diagram_as_markdown: Callable[[Sequence[str]], Optional[str]]
@@ -77,6 +82,7 @@ class SlideConversionContext:
     page_no: int
     ns: Dict[str, str]
     source_slide_xml: Optional[Path] = None
+    source_pptx_path: Optional[Path] = None
     rels_path: Optional[Path] = None
     rels_map: Dict[str, str] = field(default_factory=dict)
     heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
@@ -332,18 +338,38 @@ def _handle_graphic_frame_block(
         return
 
     gf_kind = deps.graphic_frame_kind(child)
-    if gf_kind == "diagram":
-        diagram_path = deps.diagram_data_path(child, context.rels_path, context.rels_map)
-        diagram_text = deps.format_diagram_as_markdown(
-            deps.extract_diagram_texts(diagram_path) if diagram_path else []
+    if gf_kind == "chart":
+        chart_md, chart_err = deps.convert_chart_to_markdown(
+            child,
+            context.rels_path,
+            context.rels_map,
+            context.source_pptx_path,
         )
-        if diagram_text:
-            lines.append(diagram_text)
+        if chart_md is not None:
+            lines.append(chart_md.strip())
             lines.append("")
-            stats.text_blocks += 1
+            stats.chart_blocks += 1
+            return
+        _append_unsupported_graphic_frame(lines, stats)
+        if chart_err:
+            stats.warnings.append(chart_err)
+        return
+    elif gf_kind == "diagram":
+        smartart_md, smartart_err = deps.convert_smartart_to_markdown(
+            child,
+            context.rels_path,
+            context.rels_map,
+            context.source_pptx_path,
+            assets.output_dir,
+            assets.media_dir,
+        )
+        if smartart_md:
+            lines.append(smartart_md)
+            lines.append("")
+            stats.smartart_blocks += 1
         else:
             _append_unsupported_graphic_frame(lines, stats)
-            stats.warnings.append("diagram text extraction failed")
+            stats.warnings.append(smartart_err or "smartart conversion failed")
     else:
         _append_unsupported_graphic_frame(lines, stats)
     if err:
