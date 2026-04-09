@@ -1409,9 +1409,11 @@ def _parse_args() -> argparse.Namespace:
         help="Reading-order strategy. Default uses legacy XML-only ordering.",
     )
     parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Use strict heading detection in xml reading-order mode only.",
+        "--not-strict",
+        dest="strict",
+        action="store_false",
+        default=True,
+        help="Disable strict heading detection in xml reading-order mode.",
     )
     parser.add_argument(
         "--reuse-surya-cache",
@@ -1726,8 +1728,8 @@ def main() -> int:
 
     surya_structure_root: Optional[Path] = None
     if config.reading_order == "surya":
-        if config.strict:
-            logger.info("[info] --strict is ignored for surya mode. surya heading logic remains separate.")
+        if not config.strict:
+            logger.info("[info] --not-strict is ignored for surya mode. surya heading logic remains separate.")
         surya_structure_root = prepare_surya_structure_root(
             force=not config.reuse_surya_cache,
             reuse_existing_output=config.reuse_surya_cache,
