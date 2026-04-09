@@ -173,6 +173,16 @@ def _handle_text_shape_block(
     except (TypeError, ValueError):
         font_pt = None
 
+    strong_heading_signal = False
+    if (
+        not strict_headings
+        and is_candidate
+        and isinstance(depth, int)
+        and 1 <= depth <= 6
+        and score >= heading_policy.threshold
+    ):
+        strong_heading_signal = True
+
     if strict_headings:
         strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
         strict_depth = hr_strict_heading_depth_from_placeholder(strict_ph_type)
@@ -190,6 +200,7 @@ def _handle_text_shape_block(
             depth = non_strict_depth
             score = max(score, 0.9)
             is_candidate = True
+            strong_heading_signal = True
         if has_math_shape:
             is_candidate = False
             depth = None
@@ -198,11 +209,12 @@ def _handle_text_shape_block(
             fb_depth = hr_infer_heading_depth_fallback(plain_text, state.text_block_index, font_pt=font_pt)
             if fb_depth is not None:
                 depth = fb_depth
-                score = 0.8
+                score = max(score, 0.8)
                 is_candidate = True
+                strong_heading_signal = True
 
     rendered = text
-    if not strict_headings:
+    if not strict_headings and not strong_heading_signal:
         if has_list_semantics:
             is_candidate = False
         if hr_looks_like_multi_numbered_items(plain_text):
