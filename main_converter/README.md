@@ -1,6 +1,6 @@
 # main_converter
 
-`main_converter/convert_slides_to_md.py`는 PPTX를 Markdown으로 변환하는 메인 진입점입니다.
+`main_converter/run_pptx_to_markdown.py`는 PPTX를 Markdown으로 변환하는 메인 진입점입니다.
 
 ## 현재 입력 정책
 
@@ -27,19 +27,19 @@
 저장소 루트 기준:
 
 ```bash
-python main_converter/convert_slides_to_md.py
+python main_converter/run_pptx_to_markdown.py
 ```
 
 `main_converter` 디렉토리에서 바로 실행:
 
 ```bash
-python convert_slides_to_md.py
+python run_pptx_to_markdown.py
 ```
 
 특정 `.pptx`:
 
 ```bash
-python main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
+python main_converter/run_pptx_to_markdown.py sample3.pptx sample4.pptx
 ```
 
 # Reading Order 모드
@@ -47,19 +47,19 @@ python main_converter/convert_slides_to_md.py sample3.pptx sample4.pptx
 XML 모드(기본):
 
 ```bash
-python main_converter/convert_slides_to_md.py --reading-order xml
+python main_converter/run_pptx_to_markdown.py --reading-order xml
 ```
 
 Surya 모드:
 
 ```bash
-python main_converter/convert_slides_to_md.py --reading-order surya
+python main_converter/run_pptx_to_markdown.py --reading-order surya
 ```
 
 Surya 모드에서 특정 입력:
 
 ```bash
-python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx sample4.pptx
+python main_converter/run_pptx_to_markdown.py --reading-order surya sample3.pptx sample4.pptx
 ```
 
 ## Surya 연동 동작
@@ -75,6 +75,7 @@ python main_converter/convert_slides_to_md.py --reading-order surya sample3.pptx
 ## 주요 옵션
 
 - `--reading-order {xml|surya}`
-- `--strict` (xml 모드 전용)
+- 기본값은 `strict` heading 판정
+- `--not-strict` (xml 모드 전용)
 - `--reuse-surya-cache`
 - `--image-table-pipeline`

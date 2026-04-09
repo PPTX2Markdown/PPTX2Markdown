@@ -11,6 +11,7 @@ class HeadingPolicy:
     strict_threshold: float = 0.88
     non_strict_threshold: float = 0.7
     numeric_heading_min_font_pt: float = 24.0
+    first_block_heading_min_font_pt: float = 24.0
 
     @property
     def threshold(self) -> float:
@@ -39,6 +40,8 @@ def infer_heading_depth_fallback(
             return None
         return 2
     if text_block_index == 0 and len(raw) <= 80:
+        if font_pt is None or font_pt < policy.first_block_heading_min_font_pt:
+            return None
         return 1
     return None
 

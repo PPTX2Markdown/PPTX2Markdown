@@ -182,7 +182,7 @@ class ConverterConfig(BaseModel):
     output_dir: Path # 변환 결과를 저장할 디렉터리 경로 : main_converter/<file_name>/<xml | surya>
     inputs: List[str] = Field(default_factory=list) # 사용자가 CLI로 지정한 입력 PPTX 목록
     reading_order: str = "xml"
-    strict: bool = False
+    strict: bool = True
     reuse_surya_cache: bool = False
     image_table_pipeline: bool = False
     image_vlm_provider: str = "local"

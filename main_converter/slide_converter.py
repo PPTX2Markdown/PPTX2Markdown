@@ -173,6 +173,8 @@ def _handle_text_shape_block(
     except (TypeError, ValueError):
         font_pt = None
 
+    rendered_text = re.sub(r"\s+", " ", (text or "").strip())
+
     strong_heading_signal = False
     if (
         not strict_headings
@@ -206,7 +208,19 @@ def _handle_text_shape_block(
             depth = None
             score = 0.0
         if not has_math_shape and not is_candidate:
-            fb_depth = hr_infer_heading_depth_fallback(plain_text, state.text_block_index, font_pt=font_pt)
+            if has_list_semantics:
+                if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", rendered_text):
+                    fb_depth = 3
+                elif re.match(r"^\d+\.\s+", rendered_text):
+                    fb_depth = 2
+                else:
+                    fb_depth = None
+            else:
+                fb_depth = None
+            if fb_depth is None:
+                fb_depth = hr_infer_heading_depth_fallback(rendered_text, state.text_block_index, font_pt=font_pt)
+            if fb_depth is None:
+                fb_depth = hr_infer_heading_depth_fallback(plain_text, state.text_block_index, font_pt=font_pt)
             if fb_depth is not None:
                 depth = fb_depth
                 score = max(score, 0.8)
@@ -224,7 +238,13 @@ def _handle_text_shape_block(
 
     heading_threshold = heading_policy.threshold
     if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
-        heading_text = plain_text if strict_headings else hr_clean_heading_text_for_render(plain_text)
+        if strict_headings:
+            heading_text = plain_text
+        else:
+            heading_source = plain_text
+            if re.match(r"^\d+(?:\.\d+)*\.?\s+", rendered_text):
+                heading_source = rendered_text
+            heading_text = hr_clean_heading_text_for_render(heading_source)
         key = deps.normalize_text(heading_text)
         if key not in state.used_headings:
             rendered = f"{'#' * depth} {heading_text}"
