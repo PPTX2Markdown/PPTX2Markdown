@@ -5,8 +5,10 @@ from __future__ import annotations
 import base64
 import email.utils
 import json
+import logging
 import os
 import random
+import re
 import threading
 import time
 import urllib.error
@@ -25,9 +27,12 @@ class GoogleGenAIClientError(RuntimeError):
     """Raised when a Google GenAI request fails."""
 
 
+logger = logging.getLogger(__name__)
+
 _RATE_LIMIT_LOCK = threading.Lock()
 _NEXT_REQUEST_AT = 0.0
 _DOTENV_LOADED = False
+_QUOTA_EXCEEDED_MESSAGE: Optional[str] = None
 
 
 def _load_project_dotenv() -> None:
@@ -92,6 +97,59 @@ def _wait_for_rate_limit(min_request_interval_sec: float) -> None:
         time.sleep(min(wait_sec, 0.25))
 
 
+def _quota_exceeded_message() -> Optional[str]:
+    with _RATE_LIMIT_LOCK:
+        return _QUOTA_EXCEEDED_MESSAGE
+
+
+def _mark_quota_exceeded(message: str, *, model_id: str) -> None:
+    global _QUOTA_EXCEEDED_MESSAGE
+
+    normalized = str(message or "").strip() or "Gemini quota exceeded."
+    with _RATE_LIMIT_LOCK:
+        first_time = _QUOTA_EXCEEDED_MESSAGE is None
+        _QUOTA_EXCEEDED_MESSAGE = normalized
+    if first_time:
+        logger.warning(
+            "  [image-vlm] Gemini quota exceeded for this run; all remaining Gemini image requests will fall back without retry. (model=%s)",
+            model_id,
+        )
+
+
+def _defer_next_request(delay_sec: float) -> None:
+    global _NEXT_REQUEST_AT
+
+    delay = max(0.0, float(delay_sec))
+    if delay <= 0:
+        return
+
+    with _RATE_LIMIT_LOCK:
+        _NEXT_REQUEST_AT = max(_NEXT_REQUEST_AT, time.monotonic() + delay)
+
+
+def _sleep_with_progress(delay_sec: float, *, image_name: str, model_id: str) -> None:
+    remaining = max(0.0, float(delay_sec))
+    if remaining <= 0:
+        return
+
+    # Keep the process chatty during long quota waits so it does not look hung.
+    while remaining > 0:
+        if remaining > 10:
+            chunk = min(10.0, remaining)
+        elif remaining > 5:
+            chunk = 5.0
+        else:
+            chunk = remaining
+        logger.info(
+            "  [image-vlm] Gemini waiting: %s (model=%s, remaining=%.1fs)",
+            image_name,
+            model_id,
+            remaining,
+        )
+        time.sleep(chunk)
+        remaining = max(0.0, remaining - chunk)
+
+
 def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     raw = str(value or "").strip()
     if not raw:
@@ -115,20 +173,44 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
     return max(0.0, delta)
 
 
+def _parse_retry_delay_from_text(value: Optional[str]) -> Optional[float]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    match = re.search(r"Please retry in\s+([0-9]+(?:\.[0-9]+)?)s", raw, flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return max(0.0, float(match.group(1)))
+    except ValueError:
+        return None
+
+
 def _is_retryable_http_status(status_code: int) -> bool:
     return status_code == 429 or 500 <= status_code < 600
+
+
+def _is_quota_exceeded_message(message: Optional[str]) -> bool:
+    normalized = str(message or "").strip().lower()
+    return "quota exceeded" in normalized or "billing details" in normalized
 
 
 def _compute_backoff_delay(
     *,
     attempt_index: int,
     retry_after: Optional[str],
+    error_text: Optional[str],
     base_backoff_sec: float,
     max_backoff_sec: float,
 ) -> float:
     retry_after_sec = _parse_retry_after(retry_after)
     if retry_after_sec is not None:
         return retry_after_sec
+
+    retry_from_text_sec = _parse_retry_delay_from_text(error_text)
+    if retry_from_text_sec is not None:
+        return retry_from_text_sec
 
     capped_base = max(0.1, float(base_backoff_sec))
     capped_max = max(capped_base, float(max_backoff_sec))
@@ -149,6 +231,15 @@ def generate_content(
     max_backoff_sec: float = 30.0,
     min_request_interval_sec: float = 0.0,
 ) -> Dict[str, Any]:
+    quota_message = _quota_exceeded_message()
+    if quota_message is not None:
+        logger.info(
+            "  [image-vlm] Gemini skipped due to earlier quota exhaustion: %s (model=%s)",
+            image_path.name,
+            model_id,
+        )
+        raise GoogleGenAIClientError(quota_message)
+
     with gemini_ready_image_path(image_path) as (request_image_path, mime_type):
         encoded_image = base64.b64encode(request_image_path.read_bytes()).decode("ascii")
 
@@ -189,6 +280,13 @@ def generate_content(
     last_error: Optional[Exception] = None
     for attempt_index in range(attempts):
         _wait_for_rate_limit(min_request_interval_sec)
+        logger.info(
+            "  [image-vlm] Gemini request: %s (model=%s, attempt=%d/%d)",
+            image_path.name,
+            model_id,
+            attempt_index + 1,
+            attempts,
+        )
         try:
             with urllib.request.urlopen(request, timeout=120) as response:
                 response_payload = json.loads(response.read().decode("utf-8"))
@@ -201,14 +299,29 @@ def generate_content(
             except Exception:
                 pass
 
+            if exc.code == 429 and _is_quota_exceeded_message(message):
+                _mark_quota_exceeded(message, model_id=model_id)
+                raise GoogleGenAIClientError(f"HTTP {exc.code}: {message}") from exc
+
             if attempt_index + 1 < attempts and _is_retryable_http_status(exc.code):
                 delay = _compute_backoff_delay(
                     attempt_index=attempt_index,
                     retry_after=exc.headers.get("Retry-After"),
+                    error_text=message,
                     base_backoff_sec=base_backoff_sec,
                     max_backoff_sec=max_backoff_sec,
                 )
-                time.sleep(delay)
+                _defer_next_request(delay)
+                logger.warning(
+                    "  [image-vlm] Gemini retry scheduled: %s (model=%s, status=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    image_path.name,
+                    model_id,
+                    exc.code,
+                    delay,
+                    attempt_index + 2,
+                    attempts,
+                )
+                _sleep_with_progress(delay, image_name=image_path.name, model_id=model_id)
                 continue
             raise GoogleGenAIClientError(f"HTTP {exc.code}: {message}") from exc
         except urllib.error.URLError as exc:
@@ -217,10 +330,21 @@ def generate_content(
                 delay = _compute_backoff_delay(
                     attempt_index=attempt_index,
                     retry_after=None,
+                    error_text=str(exc),
                     base_backoff_sec=base_backoff_sec,
                     max_backoff_sec=max_backoff_sec,
                 )
-                time.sleep(delay)
+                _defer_next_request(delay)
+                logger.warning(
+                    "  [image-vlm] Gemini retry scheduled: %s (model=%s, error=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    image_path.name,
+                    model_id,
+                    type(exc).__name__,
+                    delay,
+                    attempt_index + 2,
+                    attempts,
+                )
+                _sleep_with_progress(delay, image_name=image_path.name, model_id=model_id)
                 continue
             raise GoogleGenAIClientError(f"{type(exc).__name__}: {exc}") from exc
         except Exception as exc:  # noqa: BLE001
@@ -230,6 +354,11 @@ def generate_content(
         response_error = _extract_error_message(response_payload)
         if response_error:
             raise GoogleGenAIClientError(response_error)
+        logger.info(
+            "  [image-vlm] Gemini response received: %s (model=%s)",
+            image_path.name,
+            model_id,
+        )
         return response_payload
 
     if last_error is not None:

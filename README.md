@@ -27,7 +27,9 @@ PPTX를 Markdown으로 변환하는 파이프라인입니다.
   - `requirements.txt` 설치 필요
   - GPU 환경 권장
 - Gemini 모드 사용 시
-  - `GEMINI_API_KEY` 환경변수 또는 프로젝트 `.env` 파일 필요
+  - 프로젝트 루트 `.env` 파일에 `GEMINI_API_KEY` 설정 필요
+- OpenAI 모드 사용 시
+  - 프로젝트 루트 `.env` 파일에 `OPENAI_API_KEY` 설정 필요
 
 #### 저장소 클론 후 환경 구성
 
@@ -144,23 +146,39 @@ python main_converter/run_pptx_to_markdown.py --reading-order surya sample1.pptx
 
 ### 이미지 VLM 옵션
 
-공통 옵션:
+이미지 블록을 VLM으로 Markdown 변환하려면 `--image-vlm-provider`를 지정합니다.
 
-- `--image-vlm-provider {local,gemini}`
-- `--image-vlm-model MODEL`
-- `--image-vlm-prompt "..."`
-- `--image-vlm-max-new-tokens 1024`
-- `--image-vlm-api-key-env GEMINI_API_KEY`
+- 자세한 옵션 설명은 [`image_pipeline/README.md`](image_pipeline/README.md) 참고
+- 변환 실패 또는 비문서성 이미지인 경우 Markdown 이미지 링크로 fallback
+- 이미지 VLM 결과는 `.cache/image_pipeline/` 디스크 캐시에 저장되어 재실행 시 재사용됨
+- 캐시를 무시하고 처음부터 다시 계산하려면 `--ignore-image-vlm-cache` 사용
 
-동작 규칙:
+Gemini 사용:
 
-- `--image-vlm-provider local`에서는 `--image-vlm-model`을 지정해야 이미지 변환이 활성화됩니다.
-- `--image-vlm-provider gemini`에서는 `--image-vlm-model`을 생략하면 기본값 `gemini-2.5-flash`를 사용합니다.
-- 변환 실패 또는 비문서성 이미지인 경우 Markdown 이미지 링크로 fallback 합니다.
+프로젝트 루트 `.env`:
 
-#### 로컬 Qwen 예시
+```dotenv
+GEMINI_API_KEY=your-api-key
+```
 
-3B 별칭 사용:
+그 다음 실행:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider gemini \
+  sample1.pptx
+```
+
+캐시를 무시하고 처음부터 다시 실행:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider gemini \
+  --ignore-image-vlm-cache \
+  sample1.pptx
+```
+
+로컬 Qwen 사용:
 
 ```bash
 python main_converter/run_pptx_to_markdown.py \
@@ -169,47 +187,19 @@ python main_converter/run_pptx_to_markdown.py \
   sample1.pptx
 ```
 
-직접 Hugging Face 모델 ID 지정:
+OpenAI 사용:
 
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider local \
-  --image-vlm-model Qwen/Qwen2.5-VL-7B-Instruct \
-  sample1.pptx
-```
-
-#### Gemini 예시
-
-환경변수 설정:
-
-```bash
-export GEMINI_API_KEY="your-api-key"
-```
-
-속도 제한 완화용 환경변수:
-
-```bash
-export GEMINI_MIN_REQUEST_INTERVAL_SEC=1.5
-export GEMINI_MAX_RETRIES=5
-export GEMINI_BASE_BACKOFF_SEC=2
-export GEMINI_MAX_BACKOFF_SEC=30
-```
-
-- `429 Too Many Requests` 또는 일시적 `5xx` 응답이 오면 자동 재시도합니다.
-- `GEMINI_MIN_REQUEST_INTERVAL_SEC`로 요청 간 최소 간격을 강제할 수 있습니다.
-- quota가 빡빡하면 `GEMINI_MIN_REQUEST_INTERVAL_SEC=3` 또는 `5`로 늘리는 편이 안정적입니다.
-
-또는 프로젝트 루트 `.env` 파일:
+프로젝트 루트 `.env`:
 
 ```dotenv
-GEMINI_API_KEY=your-api-key
+OPENAI_API_KEY=your-api-key
 ```
 
-기본 Gemini 모델 사용:
+기본 모델 `gpt-4.1-mini` 사용:
 
 ```bash
 python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
+  --image-vlm-provider openai \
   sample1.pptx
 ```
 
@@ -217,29 +207,8 @@ python main_converter/run_pptx_to_markdown.py \
 
 ```bash
 python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
-  --image-vlm-model gemini-2.5-flash \
-  sample1.pptx
-```
-
-API 키 환경변수 이름을 바꾸는 경우:
-
-```bash
-MY_GEMINI_KEY="your-api-key" \
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
-  --image-vlm-api-key-env MY_GEMINI_KEY \
-  sample1.pptx
-```
-
-#### 프롬프트 및 토큰 제어
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
-  --image-vlm-model gemini-2.5-flash \
-  --image-vlm-prompt "Custom prompt here" \
-  --image-vlm-max-new-tokens 768 \
+  --image-vlm-provider openai \
+  --image-vlm-model gpt-4.1-mini \
   sample1.pptx
 ```
 
@@ -268,6 +237,7 @@ python main_converter/run_pptx_to_markdown.py \
 - 로컬 `7b` 모델은 GPU 없이 사용하기 어렵습니다.
 - 로컬 Qwen 모드는 최초 실행 시 Hugging Face 캐시에 모델을 다운로드합니다.
 - Gemini 모드는 네트워크 연결과 유효한 API 키가 필요합니다.
+- Gemini가 `quota exceeded`를 반환하면 이번 실행에서는 남은 이미지 요청을 즉시 fallback 처리합니다.
 
 ## 빠른 체크
 

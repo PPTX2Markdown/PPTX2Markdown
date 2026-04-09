@@ -7,6 +7,9 @@
 # evironment
 .env
 
+# cache
+.cache
+
 # python evironment 
 .python-version
 .venv
