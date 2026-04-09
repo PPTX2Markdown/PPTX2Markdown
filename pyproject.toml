@@ -5,6 +5,7 @@ description = "pptx2markdown for RAG systems"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "chart2md",
     "omml2latex @ git+ssh://git@github.com/PPTX2Markdown/OMML2Latex.git@main",
     "surya-ocr==0.17.1",
     "torch==2.10.0",

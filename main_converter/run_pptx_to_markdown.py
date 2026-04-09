@@ -20,6 +20,7 @@ import argparse
 import json
 import logging
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -30,6 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
+from chart2md import ZipContext, convert_chart
 from omml2latex import convert_omml
 
 # REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
@@ -947,9 +949,83 @@ def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     uri = graphic_data.attrib.get("uri", "").strip()
     if uri.endswith("/diagram"):
         return "diagram"
+    if "chart" in uri:
+        return "chart"
+    for element in graphic_data.iter():
+        if local_name(element.tag) == "chart":
+            return "chart"
     if uri.endswith("/chart"):
         return "chart"
     return None
+
+
+def _resolve_ooxml_target(base_part_path: str, target: str) -> str:
+    if target.startswith("/"):
+        return target.lstrip("/")
+    base_dir = posixpath.dirname(base_part_path)
+    return posixpath.normpath(posixpath.join(base_dir, target)).lstrip("/")
+
+
+def _chart_relationship_id(graphic_frame: ET.Element) -> Optional[str]:
+    graphic_data = graphic_frame.find("./a:graphic/a:graphicData", NS)
+    if graphic_data is None:
+        return None
+    for element in graphic_data.iter():
+        if local_name(element.tag) != "chart":
+            continue
+        for attr_name, value in element.attrib.items():
+            if attr_name == "r:id" or attr_name.endswith("}id"):
+                return value
+    return None
+
+
+def _part_path_from_rels_path(rels_path: Path) -> Optional[str]:
+    parts = rels_path.parts
+    try:
+        ppt_index = parts.index("ppt")
+    except ValueError:
+        return None
+    rels_part_path = Path(*parts[ppt_index:]).as_posix()
+    return rels_part_path.replace("/_rels/", "/").removesuffix(".rels")
+
+
+def convert_chart_to_markdown(
+    graphic_frame: ET.Element,
+    rels_path: Optional[Path],
+    rels_map: Dict[str, str],
+    source_pptx_path: Optional[Path],
+) -> Tuple[Optional[str], Optional[str]]:
+    if source_pptx_path is None:
+        return None, "chart conversion failed: missing source pptx path"
+    if rels_path is None:
+        return None, "chart conversion failed: missing slide rels file"
+    rid = _chart_relationship_id(graphic_frame)
+    if not rid:
+        return None, "chart conversion failed: missing chart relationship id"
+    target = rels_map.get(rid)
+    if not target:
+        return None, f"chart conversion failed: relationship not found: {rid}"
+
+    slide_part_path = _part_path_from_rels_path(rels_path)
+    if not slide_part_path:
+        return None, f"chart conversion failed: unsupported rels path: {rels_path}"
+    chart_part_path = _resolve_ooxml_target(slide_part_path, target)
+
+    try:
+        with zipfile.ZipFile(source_pptx_path) as zf:
+            chart_root = ET.fromstring(zf.read(chart_part_path))
+            ctx = ZipContext(zf, chart_part_path)
+            markdown = convert_chart(chart_root, ctx).strip()
+    except KeyError:
+        return None, f"chart conversion failed: missing chart part: {chart_part_path}"
+    except ET.ParseError as exc:
+        return None, f"chart conversion failed: invalid chart xml: {chart_part_path}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return None, f"chart conversion failed: {chart_part_path}: {type(exc).__name__}: {exc}"
+
+    if not markdown:
+        return None, f"chart conversion failed: empty markdown output: {chart_part_path}"
+    return markdown, None
 
 
 # 다이어그램 graphicFrame에서 실제 데이터 XML 파일 경로를 해석한다.
@@ -1202,6 +1278,7 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         format_markdown_image=format_markdown_image,
         convert_table_to_markdown=convert_table_to_markdown,
         graphic_frame_kind=graphic_frame_kind,
+        convert_chart_to_markdown=convert_chart_to_markdown,
         diagram_data_path=diagram_data_path,
         extract_diagram_texts=extract_diagram_texts,
         format_diagram_as_markdown=format_diagram_as_markdown,
@@ -1484,6 +1561,7 @@ def _convert_package(
                 page_no=page_no,
                 ns=NS,
                 source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
+                source_pptx_path=package.source_pptx_path,
             )
             assets = SlideRenderAssets(
                 output_dir=pkg_out,
@@ -1595,6 +1673,7 @@ def main() -> int:
         "packages=%s "
         "slides=%s "
         "failed=%s "
+        "charts=%s "
         "tables=%s "
         "table_skipped=%s "
         "images_resolved=%s "
@@ -1602,6 +1681,7 @@ def main() -> int:
         manifest.summary.processed_packages,
         manifest.summary.processed_slides,
         manifest.summary.failed,
+        manifest.summary.chart_blocks,
         manifest.summary.table_blocks,
         manifest.summary.table_skipped_blocks,
         manifest.summary.resolved_images,

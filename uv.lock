@@ -145,6 +145,15 @@ wheels = [
 ]
 
 [[package]]
+name = "chart2md"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/4c/08569df5393bed019d78fd5e33f9904da0b829f8014ef79a52e152663779/chart2md-0.1.0.tar.gz", hash = "sha256:94fa97054fab9f37362448157166e8eeac7ebecdf8afe5af5687815dc5f7a557", size = 63485, upload-time = "2026-04-09T16:38:07.675Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d8/e0/7156de18291348e978d90755440dc744a3c805f69dbcd3e2c61327612293/chart2md-0.1.0-py3-none-any.whl", hash = "sha256:46b6efdf7232460a199c8c18f0104894f9e0e658c325d110fecc4ec9813083e0", size = 60330, upload-time = "2026-04-09T16:38:05.903Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -685,6 +694,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "accelerate" },
+    { name = "chart2md" },
     { name = "numpy" },
     { name = "omml2latex" },
     { name = "opencv-python-headless" },
@@ -701,6 +711,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "accelerate", specifier = ">=1.0.0,<2" },
+    { name = "chart2md" },
     { name = "numpy", specifier = "==2.2.6" },
     { name = "omml2latex", git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main" },
     { name = "opencv-python-headless", specifier = "==4.11.0.86" },
