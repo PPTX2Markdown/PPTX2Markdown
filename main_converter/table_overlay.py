@@ -228,6 +228,7 @@ def inject_table_overlay_links(
     image_vlm_prompt: str,
     image_vlm_max_new_tokens: int,
     image_vlm_api_key_env: str,
+    ignore_image_vlm_cache: bool,
 ) -> Tuple[Dict[str, object], List[str], bool]:
     if not overlays:
         return parsed_table, [], False
@@ -247,6 +248,7 @@ def inject_table_overlay_links(
         image_vlm_prompt=image_vlm_prompt,
         image_vlm_max_new_tokens=image_vlm_max_new_tokens,
         image_vlm_api_key_env=image_vlm_api_key_env,
+        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
 
 
@@ -323,6 +325,7 @@ def _inject_table_images(
     image_vlm_prompt: str,
     image_vlm_max_new_tokens: int,
     image_vlm_api_key_env: str,
+    ignore_image_vlm_cache: bool,
 ) -> Tuple[Dict[str, object], List[str], bool]:
     bounds = compute_table_cell_bounds(graphic_frame, ns)
     if bounds is None:
@@ -372,6 +375,7 @@ def _inject_table_images(
             image_vlm_prompt=image_vlm_prompt,
             image_vlm_max_new_tokens=image_vlm_max_new_tokens,
             image_vlm_api_key_env=image_vlm_api_key_env,
+            ignore_image_vlm_cache=ignore_image_vlm_cache,
         )
         _append_cell_content(cell, _table_cell_text(rendered), normalize_text_fn)
         if warn:
@@ -397,6 +401,7 @@ def convert_table_to_markdown(
     image_vlm_prompt: str = "",
     image_vlm_max_new_tokens: int = 1024,
     image_vlm_api_key_env: str = "GEMINI_API_KEY",
+    ignore_image_vlm_cache: bool = False,
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
@@ -426,6 +431,7 @@ def convert_table_to_markdown(
         image_vlm_prompt=image_vlm_prompt,
         image_vlm_max_new_tokens=image_vlm_max_new_tokens,
         image_vlm_api_key_env=image_vlm_api_key_env,
+        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
     cell_fill_items, cell_fill_warnings, _, _ = collect_table_cell_fill_images(
         graphic_frame,
@@ -449,6 +455,7 @@ def convert_table_to_markdown(
         image_vlm_prompt=image_vlm_prompt,
         image_vlm_max_new_tokens=image_vlm_max_new_tokens,
         image_vlm_api_key_env=image_vlm_api_key_env,
+        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,

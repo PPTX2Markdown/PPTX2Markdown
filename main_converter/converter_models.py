@@ -182,3 +182,4 @@ class ConverterConfig(BaseModel):
     image_vlm_prompt: str = ""
     image_vlm_max_new_tokens: int = 1024
     image_vlm_api_key_env: str = "GEMINI_API_KEY"
+    ignore_image_vlm_cache: bool = False
