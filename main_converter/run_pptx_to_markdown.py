@@ -1662,7 +1662,7 @@ def _convert_package(
             merged_md_text, stats = convert_one_slide(
                 context=context,
                 assets=assets,
-                strict_headings=(config.reading_order == "xml" and config.strict),
+                strict_headings=config.strict,
             )
             if config.reading_order == "surya":
                 row["surya_source"] = str(structure_output_dir)
@@ -1728,8 +1728,6 @@ def main() -> int:
 
     surya_structure_root: Optional[Path] = None
     if config.reading_order == "surya":
-        if not config.strict:
-            logger.info("[info] --not-strict is ignored for surya mode. surya heading logic remains separate.")
         surya_structure_root = prepare_surya_structure_root(
             force=not config.reuse_surya_cache,
             reuse_existing_output=config.reuse_surya_cache,
