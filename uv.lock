@@ -702,6 +702,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pypdfium2" },
     { name = "python-dotenv" },
+    { name = "smartart2md" },
     { name = "surya-ocr" },
     { name = "torch" },
     { name = "torchvision" },
@@ -719,6 +720,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10.0,<3" },
     { name = "pypdfium2", specifier = "==4.30.0" },
     { name = "python-dotenv", specifier = ">=1.0.1,<2" },
+    { name = "smartart2md" },
     { name = "surya-ocr", specifier = "==0.17.1" },
     { name = "torch", specifier = "==2.10.0" },
     { name = "torchvision", specifier = "==0.25.0" },
@@ -1140,6 +1142,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz", hash = "sha256:7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9", size = 1152316, upload-time = "2026-03-09T12:47:17.221Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl", hash = "sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb", size = 1006223, upload-time = "2026-03-09T12:47:15.026Z" },
+]
+
+[[package]]
+name = "smartart2md"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/fd/4820738271f537c5d5051f348718273896a38243a74182e7f7424a573749/smartart2md-0.1.1.tar.gz", hash = "sha256:df0b8f13fd27c87bcabd59283eff66283182a7fae02d9ef182e26818aeb694d9", size = 32792, upload-time = "2026-04-09T17:31:51.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/fa/d3e29f41b6594eb501b3a86b35cf0ad16805bf312878749e7625d0c99267/smartart2md-0.1.1-py3-none-any.whl", hash = "sha256:11abdf9a50dadf941287abfcd09ff21d10874b7bdd42231c642ed400241f8bf9", size = 29501, upload-time = "2026-04-09T17:31:49.786Z" },
 ]
 
 [[package]]

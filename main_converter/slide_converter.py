@@ -50,6 +50,10 @@ class SlideConversionDeps:
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
     convert_chart_to_markdown: Callable[[ET.Element, Optional[Path], Dict[str, str], Optional[Path]], Tuple[Optional[str], Optional[str]]]
+    convert_smartart_to_markdown: Callable[
+        [ET.Element, Optional[Path], Dict[str, str], Optional[Path], Optional[Path], Optional[Path]],
+        Tuple[Optional[str], Optional[str]],
+    ]
     diagram_data_path: Callable[[ET.Element, Optional[Path], Dict[str, str]], Optional[Path]]
     extract_diagram_texts: Callable[[Path], List[str]]
     format_diagram_as_markdown: Callable[[Sequence[str]], Optional[str]]
@@ -351,17 +355,21 @@ def _handle_graphic_frame_block(
             stats.warnings.append(chart_err)
         return
     elif gf_kind == "diagram":
-        diagram_path = deps.diagram_data_path(child, context.rels_path, context.rels_map)
-        diagram_text = deps.format_diagram_as_markdown(
-            deps.extract_diagram_texts(diagram_path) if diagram_path else []
+        smartart_md, smartart_err = deps.convert_smartart_to_markdown(
+            child,
+            context.rels_path,
+            context.rels_map,
+            context.source_pptx_path,
+            assets.output_dir,
+            assets.media_dir,
         )
-        if diagram_text:
-            lines.append(diagram_text)
+        if smartart_md:
+            lines.append(smartart_md)
             lines.append("")
-            stats.text_blocks += 1
+            stats.smartart_blocks += 1
         else:
             _append_unsupported_graphic_frame(lines, stats)
-            stats.warnings.append("diagram text extraction failed")
+            stats.warnings.append(smartart_err or "smartart conversion failed")
     else:
         _append_unsupported_graphic_frame(lines, stats)
     if err:

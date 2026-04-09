@@ -27,12 +27,14 @@ import subprocess
 import sys
 import time
 import zipfile
+from itertools import count
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
 from chart2md import ZipContext, convert_chart
 from omml2latex import convert_omml
+from smartart2md import ZipContext as SmartArtZipContext, convert_smartart
 
 # REPO Root dir - 현재 /main_converter/* 위치이니 root는 .parent.parent가 된다.
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -89,6 +91,7 @@ NS = {
 REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
 logger = logging.getLogger(__name__)
+_SMARTART_ASSET_COUNTER = count()
 
 
 # 로거 출력 레벨과 포맷을 한 번에 설정한다.
@@ -989,6 +992,36 @@ def _part_path_from_rels_path(rels_path: Path) -> Optional[str]:
     return rels_part_path.replace("/_rels/", "/").removesuffix(".rels")
 
 
+def _smartart_media_markdown(
+    markdown: str,
+    images: Sequence[Tuple[bytes, str]],
+    *,
+    output_dir: Optional[Path],
+    media_dir: Optional[Path],
+) -> str:
+    if not images:
+        return re.sub(r"@@IMG:\d+@@", "", markdown).strip()
+
+    rendered = markdown
+    for index, (data, ext) in enumerate(images):
+        normalized_ext = (ext or "png").lower().strip(".") or "png"
+        if normalized_ext == "jpeg":
+            normalized_ext = "jpg"
+
+        if media_dir is None:
+            replacement = ""
+        else:
+            media_dir.mkdir(parents=True, exist_ok=True)
+            asset_id = next(_SMARTART_ASSET_COUNTER)
+            asset_path = media_dir / f"smartart-{asset_id}.{normalized_ext}"
+            asset_path.write_bytes(data)
+            relative_path = relativize_markdown_path(str(asset_path), output_dir)
+            replacement = render_image_tag(relative_path)
+        rendered = rendered.replace(f"@@IMG:{index}@@", replacement)
+
+    return re.sub(r"@@IMG:\d+@@", "", rendered).strip()
+
+
 def convert_chart_to_markdown(
     graphic_frame: ET.Element,
     rels_path: Optional[Path],
@@ -1026,6 +1059,55 @@ def convert_chart_to_markdown(
     if not markdown:
         return None, f"chart conversion failed: empty markdown output: {chart_part_path}"
     return markdown, None
+
+
+def convert_smartart_to_markdown(
+    graphic_frame: ET.Element,
+    rels_path: Optional[Path],
+    rels_map: Dict[str, str],
+    source_pptx_path: Optional[Path],
+    output_dir: Optional[Path],
+    media_dir: Optional[Path],
+) -> Tuple[Optional[str], Optional[str]]:
+    if source_pptx_path is None:
+        return None, "smartart conversion failed: missing source pptx path"
+    diagram_data_xml = diagram_data_path(graphic_frame, rels_path, rels_map)
+    if diagram_data_xml is None:
+        return None, "smartart conversion failed: missing diagram data path"
+
+    slide_part_path = _part_path_from_rels_path(rels_path) if rels_path is not None else None
+    if not slide_part_path:
+        return None, f"smartart conversion failed: unsupported rels path: {rels_path}"
+
+    dm_rel_ids = graphic_frame.find("./a:graphic/a:graphicData/dgm:relIds", NS)
+    dm_rid = dm_rel_ids.attrib.get(f"{{{NS['r']}}}dm") if dm_rel_ids is not None else None
+    target = rels_map.get(dm_rid) if dm_rid else None
+    if not target:
+        return None, "smartart conversion failed: missing diagram relationship target"
+
+    data_part_path = _resolve_ooxml_target(slide_part_path, target)
+
+    try:
+        with zipfile.ZipFile(source_pptx_path) as zf:
+            data_root = ET.fromstring(zf.read(data_part_path))
+            ctx = SmartArtZipContext(zf, data_part_path)
+            markdown, images = convert_smartart(data_root, ctx)
+    except KeyError:
+        return None, f"smartart conversion failed: missing diagram part: {data_part_path}"
+    except ET.ParseError as exc:
+        return None, f"smartart conversion failed: invalid diagram xml: {data_part_path}: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        return None, f"smartart conversion failed: {data_part_path}: {type(exc).__name__}: {exc}"
+
+    rendered = _smartart_media_markdown(
+        markdown,
+        images,
+        output_dir=output_dir,
+        media_dir=media_dir,
+    )
+    if not rendered:
+        return None, f"smartart conversion failed: empty markdown output: {data_part_path}"
+    return rendered, None
 
 
 # 다이어그램 graphicFrame에서 실제 데이터 XML 파일 경로를 해석한다.
@@ -1279,6 +1361,7 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         convert_table_to_markdown=convert_table_to_markdown,
         graphic_frame_kind=graphic_frame_kind,
         convert_chart_to_markdown=convert_chart_to_markdown,
+        convert_smartart_to_markdown=convert_smartart_to_markdown,
         diagram_data_path=diagram_data_path,
         extract_diagram_texts=extract_diagram_texts,
         format_diagram_as_markdown=format_diagram_as_markdown,
@@ -1674,6 +1757,7 @@ def main() -> int:
         "slides=%s "
         "failed=%s "
         "charts=%s "
+        "smartarts=%s "
         "tables=%s "
         "table_skipped=%s "
         "images_resolved=%s "
@@ -1682,6 +1766,7 @@ def main() -> int:
         manifest.summary.processed_slides,
         manifest.summary.failed,
         manifest.summary.chart_blocks,
+        manifest.summary.smartart_blocks,
         manifest.summary.table_blocks,
         manifest.summary.table_skipped_blocks,
         manifest.summary.resolved_images,

@@ -66,6 +66,7 @@ class SlideStats(BaseModel):
     math_conversion_failures: int = 0
     image_blocks: int = 0
     chart_blocks: int = 0
+    smartart_blocks: int = 0
     table_blocks: int = 0
     table_skipped_blocks: int = 0
     unsupported_blocks: int = 0
@@ -85,6 +86,7 @@ class SlideStats(BaseModel):
             "math_conversion_failures": self.math_conversion_failures,
             "image_blocks": self.image_blocks,
             "chart_blocks": self.chart_blocks,
+            "smartart_blocks": self.smartart_blocks,
             "table_blocks": self.table_blocks,
             "table_skipped_blocks": self.table_skipped_blocks,
             "unsupported_blocks": self.unsupported_blocks,
@@ -107,6 +109,7 @@ class ManifestSummary(BaseModel):
     resolved_images: int = 0
     unresolved_images: int = 0
     chart_blocks: int = 0
+    smartart_blocks: int = 0
     table_blocks: int = 0
     table_skipped_blocks: int = 0
 
@@ -119,6 +122,7 @@ class ManifestSummary(BaseModel):
         self.resolved_images += stats.resolved_images
         self.unresolved_images += stats.unresolved_images
         self.chart_blocks += stats.chart_blocks
+        self.smartart_blocks += stats.smartart_blocks
         self.table_blocks += stats.table_blocks
         self.table_skipped_blocks += stats.table_skipped_blocks
 
