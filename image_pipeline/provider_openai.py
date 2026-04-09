@@ -1,4 +1,4 @@
-"""Google Gemini provider adapter for the image pipeline."""
+"""OpenAI image provider adapter for the image pipeline."""
 
 from __future__ import annotations
 
@@ -7,14 +7,15 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from .client_google_genai import GoogleGenAIClientError, extract_text, generate_content, resolve_api_key
+from .client_google_genai import resolve_api_key
+from .client_openai import OpenAIClientError, extract_output_text, generate_response
 from .constants import (
-    DEFAULT_GEMINI_API_KEY_ENV,
     DEFAULT_GEMINI_BASE_BACKOFF_SEC,
     DEFAULT_GEMINI_MAX_BACKOFF_SEC,
     DEFAULT_GEMINI_MAX_RETRIES,
     DEFAULT_GEMINI_MIN_REQUEST_INTERVAL_SEC,
-    DEFAULT_GEMINI_MODEL,
+    DEFAULT_OPENAI_API_KEY_ENV,
+    DEFAULT_OPENAI_MODEL,
 )
 from .markdown_postprocess import normalize_markdown
 from .schemas import ImageMarkdownResult, ModelResolution
@@ -23,8 +24,8 @@ from .schemas import ImageMarkdownResult, ModelResolution
 logger = logging.getLogger(__name__)
 
 
-class GoogleGeminiImageProvider:
-    provider_name = "gemini"
+class OpenAIImageProvider:
+    provider_name = "openai"
 
     @staticmethod
     def _read_int_env(name: str, default: int) -> int:
@@ -48,10 +49,8 @@ class GoogleGeminiImageProvider:
 
     def resolve_model_id(self, model_spec: Optional[str]) -> ModelResolution:
         normalized = str(model_spec or "").strip()
-        if normalized.startswith("models/"):
-            normalized = normalized.split("/", 1)[1].strip()
         if not normalized:
-            normalized = DEFAULT_GEMINI_MODEL
+            normalized = DEFAULT_OPENAI_MODEL
         return normalized, normalized
 
     def extract_markdown(
@@ -65,7 +64,7 @@ class GoogleGeminiImageProvider:
         api_key_env: Optional[str] = None,
     ) -> ImageMarkdownResult:
         model_alias, model_id = self.resolve_model_id(model_spec)
-        effective_api_key_env = str(api_key_env or DEFAULT_GEMINI_API_KEY_ENV).strip() or DEFAULT_GEMINI_API_KEY_ENV
+        effective_api_key_env = str(api_key_env or DEFAULT_OPENAI_API_KEY_ENV).strip() or DEFAULT_OPENAI_API_KEY_ENV
         resolved_api_key = resolve_api_key(api_key, effective_api_key_env)
         if not resolved_api_key:
             return {
@@ -74,31 +73,25 @@ class GoogleGeminiImageProvider:
                 "file": str(image_path),
                 "model_alias": model_alias,
                 "model_id": model_id,
-                "error": f"Gemini API key not found. Set {effective_api_key_env}.",
+                "error": f"OpenAI API key not found. Set {effective_api_key_env}.",
             }
 
         try:
-            response_payload = generate_content(
+            response_payload = generate_response(
                 image_path,
                 model_id=model_id,
                 prompt=prompt,
                 max_output_tokens=max_new_tokens,
                 api_key=resolved_api_key,
-                max_retries=self._read_int_env("GEMINI_MAX_RETRIES", DEFAULT_GEMINI_MAX_RETRIES),
-                base_backoff_sec=self._read_float_env(
-                    "GEMINI_BASE_BACKOFF_SEC",
-                    DEFAULT_GEMINI_BASE_BACKOFF_SEC,
-                ),
-                max_backoff_sec=self._read_float_env(
-                    "GEMINI_MAX_BACKOFF_SEC",
-                    DEFAULT_GEMINI_MAX_BACKOFF_SEC,
-                ),
+                max_retries=self._read_int_env("OPENAI_MAX_RETRIES", DEFAULT_GEMINI_MAX_RETRIES),
+                base_backoff_sec=self._read_float_env("OPENAI_BASE_BACKOFF_SEC", DEFAULT_GEMINI_BASE_BACKOFF_SEC),
+                max_backoff_sec=self._read_float_env("OPENAI_MAX_BACKOFF_SEC", DEFAULT_GEMINI_MAX_BACKOFF_SEC),
                 min_request_interval_sec=self._read_float_env(
-                    "GEMINI_MIN_REQUEST_INTERVAL_SEC",
+                    "OPENAI_MIN_REQUEST_INTERVAL_SEC",
                     DEFAULT_GEMINI_MIN_REQUEST_INTERVAL_SEC,
                 ),
             )
-        except GoogleGenAIClientError as exc:
+        except OpenAIClientError as exc:
             return {
                 "status": "error",
                 "provider": self.provider_name,
@@ -108,10 +101,10 @@ class GoogleGeminiImageProvider:
                 "error": str(exc),
             }
 
-        markdown = normalize_markdown(extract_text(response_payload))
+        markdown = normalize_markdown(extract_output_text(response_payload))
         if not markdown.strip():
             logger.info(
-                "  [image-vlm] Gemini produced no document-worthy markdown: %s (model=%s)",
+                "  [image-vlm] OpenAI produced no document-worthy markdown: %s (model=%s)",
                 image_path.name,
                 model_id,
             )
@@ -126,7 +119,7 @@ class GoogleGeminiImageProvider:
             }
 
         logger.info(
-            "  [image-vlm] Gemini markdown extracted: %s (model=%s)",
+            "  [image-vlm] OpenAI markdown extracted: %s (model=%s)",
             image_path.name,
             model_id,
         )

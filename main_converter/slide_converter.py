@@ -67,6 +67,7 @@ class SlideRenderAssets:
     image_vlm_prompt: str = ""
     image_vlm_max_new_tokens: int = 1024
     image_vlm_api_key_env: str = "GEMINI_API_KEY"
+    ignore_image_vlm_cache: bool = False
     enable_image_table_pipeline: bool = False
 
 
@@ -278,6 +279,7 @@ def _handle_picture_block(
         image_vlm_prompt=assets.image_vlm_prompt,
         image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
         image_vlm_api_key_env=assets.image_vlm_api_key_env,
+        ignore_image_vlm_cache=assets.ignore_image_vlm_cache,
     )
     if image_warn:
         if unavailable:
@@ -321,6 +323,7 @@ def _handle_graphic_frame_block(
         image_vlm_prompt=assets.image_vlm_prompt,
         image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
         image_vlm_api_key_env=assets.image_vlm_api_key_env,
+        ignore_image_vlm_cache=assets.ignore_image_vlm_cache,
     )
     if table_md is not None:
         lines.append(table_md.strip())

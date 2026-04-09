@@ -56,6 +56,8 @@ from image_pipeline.service import (
     DEFAULT_GEMINI_API_KEY_ENV,
     DEFAULT_GEMINI_MODEL,
     DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+    DEFAULT_OPENAI_API_KEY_ENV,
+    DEFAULT_OPENAI_MODEL,
     DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
     DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
     extract_markdown_from_image,
@@ -585,6 +587,7 @@ def convert_picture_to_markdown(
     prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    ignore_cache: bool = False,
 ) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
     # 의존성 미설치나 API 키 누락처럼 설정 문제로 파이프라인이 아예 못 도는 경우를 분류한다.
     def is_pipeline_unavailable(message: str) -> bool:
@@ -599,6 +602,8 @@ def convert_picture_to_markdown(
     effective_model = model_spec
     if normalized_provider == "gemini" and not effective_model:
         effective_model = DEFAULT_GEMINI_MODEL
+    if normalized_provider == "openai" and not effective_model:
+        effective_model = DEFAULT_OPENAI_MODEL
     if not effective_model:
         return None, None, False, None
 
@@ -610,6 +615,7 @@ def convert_picture_to_markdown(
             prompt=prompt,
             max_new_tokens=max(1, int(max_new_tokens)),
             gemini_api_key_env=gemini_api_key_env,
+            ignore_cache=ignore_cache,
         )
     except Exception as exc:  # noqa: BLE001
         error_message = f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
@@ -656,12 +662,13 @@ def format_markdown_image(
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    ignore_image_vlm_cache: bool = False,
 ) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai"}
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -670,6 +677,7 @@ def format_markdown_image(
             prompt=image_vlm_prompt,
             max_new_tokens=image_vlm_max_new_tokens,
             gemini_api_key_env=image_vlm_api_key_env,
+            ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
             return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
@@ -1078,12 +1086,13 @@ def overlay_content_text(
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    ignore_image_vlm_cache: bool = False,
 ) -> Tuple[str, Optional[str], bool, bool, bool]:
     if path.startswith("[unresolved-image"):
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider == "gemini"
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai"}
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -1092,6 +1101,7 @@ def overlay_content_text(
             prompt=image_vlm_prompt,
             max_new_tokens=image_vlm_max_new_tokens,
             gemini_api_key_env=image_vlm_api_key_env,
+            ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
             return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
@@ -1149,6 +1159,7 @@ def convert_table_to_markdown(
     image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
     image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
+    ignore_image_vlm_cache: bool = False,
 ) -> Tuple[Optional[str], Optional[str]]:
     return convert_table_to_markdown_core(
         graphic_frame,
@@ -1163,6 +1174,7 @@ def convert_table_to_markdown(
         image_vlm_prompt=image_vlm_prompt,
         image_vlm_max_new_tokens=image_vlm_max_new_tokens,
         image_vlm_api_key_env=image_vlm_api_key_env,
+        ignore_image_vlm_cache=ignore_image_vlm_cache,
         ns=NS,
         normalize_text_fn=normalize_text,
         overlay_content_text_fn=overlay_content_text,
@@ -1248,16 +1260,17 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--image-vlm-provider",
-        choices=("local", "gemini"),
+        choices=("local", "gemini", "openai"),
         default=DEFAULT_IMAGE_VLM_PROVIDER,
-        help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API.",
+        help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API, openai uses the OpenAI Responses API.",
     )
     parser.add_argument(
         "--image-vlm-model",
         help=(
             "Image VLM model identifier. "
             "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
-            "or a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini."
+            "a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini, "
+            "or an OpenAI model id such as gpt-4.1-mini for --image-vlm-provider openai."
         ),
     )
     parser.add_argument(
@@ -1274,7 +1287,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-vlm-api-key-env",
         default=DEFAULT_GEMINI_API_KEY_ENV,
-        help="Environment variable name containing the Gemini API key when --image-vlm-provider gemini is used.",
+        help="Environment variable name containing the provider API key when --image-vlm-provider gemini or openai is used.",
+    )
+    parser.add_argument(
+        "--ignore-image-vlm-cache",
+        "--ignore-vlm-cache",
+        action="store_true",
+        help="Ignore in-memory and disk cache for image VLM results and recompute them from scratch.",
     )
     parser.add_argument(
         "--verbose",
@@ -1287,6 +1306,12 @@ def _parse_args() -> argparse.Namespace:
 # 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
     main_converter_root = REPO_ROOT/ "main_converter"
+    normalized_provider = normalize_provider(args.image_vlm_provider)
+    api_key_env = str(args.image_vlm_api_key_env).strip()
+    if not api_key_env or (
+        normalized_provider == "openai" and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
+    ):
+        api_key_env = DEFAULT_OPENAI_API_KEY_ENV if normalized_provider == "openai" else DEFAULT_GEMINI_API_KEY_ENV
     return ConverterConfig(
         cwd=main_converter_root,
         repo_root=REPO_ROOT,
@@ -1295,11 +1320,12 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
         reuse_surya_cache=bool(args.reuse_surya_cache),
-        image_vlm_provider=normalize_provider(args.image_vlm_provider),
+        image_vlm_provider=normalized_provider,
         image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
         image_vlm_prompt=str(args.image_vlm_prompt),
         image_vlm_max_new_tokens=max(1, int(args.image_vlm_max_new_tokens)),
-        image_vlm_api_key_env=str(args.image_vlm_api_key_env).strip() or DEFAULT_GEMINI_API_KEY_ENV,
+        image_vlm_api_key_env=api_key_env,
+        ignore_image_vlm_cache=bool(args.ignore_image_vlm_cache),
     )
 
 
@@ -1468,6 +1494,7 @@ def _convert_package(
                 image_vlm_prompt=config.image_vlm_prompt,
                 image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
                 image_vlm_api_key_env=config.image_vlm_api_key_env,
+                ignore_image_vlm_cache=config.ignore_image_vlm_cache,
             )
             merged_md_text, stats = convert_one_slide(
                 context=context,
