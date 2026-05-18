@@ -684,7 +684,10 @@ def format_markdown_image(
             ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
-            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+            copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+            relative_path = relativize_markdown_path(copied_path, output_dir)
+            image_tag = render_image_tag(relative_path)
+            return annotate_generated_image_markdown(image_md, image_tag=image_tag), None, unavailable, True, False
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
         relative_path = relativize_markdown_path(copied_path, output_dir)
@@ -1190,14 +1193,11 @@ def overlay_link_text(
     return render_image_tag(path)
 
 
-# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 출처 정보를 덧붙인다.
-# 사람이 결과를 검토할 때 어떤 파일에서 생성된 설명인지 추적할 수 있게 한다.
-def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
-    image_name = Path(image_path).name
+# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 링크를 덧붙인다.
+def annotate_generated_image_markdown(markdown: str, image_tag: Optional[str] = None) -> str:
     body = markdown.strip()
-    if not body:
-        return f"[image-vlm-source: {image_name}]"
-    return f"[image-vlm-source: {image_name}]\n\n{body}"
+    parts = [part for part in [image_tag, body] if part]
+    return "\n\n".join(parts)
 
 
 # 테이블 오버레이 이미지 하나를 최종 텍스트로 변환한다.
@@ -1230,7 +1230,8 @@ def overlay_content_text(
             ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
-            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+            link_text = overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media)
+            return annotate_generated_image_markdown(image_md, image_tag=link_text), None, unavailable, True, False
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         return (
             overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
