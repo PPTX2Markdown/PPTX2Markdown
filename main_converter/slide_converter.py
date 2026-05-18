@@ -312,6 +312,42 @@ def _handle_graphic_frame_block(
     assets: SlideRenderAssets,
     deps: SlideConversionDeps,
 ) -> None:
+    gf_kind = deps.graphic_frame_kind(child)
+    if gf_kind == "chart":
+        chart_md, chart_err = deps.convert_chart_to_markdown(
+            child,
+            context.rels_path,
+            context.rels_map,
+            context.source_pptx_path,
+        )
+        if chart_md is not None:
+            lines.append(chart_md.strip())
+            lines.append("")
+            stats.chart_blocks += 1
+            return
+        _append_unsupported_graphic_frame(lines, stats)
+        if chart_err:
+            stats.warnings.append(chart_err)
+        return
+
+    if gf_kind == "diagram":
+        smartart_md, smartart_err = deps.convert_smartart_to_markdown(
+            child,
+            context.rels_path,
+            context.rels_map,
+            context.source_pptx_path,
+            assets.output_dir,
+            assets.media_dir,
+        )
+        if smartart_md:
+            lines.append(smartart_md)
+            lines.append("")
+            stats.smartart_blocks += 1
+        else:
+            _append_unsupported_graphic_frame(lines, stats)
+            stats.warnings.append(smartart_err or "smartart conversion failed")
+        return
+
     table_md, err = deps.convert_table_to_markdown(
         child,
         overlays=context.table_overlay_map.get(deps.shape_id_of(child), []),
@@ -333,41 +369,7 @@ def _handle_graphic_frame_block(
         stats.table_blocks += 1
         return
 
-    gf_kind = deps.graphic_frame_kind(child)
-    if gf_kind == "chart":
-        chart_md, chart_err = deps.convert_chart_to_markdown(
-            child,
-            context.rels_path,
-            context.rels_map,
-            context.source_pptx_path,
-        )
-        if chart_md is not None:
-            lines.append(chart_md.strip())
-            lines.append("")
-            stats.chart_blocks += 1
-            return
-        _append_unsupported_graphic_frame(lines, stats)
-        if chart_err:
-            stats.warnings.append(chart_err)
-        return
-    elif gf_kind == "diagram":
-        smartart_md, smartart_err = deps.convert_smartart_to_markdown(
-            child,
-            context.rels_path,
-            context.rels_map,
-            context.source_pptx_path,
-            assets.output_dir,
-            assets.media_dir,
-        )
-        if smartart_md:
-            lines.append(smartart_md)
-            lines.append("")
-            stats.smartart_blocks += 1
-        else:
-            _append_unsupported_graphic_frame(lines, stats)
-            stats.warnings.append(smartart_err or "smartart conversion failed")
-    else:
-        _append_unsupported_graphic_frame(lines, stats)
+    _append_unsupported_graphic_frame(lines, stats)
     if err:
         normalized_err = str(err).lower()
         if "api key not found" in normalized_err or "modulenotfounderror" in normalized_err or "importerror" in normalized_err:
