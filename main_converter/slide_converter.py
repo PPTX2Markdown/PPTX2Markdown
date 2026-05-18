@@ -41,11 +41,6 @@ class SlideConversionDeps:
     normalize_text: Callable[[str], str]
     shape_id_of: Callable[[ET.Element], str]
     resolve_image_path: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]]
-    convert_picture_to_table_markdown: Callable[
-        [str],
-        Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]],
-    ]
-    copy_debug_image_asset: Callable[[str, Optional[Path], Optional[Dict[str, Path]]], Optional[str]]
     format_markdown_image: Callable[..., Tuple[str, Optional[str], bool, bool, bool]]
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
@@ -54,9 +49,6 @@ class SlideConversionDeps:
         [ET.Element, Optional[Path], Dict[str, str], Optional[Path], Optional[Path], Optional[Path]],
         Tuple[Optional[str], Optional[str]],
     ]
-    diagram_data_path: Callable[[ET.Element, Optional[Path], Dict[str, str]], Optional[Path]]
-    extract_diagram_texts: Callable[[Path], List[str]]
-    format_diagram_as_markdown: Callable[[Sequence[str]], Optional[str]]
     normalize_single_heading_to_h1: Callable[[List[str]], List[str]]
 
 
@@ -65,15 +57,12 @@ class SlideRenderAssets:
     output_dir: Optional[Path] = None
     media_dir: Optional[Path] = None
     copied_media: Optional[Dict[str, Path]] = None
-    surya_debug_dir: Optional[Path] = None
-    copied_surya_debug_images: Optional[Dict[str, Path]] = None
     image_vlm_provider: str = "local"
     image_vlm_model: Optional[str] = None
     image_vlm_prompt: str = ""
     image_vlm_max_new_tokens: int = 1024
     image_vlm_api_key_env: str = "GEMINI_API_KEY"
     ignore_image_vlm_cache: bool = False
-    enable_image_table_pipeline: bool = False
 
 
 @dataclass
@@ -281,31 +270,6 @@ def _handle_picture_block(
         stats.warnings.append(warn)
     else:
         stats.resolved_images += 1
-
-    if assets.enable_image_table_pipeline and not warn and not img_path.startswith("[unresolved-image"):
-        table_md, table_warn, unavailable, table_result = deps.convert_picture_to_table_markdown(img_path)
-        if isinstance(table_result, dict) and (
-            bool(table_result.get("surya_attempted")) or str(table_result.get("status", "")) == "table_skipped"
-        ):
-            deps.copy_debug_image_asset(
-                img_path,
-                debug_dir=assets.surya_debug_dir,
-                copied_debug_images=assets.copied_surya_debug_images,
-            )
-        if table_md is not None:
-            lines.append(table_md.strip())
-            lines.append("")
-            stats.table_blocks += 1
-            return
-        if isinstance(table_result, dict) and str(table_result.get("status", "")) == "table_skipped":
-            stats.table_skipped_blocks += 1
-        if table_warn:
-            if unavailable:
-                if not state.image_pipeline_unavailable_reported:
-                    stats.warnings.append(table_warn)
-                    state.image_pipeline_unavailable_reported = True
-            else:
-                stats.warnings.append(table_warn)
 
     rendered_image, image_warn, unavailable, _, _ = deps.format_markdown_image(
         img_path,

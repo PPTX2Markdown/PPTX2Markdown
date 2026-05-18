@@ -55,11 +55,3 @@ def copy_media_asset(
     if copied is None:
         return path
     return copied
-
-
-def copy_debug_image_asset(
-    path: str,
-    debug_dir: Optional[Path],
-    copied_debug_images: Optional[Dict[str, Path]] = None,
-) -> Optional[str]:
-    return _copy_asset_to_dir(path, dest_dir=debug_dir, copied_assets=copied_debug_images)
