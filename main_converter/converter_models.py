@@ -184,6 +184,7 @@ class ConverterConfig(BaseModel):
     reading_order: str = "xml"
     strict: bool = True
     reuse_surya_cache: bool = False
+    image_table_pipeline: bool = False
     image_vlm_provider: str = "local"
     image_vlm_model: Optional[str] = None
     image_vlm_prompt: str = ""

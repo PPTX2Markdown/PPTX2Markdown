@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from asset_utils import copy_media_asset
+from asset_utils import copy_debug_image_asset, copy_media_asset
 from converter_models import (
     ConversionManifest,
     ConverterConfig,
@@ -67,6 +67,7 @@ from image_pipeline.service import (
     extract_markdown_from_image,
     normalize_provider,
 )
+from image_table_pipeline_adapter import convert_picture_to_table_markdown
 from slide_converter import (
     SlideConversionContext,
     SlideConversionDeps,
@@ -1129,6 +1130,37 @@ def diagram_data_path(graphic_frame: ET.Element, rels_path: Optional[Path], rels
     return None
 
 
+# 다이어그램 데이터 XML에서 중복 없는 텍스트 목록을 추출한다.
+# SmartArt 계열 도형의 숨겨진 텍스트를 Markdown으로 옮기기 위한 전처리 단계다.
+def extract_diagram_texts(diagram_data_xml: Path) -> List[str]:
+    try:
+        root = ET.parse(diagram_data_xml).getroot()
+    except Exception:
+        return []
+
+    texts: List[str] = []
+    seen: set = set()
+    for pt in root.findall(".//dgm:pt", NS):
+        raw = "".join(t.text or "" for t in pt.findall(".//a:t", NS))
+        text = normalize_text(raw)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
+
+
+# 추출한 다이어그램 텍스트들을 Markdown 블록으로 정리한다.
+# 항목이 하나면 단일 문단으로, 여러 개면 불릿 목록으로 렌더링한다.
+def format_diagram_as_markdown(texts: Sequence[str]) -> Optional[str]:
+    cleaned = [normalize_text(text) for text in texts if normalize_text(text)]
+    if not cleaned:
+        return None
+    if len(cleaned) == 1:
+        return cleaned[0]
+    return "\n".join(f"- {text}" for text in cleaned)
+
+
 # 삼각형 기호로 시작하는 가짜 불릿 텍스트를 표준 Markdown 불릿 형태로 바꾼다.
 # 시각적 문자 불릿을 구조적 리스트로 복원하기 위한 1차 정규화 함수다.
 def normalize_triangle_bullet(text: str) -> str:
@@ -1323,11 +1355,16 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         normalize_text=normalize_text,
         shape_id_of=shape_id_of,
         resolve_image_path=resolve_image_path,
+        convert_picture_to_table_markdown=convert_picture_to_table_markdown,
+        copy_debug_image_asset=copy_debug_image_asset,
         format_markdown_image=format_markdown_image,
         convert_table_to_markdown=convert_table_to_markdown,
         graphic_frame_kind=graphic_frame_kind,
         convert_chart_to_markdown=convert_chart_to_markdown,
         convert_smartart_to_markdown=convert_smartart_to_markdown,
+        diagram_data_path=diagram_data_path,
+        extract_diagram_texts=extract_diagram_texts,
+        format_diagram_as_markdown=format_diagram_as_markdown,
         normalize_single_heading_to_h1=normalize_single_heading_to_h1,
     )
 
