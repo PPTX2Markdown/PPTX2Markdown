@@ -183,6 +183,8 @@ class ConverterConfig(BaseModel):
     inputs: List[str] = Field(default_factory=list) # 사용자가 CLI로 지정한 입력 PPTX 목록
     reading_order: str = "xml"
     strict: bool = True
+    pptx_inheritance: str = "style"
+    inherited_shapes: str = "visible"
     reuse_surya_cache: bool = False
     image_table_pipeline: bool = False
     image_vlm_provider: str = "local"

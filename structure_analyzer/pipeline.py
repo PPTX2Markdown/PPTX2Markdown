@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
+import copy
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 import xml.etree.ElementTree as ET
 
-from .constants import NS, REORDERABLE
+from .constants import NS, REL_NS, REORDERABLE
 from .extractor import extract_slide_objects_xml
 from .structure import (
     OrderContext,
@@ -59,8 +61,13 @@ def object_to_dict(
         "x": obj.x,
         "y": obj.y,
         "coord_source": obj.coord_source,
+        "source_part": obj.source_part,
+        "inheritance_kind": obj.inheritance_kind,
         "text": obj.text,
         "font_pt": obj.font_pt,
+        "list_kind": obj.list_kind,
+        "list_level": obj.list_level,
+        "has_list_semantics": obj.list_kind in {"ul", "ol"},
         "is_footer": obj.is_footer,
         "is_decorative": obj.is_decorative,
         "is_heading": obj.is_heading,
@@ -68,6 +75,7 @@ def object_to_dict(
         "is_heading_candidate": is_candidate,
         "heading_score": round(score, 3),
         "heading_depth_hint": depth,
+        "heading_depth": depth,
         "bbox": list(obj.bbox) if obj.bbox is not None else None,
         "bucket": bucket(obj, context),
         "reason": reason(obj, context),
@@ -102,6 +110,348 @@ def reorder_tree_by_indexes(tree: ET.ElementTree, ordered_xml_indexes: Sequence[
             continue
         new_children.append(child)
     sp_tree[:] = new_children
+
+
+def reorder_tree_by_objects(tree: ET.ElementTree, ordered_objects: Sequence[SlideObject]) -> None:
+    root = tree.getroot()
+    sp_tree = root.find("p:cSld/p:spTree", NS)
+    if sp_tree is None:
+        return
+
+    children = list(sp_tree)
+    reorderables = [child for child in children if local_name(child.tag) in REORDERABLE]
+    if not reorderables:
+        return
+
+    idx_to_elem = {i + 1: elem for i, elem in enumerate(reorderables)}
+    used_indexes: set[int] = set()
+    ordered_elems: List[ET.Element] = []
+    for obj in ordered_objects:
+        elem = idx_to_elem.get(obj.xml_index)
+        if elem is None:
+            continue
+        if obj.text and not _shape_has_text(elem):
+            elem = copy.deepcopy(elem)
+            _apply_text(elem, obj)
+            _apply_bbox(elem, obj)
+        ordered_elems.append(elem)
+        used_indexes.add(obj.xml_index)
+
+    for i, elem in idx_to_elem.items():
+        if i not in used_indexes:
+            ordered_elems.append(elem)
+
+    new_children: List[ET.Element] = []
+    inserted = False
+    for child in children:
+        if local_name(child.tag) in REORDERABLE:
+            if not inserted:
+                new_children.extend(ordered_elems)
+                inserted = True
+            continue
+        new_children.append(child)
+    sp_tree[:] = new_children
+
+
+def _qn(prefix: str, name: str) -> str:
+    return f"{{{NS[prefix]}}}{name}"
+
+
+def _sub(parent: ET.Element, prefix: str, name: str, attrib: Optional[Dict[str, str]] = None) -> ET.Element:
+    return ET.SubElement(parent, _qn(prefix, name), attrib or {})
+
+
+def _synthetic_text_shape(obj: SlideObject) -> Optional[ET.Element]:
+    text = (obj.text or "").strip()
+    if obj.tag not in {"sp", "grpSp"} or not text:
+        return None
+
+    sp = ET.Element(_qn("p", "sp"))
+    nv_sp_pr = _sub(sp, "p", "nvSpPr")
+    _sub(nv_sp_pr, "p", "cNvPr", {"id": str(obj.xml_index), "name": obj.name or obj.shape_id})
+    c_nv_sp_pr = _sub(nv_sp_pr, "p", "cNvSpPr")
+    _sub(c_nv_sp_pr, "a", "spLocks", {"noGrp": "1"})
+    nv_pr = _sub(nv_sp_pr, "p", "nvPr")
+    if obj.ph_type is not None or obj.ph_idx is not None:
+        ph_attrib: Dict[str, str] = {}
+        if obj.ph_type is not None:
+            ph_attrib["type"] = str(obj.ph_type)
+        if obj.ph_idx is not None:
+            ph_attrib["idx"] = str(obj.ph_idx)
+        _sub(nv_pr, "p", "ph", ph_attrib)
+
+    sp_pr = _sub(sp, "p", "spPr")
+    if obj.bbox is not None:
+        x1, y1, x2, y2 = obj.bbox
+        xfrm = _sub(sp_pr, "a", "xfrm")
+        _sub(xfrm, "a", "off", {"x": str(x1), "y": str(y1)})
+        _sub(xfrm, "a", "ext", {"cx": str(max(0, x2 - x1)), "cy": str(max(0, y2 - y1))})
+
+    tx_body = _sub(sp, "p", "txBody")
+    _sub(tx_body, "a", "bodyPr")
+    _sub(tx_body, "a", "lstStyle")
+    paragraph = _sub(tx_body, "a", "p")
+    if obj.list_kind == "ul":
+        p_pr = _sub(paragraph, "a", "pPr")
+        _sub(p_pr, "a", "buChar", {"char": "•"})
+    elif obj.list_kind == "ol":
+        p_pr = _sub(paragraph, "a", "pPr")
+        _sub(p_pr, "a", "buAutoNum", {"type": "arabicPeriod", "startAt": "1"})
+    run = _sub(paragraph, "a", "r")
+    r_pr_attrib = {"lang": "ko-KR"}
+    if obj.font_pt is not None:
+        r_pr_attrib["sz"] = str(int(round(obj.font_pt * 100)))
+    _sub(run, "a", "rPr", r_pr_attrib)
+    t = _sub(run, "a", "t")
+    t.text = text
+    _sub(paragraph, "a", "endParaRPr", {"lang": "ko-KR"})
+    return sp
+
+
+def _rels_path_for_part(part_xml: Path) -> Path:
+    return part_xml.parent / "_rels" / f"{part_xml.name}.rels"
+
+
+def _read_relationships(rels_path: Path) -> Dict[str, Dict[str, str]]:
+    if not rels_path.exists():
+        return {}
+    root = ET.parse(rels_path).getroot()
+    out: Dict[str, Dict[str, str]] = {}
+    for rel in root.findall("rel:Relationship", REL_NS):
+        rid = rel.attrib.get("Id")
+        if rid:
+            out[rid] = dict(rel.attrib)
+    return out
+
+
+def _write_relationships(rels_path: Path, rels: Sequence[Dict[str, str]]) -> None:
+    rels_path.parent.mkdir(parents=True, exist_ok=True)
+    root = ET.Element("Relationships", {"xmlns": "http://schemas.openxmlformats.org/package/2006/relationships"})
+    for rel in rels:
+        ET.SubElement(root, "Relationship", rel)
+    tree = ET.ElementTree(root)
+    try:
+        ET.indent(tree, space="  ")
+    except AttributeError:
+        pass
+    tree.write(rels_path, encoding="utf-8", xml_declaration=True)
+
+
+def _source_part_elements(part_xml: Optional[str], source_part: str) -> Dict[str, ET.Element]:
+    if not part_xml:
+        return {}
+    path = Path(part_xml)
+    if not path.exists():
+        return {}
+    root = ET.parse(path).getroot()
+    sp_tree = root.find("p:cSld/p:spTree", NS)
+    if sp_tree is None:
+        return {}
+    out: Dict[str, ET.Element] = {}
+    for child in list(sp_tree):
+        if local_name(child.tag) not in REORDERABLE:
+            continue
+        c_nv_pr = child.find(".//p:cNvPr", NS)
+        if c_nv_pr is None:
+            continue
+        sid = c_nv_pr.attrib.get("id")
+        if sid:
+            out[f"{source_part}:{sid}"] = child
+    return out
+
+
+def _set_shape_id(elem: ET.Element, obj: SlideObject) -> None:
+    c_nv_pr = elem.find(".//p:cNvPr", NS)
+    if c_nv_pr is None:
+        return
+    c_nv_pr.set("id", str(obj.xml_index))
+    if obj.name:
+        c_nv_pr.set("name", obj.name)
+
+
+def _apply_bbox(elem: ET.Element, obj: SlideObject) -> None:
+    if obj.bbox is None:
+        return
+    sp_pr = elem.find("./p:spPr", NS)
+    if sp_pr is None:
+        sp_pr = _sub(elem, "p", "spPr")
+    xfrm = sp_pr.find("./a:xfrm", NS)
+    if xfrm is None:
+        xfrm = _sub(sp_pr, "a", "xfrm")
+    off = xfrm.find("./a:off", NS)
+    if off is None:
+        off = _sub(xfrm, "a", "off")
+    ext = xfrm.find("./a:ext", NS)
+    if ext is None:
+        ext = _sub(xfrm, "a", "ext")
+    x1, y1, x2, y2 = obj.bbox
+    off.set("x", str(x1))
+    off.set("y", str(y1))
+    ext.set("cx", str(max(0, x2 - x1)))
+    ext.set("cy", str(max(0, y2 - y1)))
+
+
+def _shape_has_text(elem: ET.Element) -> bool:
+    return any((t.text or "").strip() for t in elem.findall(".//a:t", NS))
+
+
+def _apply_text(elem: ET.Element, obj: SlideObject) -> None:
+    text = (obj.text or "").strip()
+    if not text or _shape_has_text(elem):
+        return
+    tx_body = elem.find("./p:txBody", NS)
+    if tx_body is None:
+        tx_body = _sub(elem, "p", "txBody")
+        _sub(tx_body, "a", "bodyPr")
+        _sub(tx_body, "a", "lstStyle")
+    paragraph = tx_body.find("./a:p", NS)
+    if paragraph is None:
+        paragraph = _sub(tx_body, "a", "p")
+    if obj.list_kind == "ul" and paragraph.find("./a:pPr", NS) is None:
+        p_pr = _sub(paragraph, "a", "pPr")
+        _sub(p_pr, "a", "buChar", {"char": "•"})
+    elif obj.list_kind == "ol" and paragraph.find("./a:pPr", NS) is None:
+        p_pr = _sub(paragraph, "a", "pPr")
+        _sub(p_pr, "a", "buAutoNum", {"type": "arabicPeriod", "startAt": "1"})
+    run = paragraph.find("./a:r", NS)
+    if run is None:
+        run = _sub(paragraph, "a", "r")
+    r_pr = run.find("./a:rPr", NS)
+    if r_pr is None:
+        r_pr = _sub(run, "a", "rPr", {"lang": "ko-KR"})
+    if obj.font_pt is not None and "sz" not in r_pr.attrib:
+        r_pr.set("sz", str(int(round(obj.font_pt * 100))))
+    t = run.find("./a:t", NS)
+    if t is None:
+        t = _sub(run, "a", "t")
+    t.text = text
+
+
+def _copy_materialized_shape(
+    obj: SlideObject,
+    source_elements: Dict[str, ET.Element],
+    inherited_rels: Dict[str, str],
+    rel_counter: List[int],
+) -> Optional[ET.Element]:
+    source = source_elements.get(obj.shape_id)
+    if source is None:
+        return _synthetic_text_shape(obj)
+
+    elem = copy.deepcopy(source)
+    _set_shape_id(elem, obj)
+    _apply_bbox(elem, obj)
+
+    if obj.tag == "pic":
+        blip = elem.find(".//a:blip", NS)
+        old_rid = blip.attrib.get(f"{{{NS['r']}}}embed") if blip is not None else None
+        target = inherited_rels.get(old_rid or "")
+        if blip is not None and target:
+            rel_counter[0] += 1
+            new_rid = f"rIdInherited{rel_counter[0]}"
+            blip.set(f"{{{NS['r']}}}embed", new_rid)
+            inherited_rels[new_rid] = target
+    return elem
+
+
+def _relative_uri(path: Path, start: Path) -> str:
+    return os.path.relpath(path, start=start).replace(os.sep, "/")
+
+
+def materialize_tree_by_objects(
+    tree: ET.ElementTree,
+    ordered_objects: Sequence[SlideObject],
+    meta: Dict[str, object],
+    output_dir: Path,
+    output_rels_path: Path,
+    source_slide_xml: Path,
+) -> None:
+    root = tree.getroot()
+    sp_tree = root.find("p:cSld/p:spTree", NS)
+    if sp_tree is None:
+        return
+
+    children = list(sp_tree)
+    reorderables = [child for child in children if local_name(child.tag) in REORDERABLE]
+    if not reorderables:
+        return
+
+    idx_to_elem = {i + 1: elem for i, elem in enumerate(reorderables)}
+    used_indexes: set[int] = set()
+    ordered_elems: List[ET.Element] = []
+    source_elements = {
+        **_source_part_elements(str(meta.get("layout_xml") or ""), "layout"),
+        **_source_part_elements(str(meta.get("master_xml") or ""), "master"),
+    }
+
+    inherited_targets: Dict[str, str] = {}
+    for source_key in ("layout_xml", "master_xml"):
+        part_raw = meta.get(source_key)
+        if not isinstance(part_raw, str) or not part_raw:
+            continue
+        part_xml = Path(part_raw)
+        part_rels = _rels_path_for_part(part_xml)
+        for rid, rel in _read_relationships(part_rels).items():
+            if "image" not in rel.get("Type", ""):
+                continue
+            target = rel.get("Target")
+            if not target:
+                continue
+            abs_target = (part_rels.parent.parent / target).resolve()
+            inherited_targets[rid] = _relative_uri(abs_target, output_dir)
+    rel_counter = [0]
+
+    for obj in ordered_objects:
+        if obj.inheritance_kind == "materialized":
+            synthetic = _copy_materialized_shape(obj, source_elements, inherited_targets, rel_counter)
+            if synthetic is not None:
+                ordered_elems.append(synthetic)
+            continue
+        elem = idx_to_elem.get(obj.xml_index)
+        if elem is None:
+            continue
+        if obj.text and not _shape_has_text(elem):
+            elem = copy.deepcopy(elem)
+            _apply_text(elem, obj)
+            _apply_bbox(elem, obj)
+        ordered_elems.append(elem)
+        used_indexes.add(obj.xml_index)
+
+    for i, elem in idx_to_elem.items():
+        if i not in used_indexes:
+            ordered_elems.append(elem)
+
+    new_children: List[ET.Element] = []
+    inserted = False
+    for child in children:
+        if local_name(child.tag) in REORDERABLE:
+            if not inserted:
+                new_children.extend(ordered_elems)
+                inserted = True
+            continue
+        new_children.append(child)
+    sp_tree[:] = new_children
+
+    rels: List[Dict[str, str]] = []
+    source_rels = _read_relationships(_rels_path_for_part(source_slide_xml))
+    for rel in source_rels.values():
+        current = dict(rel)
+        target = current.get("Target")
+        if target and current.get("TargetMode") != "External":
+            abs_target = (_rels_path_for_part(source_slide_xml).parent.parent / target).resolve()
+            current["Target"] = _relative_uri(abs_target, output_dir)
+        rels.append(current)
+    for rid, target in inherited_targets.items():
+        if not rid.startswith("rIdInherited"):
+            continue
+        rels.append(
+            {
+                "Id": rid,
+                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+                "Target": target,
+            }
+        )
+    if rels:
+        _write_relationships(output_rels_path, rels)
 
 
 def gather_input_files(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path]:
@@ -140,8 +490,15 @@ def write_outputs(
     output_dir: Path,
     mode: str,
     strict: bool = False,
+    pptx_inheritance: str = "style",
+    inherited_shapes: str = "visible",
 ) -> Dict[str, object]:
-    objects, meta = extract_slide_objects_xml(slide_xml, strict=strict)
+    objects, meta = extract_slide_objects_xml(
+        slide_xml,
+        strict=strict,
+        pptx_inheritance=pptx_inheritance,
+        inherited_shapes=inherited_shapes,
+    )
     meta["mode"] = mode
     meta["strict"] = strict
     context = build_order_context(objects)
@@ -152,18 +509,30 @@ def write_outputs(
     ordered_indexes = [obj.xml_index for obj in ordered]
 
     tree = ET.parse(slide_xml)
-    reorder_tree_by_indexes(tree, ordered_indexes)
-
     stem = slide_xml.stem
     json_path = output_dir / f"{stem}.structure_analysis.json"
     xml_path = output_dir / f"{stem}.reordered.xml"
+    if any(obj.inheritance_kind == "materialized" for obj in ordered):
+        materialize_tree_by_objects(
+            tree,
+            ordered,
+            meta,
+            output_dir,
+            output_dir / "_rels" / f"{stem}.reordered.xml.rels",
+            slide_xml,
+        )
+    else:
+        reorder_tree_by_objects(tree, ordered)
 
     report: Dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "input_xml": str(slide_xml),
         "mode": mode,
         "strict": strict,
+        "pptx_inheritance": meta.get("pptx_inheritance"),
+        "inherited_shapes": meta.get("inherited_shapes"),
         "layout_xml": meta.get("layout_xml"),
+        "master_xml": meta.get("master_xml"),
         "confidence": confidence(objects),
         "counts": {
             "total": len(objects),
@@ -173,6 +542,10 @@ def write_outputs(
             "footer": sum(1 for obj in objects if obj.is_footer),
             "decorative": sum(1 for obj in objects if obj.is_decorative),
             "layout_coord_used": sum(1 for obj in objects if obj.coord_source == "layout"),
+            "master_coord_used": sum(1 for obj in objects if obj.coord_source == "master"),
+            "materialized": sum(1 for obj in objects if obj.inheritance_kind == "materialized"),
+            "materialized_layout": sum(1 for obj in objects if obj.inheritance_kind == "materialized" and obj.source_part == "layout"),
+            "materialized_master": sum(1 for obj in objects if obj.inheritance_kind == "materialized" and obj.source_part == "master"),
             "xml_tables": len(meta.get("xml_tables", [])),
             "xml_images": len(meta.get("xml_images", [])),
         },

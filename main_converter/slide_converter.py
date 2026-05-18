@@ -31,6 +31,7 @@ class SlideConversionDeps:
     choose_rels_in_package: Callable[[Path, Optional[Path]], Optional[Path]]
     build_rels_map: Callable[[Optional[Path]], Dict[str, str]]
     load_heading_hints: Callable[[Path], Dict[str, Dict[str, object]]]
+    load_effective_properties: Callable[[Path], Dict[str, Dict[str, object]]]
     collect_table_overlay_pictures: Callable[
         [ET.Element, Path, Dict[str, str], Optional[Path]],
         Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int],
@@ -86,6 +87,7 @@ class SlideConversionContext:
     rels_path: Optional[Path] = None
     rels_map: Dict[str, str] = field(default_factory=dict)
     heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    effective_properties: Dict[str, Dict[str, object]] = field(default_factory=dict)
     table_overlay_map: Dict[str, List[Dict[str, object]]] = field(default_factory=dict)
     consumed_picture_ids: set[str] = field(default_factory=set)
 
@@ -121,6 +123,34 @@ def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConv
     lines.append("")
 
 
+def _apply_effective_list_properties(
+    blocks: Sequence[ShapeBlock],
+    props: Dict[str, object],
+) -> List[ShapeBlock]:
+    if any(block.kind in {"list_ul", "list_ol"} for block in blocks):
+        return list(blocks)
+    if not bool(props.get("has_list_semantics", False)):
+        return list(blocks)
+
+    raw_kind = str(props.get("list_kind") or "").strip().lower()
+    if raw_kind not in {"ul", "ol"}:
+        return list(blocks)
+    try:
+        level = int(props.get("list_level") or 0)
+    except (TypeError, ValueError):
+        level = 0
+    level = max(0, level)
+    kind = "list_ol" if raw_kind == "ol" else "list_ul"
+
+    inherited: List[ShapeBlock] = []
+    for block in blocks:
+        if block.kind == "text" and block.plain_text and not block.is_math_only:
+            inherited.append(ShapeBlock(kind=kind, segments=block.segments, level=level))
+        else:
+            inherited.append(block)
+    return inherited
+
+
 def _handle_text_shape_block(
     child: ET.Element,
     *,
@@ -138,7 +168,10 @@ def _handle_text_shape_block(
         stats.skipped_blocks += 1
         return
 
+    sid = deps.shape_id_of(child)
+    props = context.effective_properties.get(sid, {})
     shape_blocks = deps.extract_shape_blocks(child)
+    shape_blocks = _apply_effective_list_properties(shape_blocks, props)
     has_list_semantics = any(block.kind in {"list_ul", "list_ol"} for block in shape_blocks)
     has_math_shape = any(block.has_math for block in shape_blocks)
     text = deps.render_shape_blocks(shape_blocks)
@@ -162,7 +195,6 @@ def _handle_text_shape_block(
                 stats.math_conversion_failures += 1
                 stats.warnings.append("OMML to LaTeX conversion failed; used math fallback text")
 
-    sid = deps.shape_id_of(child)
     hint = context.heading_hints.get(sid, {})
     depth = hint.get("heading_depth_hint")
     score = float(hint.get("heading_score", 0.0))
@@ -431,6 +463,7 @@ def convert_one_slide(
     context.rels_path = deps.choose_rels_in_package(context.slide_xml, source_slide_xml=context.source_slide_xml)
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
+    context.effective_properties = deps.load_effective_properties(context.slide_xml)
     (
         context.table_overlay_map,
         context.consumed_picture_ids,
@@ -454,6 +487,12 @@ def convert_one_slide(
         if tag not in {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}:
             continue
         stats.blocks_total += 1
+
+        sid = deps.shape_id_of(child)
+        props = context.effective_properties.get(sid, {})
+        if props.get("is_decorative"):
+            stats.skipped_blocks += 1
+            continue
 
         if tag == "cxnSp":
             stats.skipped_blocks += 1

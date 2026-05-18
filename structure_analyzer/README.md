@@ -2,6 +2,11 @@
 
 `structure_analyzer/extract_structure_analysis.py`는 슬라이드 XML의 객체 순서를 분석해, 구조 분석 JSON과 재정렬된 XML을 생성합니다.
 
+슬라이드 객체에 직접 좌표/스타일이 없고 placeholder만 있는 경우에는 PPTX 상속 체인
+`slide -> slideLayout -> slideMaster`를 따라 placeholder geometry/font 정보를 보완합니다.
+기본 placeholder 상속 모드는 markdown 변환 목적의 `style`이며, layout/master-only shape는
+슬라이드 쇼에 보이는 `visible` shape만 본문에 포함합니다.
+
 ## 내부 구조 (리팩토링)
 
 현재는 구조 판단 관련 로직을 한 파일에 모아 둔 상태입니다.
@@ -72,6 +77,10 @@ python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/targ
 - `--mode xml`: 읽기 순서 분석 모드 (`xml`만 지원)
 - `--output-dir <path>`: 결과(JSON/XML/manifest) 저장 디렉터리
 - `--strict`: XML 기반 strict heading 규칙 적용
+- `--placeholder-inheritance none|geometry|style`: placeholder 상속 반영 깊이 지정
+  - legacy alias: `--pptx-inheritance`, `placeholder=geometry`, `semantic=style`
+- `--inherited-shapes none|visible|all`: layout/master-only shape materialization 범위 지정
+  - legacy alias: `semantic=visible`
 
 ## Strict 규칙 문서
 

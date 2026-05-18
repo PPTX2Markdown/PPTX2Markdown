@@ -68,6 +68,8 @@ def run_structure_analysis_stage(
     package_name: str,
     slide_xmls: Sequence[Path],
     strict: bool = False,
+    pptx_inheritance: str = "style",
+    inherited_shapes: str = "visible",
 ) -> Tuple[Dict[str, Path], Path]:
     ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
     if not ro_script.exists():
@@ -89,9 +91,14 @@ def run_structure_analysis_stage(
     ]
     if strict:
         cmd.append("--strict")
+    cmd.extend(["--placeholder-inheritance", pptx_inheritance])
+    cmd.extend(["--inherited-shapes", inherited_shapes])
     cmd.extend(str(p.resolve()) for p in slide_xmls)
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     if proc.returncode != 0:
         raise RuntimeError(
             "structure_analysis stage failed\n"
@@ -156,6 +163,7 @@ def run_surya_pipeline_stage(
     targets: Optional[Sequence[str]] = None,
     target_pptx_dir: Optional[Path] = None,
     target_slides_dir: Optional[Path] = None,
+    pptx_inheritance: str = "style",
 ) -> Path:
     run_script = surya_root / "run_surya_pipeline.py"
     if not run_script.exists():
@@ -171,6 +179,7 @@ def run_surya_pipeline_stage(
         cmd.append("--prefer-existing-target-slides")
     if force:
         cmd.append("--force")
+    cmd.extend(["--placeholder-inheritance", pptx_inheritance])
     if targets:
         cmd.extend(str(t) for t in targets if str(t).strip())
 
@@ -191,6 +200,7 @@ def prepare_surya_structure_root(
     targets: Optional[Sequence[str]] = None,
     target_pptx_dir: Optional[Path] = None,
     target_slides_dir: Optional[Path] = None,
+    pptx_inheritance: str = "style",
 ) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
     candidate = repo_root / "surya_pipeline"
@@ -212,6 +222,7 @@ def prepare_surya_structure_root(
             targets=targets,
             target_pptx_dir=target_pptx_dir,
             target_slides_dir=target_slides_dir,
+            pptx_inheritance=pptx_inheritance,
         )
 
     raise FileNotFoundError(

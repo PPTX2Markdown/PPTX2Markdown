@@ -430,10 +430,47 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
         out[sid] = {
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
-            "heading_depth_hint": row.get("heading_depth_hint"),
+            "heading_depth_hint": row.get("heading_depth_hint", row.get("heading_depth")),
             "font_pt": row.get("font_pt"),
             "ph_type": row.get("ph_type"),
             "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
+        }
+    return out
+
+
+# 구조 분석 단계에서 생성한 effective properties를 읽어 shape_id 기준 맵으로 바꾼다.
+# 상속으로 복원된 리스트 의미처럼 Markdown 렌더링에 직접 필요한 비-heading 속성만 여기서 읽는다.
+def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
+    """
+    Load effective rendering properties produced by structure analysis stage.
+    key: shape_id (string)
+    value: non-heading effective fields used by markdown rendering
+    """
+    sidecar = find_sidecar_json(slide_xml)
+    if sidecar is None:
+        return {}
+    try:
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    rows = payload.get("structure_order")
+    if not isinstance(rows, list):
+        rows = payload.get("reading_order")
+    if not isinstance(rows, list):
+        return {}
+    out: Dict[str, Dict[str, object]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("shape_id", "")).strip()
+        if not sid:
+            continue
+        out[sid] = {
+            "list_kind": row.get("list_kind"),
+            "list_level": row.get("list_level"),
+            "has_list_semantics": bool(row.get("has_list_semantics", False)),
+            "ph_type": row.get("ph_type"),
+            "is_decorative": bool(row.get("is_decorative", False)),
         }
     return out
 
@@ -524,12 +561,12 @@ def choose_rels_in_package(
     source_slide_xml: Optional[Path] = None,
 ) -> Optional[Path]:
     # Strictly stay inside same ppt package to avoid cross-package mismatches.
-    sidecar = rels_from_sidecar(slide_xml)
-    if sidecar:
-        return sidecar
     fallback = fallback_rels(slide_xml)
     if fallback:
         return fallback
+    sidecar = rels_from_sidecar(slide_xml)
+    if sidecar:
+        return sidecar
     return source_slide_rels(source_slide_xml)
 
 
@@ -1202,7 +1239,7 @@ def split_triangle_bullets(text: str) -> List[str]:
 
 
 # XML 요소에서 PowerPoint 내부 shape id를 꺼낸다.
-# heading hints, overlay 매핑 등 다른 분석 결과와 현재 shape를 연결하는 공통 키다.
+# heading hints, effective properties, overlay 매핑 등 다른 분석 결과와 현재 shape를 연결하는 공통 키다.
 def shape_id_of(elem: ET.Element) -> str:
     return shape_id_of_core(elem, NS)
 
@@ -1348,6 +1385,7 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         choose_rels_in_package=choose_rels_in_package,
         build_rels_map=build_rels_map,
         load_heading_hints=load_heading_hints,
+        load_effective_properties=load_effective_properties,
         collect_table_overlay_pictures=collect_table_overlay_pictures,
         extract_shape_blocks=extract_shape_blocks,
         render_shape_blocks=render_shape_blocks,
@@ -1416,6 +1454,29 @@ def _parse_args() -> argparse.Namespace:
         help="Disable strict heading detection in xml reading-order mode.",
     )
     parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help=(
+            "Placeholder inheritance depth for markdown extraction. "
+            "none uses slide XML only; geometry inherits placeholder type/bbox; "
+            "style also inherits text style signals such as font size and list semantics. "
+            "Legacy values placeholder=geometry and semantic=style are accepted."
+        ),
+    )
+    parser.add_argument(
+        "--inherited-shapes",
+        choices=("none", "visible", "all", "semantic"),
+        default="visible",
+        help=(
+            "Materialize layout/master-only shapes into effective structure properties. "
+            "visible keeps slideshow-visible text/images while filtering placeholder prompts; "
+            "all keeps every shape. Legacy semantic=visible is accepted."
+        ),
+    )
+    parser.add_argument(
         "--reuse-surya-cache",
         action="store_true",
         help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
@@ -1481,6 +1542,8 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
+        pptx_inheritance=str(args.pptx_inheritance),
+        inherited_shapes=str(args.inherited_shapes),
         reuse_surya_cache=bool(args.reuse_surya_cache),
         image_vlm_provider=normalized_provider,
         image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
@@ -1598,6 +1661,8 @@ def _convert_package(
                 package_name=pkg_name,
                 slide_xmls=slide_xmls,
                 strict=config.strict,
+                pptx_inheritance=config.pptx_inheritance,
+                inherited_shapes=config.inherited_shapes,
             )
             pkg_row["structure_analysis_output_dir"] = str(ro_output)
         except Exception as e:  # noqa: BLE001
@@ -1734,6 +1799,7 @@ def main() -> int:
             targets=[pkg.name for pkg in packages],
             target_pptx_dir=default_pptx_input_dir(config.cwd).resolve(),
             target_slides_dir=default_target_dir(config.cwd).resolve(),
+            pptx_inheritance=config.pptx_inheritance,
         )
 
     manifest = ConversionManifest()

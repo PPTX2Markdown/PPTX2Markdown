@@ -31,7 +31,11 @@ class SlideObject:
     is_heading: bool
     is_title_placeholder: bool
     font_pt: Optional[float]
+    list_kind: Optional[str] = None
+    list_level: Optional[int] = None
     bbox: Optional[Tuple[int, int, int, int]] = None
+    source_part: str = "slide"
+    inheritance_kind: str = "direct"
 
 
 @dataclass

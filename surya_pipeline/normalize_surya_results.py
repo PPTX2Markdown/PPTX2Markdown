@@ -16,16 +16,20 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 import zipfile
+import sys
+
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from pptx_inheritance import resolve_effective_slide
 
 
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
     "p": "http://schemas.openxmlformats.org/presentationml/2006/main",
 }
-REL_NS = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
-
 REORDERABLE = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
-TITLE_TYPES = {"title", "ctrTitle", "subTitle"}
 
 
 @dataclass
@@ -155,216 +159,34 @@ def normalize_text(s: str) -> str:
     return s
 
 
-def first_off_and_ext(elem: ET.Element) -> Tuple[Optional[ET.Element], Optional[ET.Element]]:
-    off = None
-    ext = None
-    for p in (
-        "./p:spPr/a:xfrm",
-        "./p:grpSpPr/a:xfrm",
-        "./p:xfrm",
-        ".//a:xfrm",
-    ):
-        xfrm = elem.find(p, NS)
-        if xfrm is None:
-            continue
-        off = xfrm.find("a:off", NS)
-        ext = xfrm.find("a:ext", NS)
-        if off is not None or ext is not None:
-            return off, ext
-    return off, ext
-
-
-def bbox_from_off_ext(off: Optional[ET.Element], ext: Optional[ET.Element]) -> Optional[List[float]]:
-    if off is None or ext is None:
-        return None
-    x = safe_float(off.attrib.get("x"))
-    y = safe_float(off.attrib.get("y"))
-    w = safe_float(ext.attrib.get("cx"))
-    h = safe_float(ext.attrib.get("cy"))
-    if w <= 0 or h <= 0:
-        return None
-    return [x, y, x + w, y + h]
-
-
-def get_nvpr_paths(tag: str) -> Tuple[str, str]:
-    if tag == "sp":
-        return "./p:nvSpPr/p:cNvPr", "./p:nvSpPr/p:nvPr/p:ph"
-    if tag == "pic":
-        return "./p:nvPicPr/p:cNvPr", "./p:nvPicPr/p:nvPr/p:ph"
-    if tag == "graphicFrame":
-        return "./p:nvGraphicFramePr/p:cNvPr", "./p:nvGraphicFramePr/p:nvPr/p:ph"
-    if tag == "grpSp":
-        return "./p:nvGrpSpPr/p:cNvPr", "./p:nvGrpSpPr/p:nvPr/p:ph"
-    if tag == "cxnSp":
-        return "./p:nvCxnSpPr/p:cNvPr", "./p:nvCxnSpPr/p:nvPr/p:ph"
-    return ".//p:cNvPr", ".//p:ph"
-
-
-def _resolve_related_part(source_xml: Path, rel_target: str) -> Path:
-    return (source_xml.parent / rel_target).resolve()
-
-
-def _relationship_target(source_xml: Path, rel_type_suffix: str) -> Optional[Path]:
-    rels_path = source_xml.parent / "_rels" / f"{source_xml.name}.rels"
-    if not rels_path.exists():
-        return None
-    root = ET.parse(rels_path).getroot()
-    for rel in root.findall("r:Relationship", REL_NS):
-        rel_type = str(rel.attrib.get("Type", ""))
-        if not rel_type.endswith(rel_type_suffix):
-            continue
-        target = rel.attrib.get("Target")
-        if not target:
-            continue
-        return _resolve_related_part(source_xml, target)
-    return None
-
-
-def _ph_type_match(a: Optional[str], b: Optional[str]) -> bool:
-    if a == b:
-        return True
-    if a in TITLE_TYPES and b in TITLE_TYPES:
-        return True
-    return False
-
-
-def _find_placeholder_bbox_in_part(part_xml: Path, ph_type: Optional[str], ph_idx: Optional[str]) -> Optional[List[float]]:
-    if not part_xml.exists():
-        return None
-    root = ET.parse(part_xml).getroot()
-    sp_tree = root.find("p:cSld/p:spTree", NS)
-    if sp_tree is None:
-        return None
-
-    best_bbox: Optional[List[float]] = None
-    best_score = -1
-    for ch in list(sp_tree):
-        tag = local_name(ch.tag)
-        if tag not in REORDERABLE:
-            continue
-        _, ph_path = get_nvpr_paths(tag)
-        ph = ch.find(ph_path, NS)
-        if ph is None:
-            continue
-        cand_type = ph.attrib.get("type")
-        cand_idx = ph.attrib.get("idx")
-        off, ext = first_off_and_ext(ch)
-        bbox = bbox_from_off_ext(off, ext)
-        if bbox is None:
-            continue
-
-        if ph_idx is not None:
-            if cand_idx != ph_idx:
-                continue
-            score = 4
-        else:
-            score = 1 if cand_idx is None else 0
-
-        if ph_type is not None:
-            if not _ph_type_match(ph_type, cand_type):
-                continue
-            score += 2
-        else:
-            score += 1 if cand_type is None else 0
-
-        if score > best_score:
-            best_score = score
-            best_bbox = bbox
-    return best_bbox
-
-
-def find_inherited_placeholder_bbox(slide_xml: Path, ph_type: Optional[str], ph_idx: Optional[str]) -> Optional[List[float]]:
-    if ph_type is None and ph_idx is None:
-        return None
-    layout_xml = _relationship_target(slide_xml, "/slideLayout")
-    if layout_xml is not None:
-        bbox = _find_placeholder_bbox_in_part(layout_xml, ph_type, ph_idx)
-        if bbox is not None:
-            return bbox
-        master_xml = _relationship_target(layout_xml, "/slideMaster")
-        if master_xml is not None:
-            bbox = _find_placeholder_bbox_in_part(master_xml, ph_type, ph_idx)
-            if bbox is not None:
-                return bbox
-    return None
-
-
-def extract_shape_text(elem: ET.Element) -> str:
-    parts: List[str] = []
-    for t in elem.findall(".//a:t", NS):
-        if t.text and t.text.strip():
-            parts.append(t.text.strip())
-    return normalize_text(" ".join(parts))
-
-
-def extract_font_pt(elem: ET.Element) -> Optional[float]:
-    sizes: List[float] = []
-    for rpr in elem.findall(".//a:rPr", NS):
-        sz = rpr.attrib.get("sz")
-        if sz is None:
-            continue
-        val = safe_float(sz, -1.0)
-        if val > 0:
-            sizes.append(val / 100.0)
-    for rpr in elem.findall(".//a:endParaRPr", NS):
-        sz = rpr.attrib.get("sz")
-        if sz is None:
-            continue
-        val = safe_float(sz, -1.0)
-        if val > 0:
-            sizes.append(val / 100.0)
-    if not sizes:
-        return None
-    return max(sizes)
-
-
-def parse_slide_xml_objects(slide_xml: Path) -> List[XmlObject]:
-    root = ET.parse(slide_xml).getroot()
-    sp_tree = root.find("p:cSld/p:spTree", NS)
-    if sp_tree is None:
-        return []
-
+def parse_slide_xml_objects(slide_xml: Path, pptx_inheritance: str = "style") -> List[XmlObject]:
+    effective_slide = resolve_effective_slide(
+        slide_xml,
+        pptx_inheritance=pptx_inheritance,
+        inherited_shapes="none",
+    )
     out: List[XmlObject] = []
-    for ch in list(sp_tree):
-        tag = local_name(ch.tag)
-        if tag not in REORDERABLE:
-            continue
-        c_nv_path, ph_path = get_nvpr_paths(tag)
-        c_nv_pr = ch.find(c_nv_path, NS)
-        ph = ch.find(ph_path, NS)
-        shape_id = c_nv_pr.attrib.get("id", "") if c_nv_pr is not None else ""
-        ph_type = ph.attrib.get("type") if ph is not None else None
-
-        off, ext = first_off_and_ext(ch)
-        bbox = bbox_from_off_ext(off, ext)
-        if bbox is None:
-            bbox = find_inherited_placeholder_bbox(slide_xml, ph_type, ph.attrib.get("idx") if ph is not None else None)
-        if bbox is None:
-            x = 0.0
-            y = 0.0
-            w = 0.0
-            h = 0.0
+    for shape in effective_slide.shapes:
+        if shape.bbox is None:
+            x = y = w = h = 0.0
         else:
-            x = bbox[0]
-            y = bbox[1]
-            w = bbox[2] - bbox[0]
-            h = bbox[3] - bbox[1]
-        cx = x + (w / 2.0)
-        cy = y + (h / 2.0)
-
+            x = float(shape.bbox[0])
+            y = float(shape.bbox[1])
+            w = float(shape.bbox[2] - shape.bbox[0])
+            h = float(shape.bbox[3] - shape.bbox[1])
         out.append(
             XmlObject(
-                shape_id=shape_id,
-                tag=tag,
-                ph_type=ph_type,
+                shape_id=shape.shape_id,
+                tag=shape.tag,
+                ph_type=shape.ph_type,
                 x=x,
                 y=y,
                 w=w,
                 h=h,
-                cx=cx,
-                cy=cy,
-                text=extract_shape_text(ch),
-                font_pt=extract_font_pt(ch),
+                cx=x + (w / 2.0),
+                cy=y + (h / 2.0),
+                text=shape.normalized,
+                font_pt=shape.font_pt,
             )
         )
     return out
@@ -602,6 +424,14 @@ def main() -> int:
         default=None,
         help="Optional document key in input JSON. If omitted, first key is used.",
     )
+    parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help="Placeholder inheritance depth used for XML object normalization.",
+    )
     args = parser.parse_args()
 
     default_layout_dir = script_dir / "output" / "layout_result"
@@ -636,7 +466,7 @@ def main() -> int:
         image_bbox = norm_bbox(page.get("image_bbox")) or [0.0, 0.0, 1.0, 1.0]
 
         slide_xml = ppt_root / "ppt" / "slides" / f"slide{page_no}.xml"
-        xml_objects = parse_slide_xml_objects(slide_xml) if slide_xml.exists() else []
+        xml_objects = parse_slide_xml_objects(slide_xml, pptx_inheritance=args.pptx_inheritance) if slide_xml.exists() else []
 
         bboxes = page.get("bboxes", [])
         if not isinstance(bboxes, list):
@@ -702,6 +532,7 @@ def main() -> int:
             "layout_doc_key": layout_key,
             "pptx_path": str(pptx_path) if pptx_path and pptx_path.exists() else None,
             "ppt_root": str(ppt_root),
+            "pptx_inheritance": args.pptx_inheritance,
         },
         "rules": {
             "signals": [
