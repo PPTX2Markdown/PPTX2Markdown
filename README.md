@@ -222,6 +222,31 @@ python main_converter/run_pptx_to_markdown.py \
   sample1.pptx
 ```
 
+OpenRouter 사용:
+
+프로젝트 루트 `.env`:
+
+```dotenv
+OPENROUTER_API_KEY=your-api-key
+```
+
+기본 모델 `google/gemini-2.5-flash` 사용:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider openrouter \
+  sample1.pptx
+```
+
+명시적으로 모델 지정:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider openrouter \
+  --image-vlm-model google/gemini-2.5-flash \
+  sample1.pptx
+```
+
 ## 출력
 
 기본 출력 경로:

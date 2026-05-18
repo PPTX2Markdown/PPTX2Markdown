@@ -16,6 +16,8 @@ from .constants import (
     DEFAULT_MAX_NEW_TOKENS,
     DEFAULT_OPENAI_API_KEY_ENV,
     DEFAULT_OPENAI_MODEL,
+    DEFAULT_OPENROUTER_API_KEY_ENV,
+    DEFAULT_OPENROUTER_MODEL,
     DEFAULT_PROMPT,
     DEFAULT_PROVIDER,
 )
@@ -52,7 +54,7 @@ def _build_cache_key(
             str(model_spec or ""),
             str(max(1, int(max_new_tokens))),
             prompt,
-            str(api_key_env if provider in {"gemini", "openai"} else ""),
+            str(api_key_env if provider in {"gemini", "openai", "openrouter"} else ""),
         ]
     )
 
