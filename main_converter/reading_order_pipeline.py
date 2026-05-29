@@ -68,6 +68,7 @@ def run_structure_analysis_stage(
     package_name: str,
     slide_xmls: Sequence[Path],
     strict: bool = False,
+    mode: str = "xml",
 ) -> Tuple[Dict[str, Path], Path]:
     ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
     if not ro_script.exists():
@@ -83,7 +84,7 @@ def run_structure_analysis_stage(
         py_exe,
         str(ro_script),
         "--mode",
-        "xml",
+        mode,
         "--output-dir",
         str(ro_output),
     ]

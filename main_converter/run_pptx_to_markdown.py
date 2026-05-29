@@ -1367,7 +1367,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--reading-order",
-        choices=("xml", "surya"),
+        choices=("xml", "surya", "xycut"),
         default="xml",
         help="Reading-order strategy. Default uses legacy XML-only ordering.",
     )
@@ -1554,13 +1554,14 @@ def _convert_package(
     all_chunks: List[str] = []
     ro_map: Dict[str, Path] = {}
     structure_output_dir: Optional[Path] = None
-    if config.reading_order == "xml":
+    if config.reading_order != "surya":
         try:
             ro_map, ro_output = run_structure_analysis_stage(
                 repo_root=config.repo_root,
                 package_name=pkg_name,
                 slide_xmls=slide_xmls,
                 strict=config.strict,
+                mode=config.reading_order,
             )
             pkg_row["structure_analysis_output_dir"] = str(ro_output)
         except Exception as e:  # noqa: BLE001

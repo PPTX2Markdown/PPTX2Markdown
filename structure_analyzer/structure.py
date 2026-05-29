@@ -12,6 +12,10 @@ from .text_rules import (
     numbered_suggested_depth,
 )
 
+EMU_PER_INCH = 914400
+SCREEN_DPI = 96
+XYCUT_MIN_GAP_EMU = EMU_PER_INCH // SCREEN_DPI
+
 
 @dataclass
 class SlideObject:
@@ -191,8 +195,142 @@ def reason(obj: SlideObject, context: OrderContext) -> str:
     return "General body block ordered by row clustering"
 
 
-def order_objects(objects: Sequence[SlideObject], mode: str) -> List[SlideObject]:
-    _ = mode
+def _sort_top_left(objects: Sequence[SlideObject]) -> List[SlideObject]:
+    return sorted(
+        objects,
+        key=lambda obj: (
+            object_top(obj),
+            object_left(obj),
+            obj.xml_index,
+        ),
+    )
+
+
+def _has_reliable_position(obj: SlideObject) -> bool:
+    left = object_left(obj)
+    top = object_top(obj)
+    right = object_right(obj)
+    bottom = object_bottom(obj)
+    return (
+        left < LARGE_INT // 2
+        and top < LARGE_INT // 2
+        and right < LARGE_INT // 2
+        and bottom < LARGE_INT // 2
+        and right > left
+        and bottom > top
+    )
+
+
+def _axis_interval(obj: SlideObject, axis: str) -> Tuple[int, int]:
+    """PPTX EMU 좌표에서 한 축이 차지하는 구간을 반환한다."""
+    if axis == "x":
+        start = object_left(obj)
+        end = object_right(obj)
+    elif axis == "y":
+        start = object_top(obj)
+        end = object_bottom(obj)
+    else:
+        raise ValueError(f"unsupported xycut axis: {axis}")
+
+    if end <= start:
+        end = start + 1
+    return start, end
+
+
+def _sort_for_axis(objects: Sequence[SlideObject], axis: str) -> List[SlideObject]:
+    """축 projection을 만들기 전에 사용할 순회 순서로 객체를 정렬한다."""
+    if axis == "x":
+        return sorted(
+            objects,
+            key=lambda obj: (object_left(obj), object_top(obj), obj.xml_index),
+        )
+    if axis == "y":
+        return sorted(
+            objects,
+            key=lambda obj: (object_top(obj), object_left(obj), obj.xml_index),
+        )
+    raise ValueError(f"unsupported xycut axis: {axis}")
+
+
+def _projection_segments(
+    objects: Sequence[SlideObject],
+    axis: str,
+    *,
+    min_gap: int,
+) -> List[Tuple[int, int]]:
+    """bbox projection을 점유 구간 단위로 분리한다.
+
+    Sanster/PaddleX 구현은 dense 1D projection 배열을 만든 뒤 projection > 0인
+    run을 분리한다. PPTX는 EMU 좌표를 쓰므로 dense 배열을 만들면 너무 커진다.
+    min_value == 0 조건에서는 bbox interval을 병합해도 같은 split 결과를 낼 수 있다.
+    """
+    intervals = sorted(_axis_interval(obj, axis) for obj in objects)
+    if not intervals:
+        return []
+
+    segments: List[Tuple[int, int]] = []
+    segment_start, segment_end = intervals[0]
+    for start, end in intervals[1:]:
+        if start - segment_end >= min_gap:
+            segments.append((segment_start, segment_end))
+            segment_start, segment_end = start, end
+        else:
+            segment_end = max(segment_end, end)
+    segments.append((segment_start, segment_end))
+    return segments
+
+
+def _objects_starting_in_segment(
+    objects: Sequence[SlideObject],
+    axis: str,
+    segment: Tuple[int, int],
+) -> List[SlideObject]:
+    """축 시작 좌표가 projection segment 안에 들어가는 객체를 반환한다."""
+    start, end = segment
+    return [obj for obj in objects if start <= _axis_interval(obj, axis)[0] < end]
+
+
+def _recursive_xycut(objects: Sequence[SlideObject], *, min_gap: int) -> List[SlideObject]:
+    """recursive bbox 기반 XY cut으로 객체를 정렬한다.
+
+    일반적인 bbox XY-cut 구현 형태를 따른다. 먼저 Y projection으로 나누고,
+    각 Y chunk를 다시 X projection으로 나눈다. X chunk가 더 나뉘면 재귀 처리하고,
+    더 나뉘지 않으면 해당 chunk의 객체를 top-left 순서로 추가한다.
+    """
+    if len(objects) <= 1:
+        return list(objects)
+
+    y_sorted = _sort_for_axis(objects, "y")
+    y_segments = _projection_segments(y_sorted, "y", min_gap=min_gap)
+    if not y_segments:
+        return _sort_top_left(objects)
+
+    ordered: List[SlideObject] = []
+    for y_segment in y_segments:
+        y_chunk = _objects_starting_in_segment(y_sorted, "y", y_segment)
+        if not y_chunk:
+            continue
+
+        x_sorted = _sort_for_axis(y_chunk, "x")
+        x_segments = _projection_segments(x_sorted, "x", min_gap=min_gap)
+        if not x_segments or len(x_segments) == 1:
+            ordered.extend(x_sorted)
+            continue
+
+        for x_segment in x_segments:
+            x_chunk = _objects_starting_in_segment(x_sorted, "x", x_segment)
+            if not x_chunk:
+                continue
+            ordered.extend(_recursive_xycut(x_chunk, min_gap=min_gap))
+
+    seen = {id(obj) for obj in ordered}
+    missing = [obj for obj in objects if id(obj) not in seen]
+    if missing:
+        ordered.extend(_sort_top_left(missing))
+    return ordered
+
+
+def _order_objects_legacy(objects: Sequence[SlideObject]) -> List[SlideObject]:
     context = build_order_context(objects)
     tail = [o for o in objects if bucket(o, context) >= 4]
     main = [o for o in objects if bucket(o, context) < 4]
@@ -271,6 +409,46 @@ def order_objects(objects: Sequence[SlideObject], mode: str) -> List[SlideObject
         )
     )
     return ordered
+
+
+def _order_objects_xycut(objects: Sequence[SlideObject]) -> List[SlideObject]:
+    """읽기 대상 body 객체에 XY cut을 적용하고 PPTX용 tail 객체를 뒤에 붙인다."""
+    context = build_order_context(objects)
+    tail = [o for o in objects if bucket(o, context) >= 4]
+    main = [o for o in objects if bucket(o, context) < 4]
+    positioned = [o for o in main if _has_reliable_position(o)]
+    unpositioned = [o for o in main if not _has_reliable_position(o)]
+    if len(positioned) < 2:
+        return _order_objects_legacy(objects)
+
+    ordered_main = _recursive_xycut(positioned, min_gap=XYCUT_MIN_GAP_EMU)
+    ordered_unknown = sorted(
+        unpositioned,
+        key=lambda o: (
+            bucket(o, context),
+            reading_top(o, context),
+            object_left(o),
+            o.xml_index,
+        ),
+    )
+    ordered_tail = sorted(
+        tail,
+        key=lambda o: (
+            bucket(o, context),
+            reading_top(o, context),
+            object_left(o),
+            o.xml_index,
+        ),
+    )
+    return ordered_main + ordered_unknown + ordered_tail
+
+
+def order_objects(objects: Sequence[SlideObject], mode: str) -> List[SlideObject]:
+    if mode == "xycut":
+        return _order_objects_xycut(objects)
+    if mode == "xml":
+        return _order_objects_legacy(objects)
+    raise ValueError(f"unsupported reading order mode: {mode}")
 
 
 def compute_heading_depths(

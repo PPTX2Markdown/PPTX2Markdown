@@ -38,9 +38,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("xml",),
+        choices=("xml", "xycut"),
         default="xml",
-        help="Reading order mode. Only xml mode is supported.",
+        help="Reading order mode.",
     )
     parser.add_argument(
         "--output-dir",

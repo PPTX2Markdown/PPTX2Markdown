@@ -142,6 +142,7 @@ python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.pptx
 ```bash
 python main_converter/run_pptx_to_markdown.py --reading-order xml sample1.pptx
 python main_converter/run_pptx_to_markdown.py --reading-order surya sample1.pptx
+python main_converter/run_pptx_to_markdown.py --reading-order xycut sample1.pptx
 ```
 
 ### Heading 옵션

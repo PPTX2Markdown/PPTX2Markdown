@@ -74,7 +74,7 @@ python main_converter/run_pptx_to_markdown.py --reading-order surya sample3.pptx
 
 ## 주요 옵션
 
-- `--reading-order {xml|surya}`
+- `--reading-order {xml|surya|xycut}`
 - 기본값은 `strict` heading 판정
 - `--not-strict` (xml 모드 전용)
 - `--reuse-surya-cache`
