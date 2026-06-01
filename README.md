@@ -142,6 +142,17 @@ python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.pptx
 ```bash
 python main_converter/run_pptx_to_markdown.py --reading-order xml sample1.pptx
 python main_converter/run_pptx_to_markdown.py --reading-order surya sample1.pptx
+python main_converter/run_pptx_to_markdown.py --reading-order xycut sample1.pptx
+```
+
+### Heading 옵션
+
+- 기본값은 `strict` 입니다.
+- 완화된 heading 판정을 쓰려면 `--not-strict`를 지정합니다.
+
+```bash
+python main_converter/run_pptx_to_markdown.py sample1.pptx
+python main_converter/run_pptx_to_markdown.py --not-strict sample1.pptx
 ```
 
 ### Heading 옵션
