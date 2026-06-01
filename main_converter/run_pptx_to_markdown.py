@@ -62,6 +62,8 @@ from image_pipeline.service import (
     DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
     DEFAULT_OPENAI_API_KEY_ENV,
     DEFAULT_OPENAI_MODEL,
+    DEFAULT_OPENROUTER_API_KEY_ENV,
+    DEFAULT_OPENROUTER_MODEL,
     DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
     DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
     extract_markdown_from_image,
@@ -608,6 +610,8 @@ def convert_picture_to_markdown(
         effective_model = DEFAULT_GEMINI_MODEL
     if normalized_provider == "openai" and not effective_model:
         effective_model = DEFAULT_OPENAI_MODEL
+    if normalized_provider == "openrouter" and not effective_model:
+        effective_model = DEFAULT_OPENROUTER_MODEL
     if not effective_model:
         return None, None, False, None
 
@@ -672,7 +676,7 @@ def format_markdown_image(
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai"}
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai", "openrouter"}
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -684,7 +688,10 @@ def format_markdown_image(
             ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
-            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+            copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+            relative_path = relativize_markdown_path(copied_path, output_dir)
+            image_tag = render_image_tag(relative_path)
+            return annotate_generated_image_markdown(image_md, image_tag=image_tag), None, unavailable, True, False
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
         relative_path = relativize_markdown_path(copied_path, output_dir)
@@ -1190,14 +1197,11 @@ def overlay_link_text(
     return render_image_tag(path)
 
 
-# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 출처 정보를 덧붙인다.
-# 사람이 결과를 검토할 때 어떤 파일에서 생성된 설명인지 추적할 수 있게 한다.
-def annotate_generated_image_markdown(markdown: str, image_path: str) -> str:
-    image_name = Path(image_path).name
+# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 링크를 덧붙인다.
+def annotate_generated_image_markdown(markdown: str, image_tag: Optional[str] = None) -> str:
     body = markdown.strip()
-    if not body:
-        return f"[image-vlm-source: {image_name}]"
-    return f"[image-vlm-source: {image_name}]\n\n{body}"
+    parts = [part for part in [image_tag, body] if part]
+    return "\n\n".join(parts)
 
 
 # 테이블 오버레이 이미지 하나를 최종 텍스트로 변환한다.
@@ -1218,7 +1222,7 @@ def overlay_content_text(
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai"}
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai", "openrouter"}
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -1230,7 +1234,8 @@ def overlay_content_text(
             ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
-            return annotate_generated_image_markdown(image_md, path), None, unavailable, True, False
+            link_text = overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media)
+            return annotate_generated_image_markdown(image_md, image_tag=link_text), None, unavailable, True, False
         skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
         return (
             overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
@@ -1385,7 +1390,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--image-vlm-provider",
-        choices=("local", "gemini", "openai"),
+        choices=("local", "gemini", "openai", "openrouter"),
         default=DEFAULT_IMAGE_VLM_PROVIDER,
         help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API, openai uses the OpenAI Responses API.",
     )
@@ -1395,7 +1400,8 @@ def _parse_args() -> argparse.Namespace:
             "Image VLM model identifier. "
             "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
             "a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini, "
-            "or an OpenAI model id such as gpt-4.1-mini for --image-vlm-provider openai."
+            "an OpenAI model id such as gpt-4.1-mini for --image-vlm-provider openai, "
+            "or an OpenRouter model id such as google/gemini-2.5-flash for --image-vlm-provider openrouter."
         ),
     )
     parser.add_argument(
@@ -1412,7 +1418,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-vlm-api-key-env",
         default=DEFAULT_GEMINI_API_KEY_ENV,
-        help="Environment variable name containing the provider API key when --image-vlm-provider gemini or openai is used.",
+        help="Environment variable name containing the provider API key when --image-vlm-provider gemini, openai, or openrouter is used.",
     )
     parser.add_argument(
         "--ignore-image-vlm-cache",
@@ -1434,9 +1440,14 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
     normalized_provider = normalize_provider(args.image_vlm_provider)
     api_key_env = str(args.image_vlm_api_key_env).strip()
     if not api_key_env or (
-        normalized_provider == "openai" and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
+        normalized_provider in {"openai", "openrouter"} and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
     ):
-        api_key_env = DEFAULT_OPENAI_API_KEY_ENV if normalized_provider == "openai" else DEFAULT_GEMINI_API_KEY_ENV
+        if normalized_provider == "openai":
+            api_key_env = DEFAULT_OPENAI_API_KEY_ENV
+        elif normalized_provider == "openrouter":
+            api_key_env = DEFAULT_OPENROUTER_API_KEY_ENV
+        else:
+            api_key_env = DEFAULT_GEMINI_API_KEY_ENV
     return ConverterConfig(
         cwd=main_converter_root,
         repo_root=REPO_ROOT,

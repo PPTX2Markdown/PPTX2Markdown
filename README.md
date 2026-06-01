@@ -155,6 +155,16 @@ python main_converter/run_pptx_to_markdown.py sample1.pptx
 python main_converter/run_pptx_to_markdown.py --not-strict sample1.pptx
 ```
 
+### Heading 옵션
+
+- 기본값은 `strict` 입니다.
+- 완화된 heading 판정을 쓰려면 `--not-strict`를 지정합니다.
+
+```bash
+python main_converter/run_pptx_to_markdown.py sample1.pptx
+python main_converter/run_pptx_to_markdown.py --not-strict sample1.pptx
+```
+
 ### 이미지 VLM 옵션
 
 이미지 블록을 VLM으로 Markdown 변환하려면 `--image-vlm-provider`를 지정합니다.
@@ -220,6 +230,31 @@ python main_converter/run_pptx_to_markdown.py \
 python main_converter/run_pptx_to_markdown.py \
   --image-vlm-provider openai \
   --image-vlm-model gpt-4.1-mini \
+  sample1.pptx
+```
+
+OpenRouter 사용:
+
+프로젝트 루트 `.env`:
+
+```dotenv
+OPENROUTER_API_KEY=your-api-key
+```
+
+기본 모델 `google/gemini-2.5-flash` 사용:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider openrouter \
+  sample1.pptx
+```
+
+명시적으로 모델 지정:
+
+```bash
+python main_converter/run_pptx_to_markdown.py \
+  --image-vlm-provider openrouter \
+  --image-vlm-model google/gemini-2.5-flash \
   sample1.pptx
 ```
 
