@@ -146,6 +146,14 @@ def resolve_surya_structure_dir(surya_root: Path, package_name: str) -> Path:
     if manifest_there.exists():
         return candidate
 
+    for nested_structure in (candidate / "05_structure_ready", candidate / "structure_ready"):
+        if has_reordered_xmls(nested_structure):
+            return nested_structure
+
+        nested_manifest = nested_structure / "structure_analysis_manifest.json"
+        if nested_manifest.exists():
+            return nested_structure
+
     raise FileNotFoundError(
         f"surya structure-ready output not found for package '{package_name}' under {surya_root}"
     )
@@ -180,10 +188,13 @@ def run_surya_pipeline_stage(
     if proc.returncode != 0:
         raise RuntimeError("surya pipeline failed\n" f"cmd: {' '.join(cmd)}\n")
 
-    structure_root = surya_root / "output" / "structure_ready"
-    if not structure_root.exists() or not structure_root.is_dir():
-        raise FileNotFoundError(f"surya structure-ready output not found after pipeline run: {structure_root}")
-    return structure_root
+    output_root = surya_root / "output"
+    legacy_structure_root = output_root / "structure_ready"
+    if output_root.exists() and output_root.is_dir():
+        return output_root
+    if legacy_structure_root.exists() and legacy_structure_root.is_dir():
+        return legacy_structure_root
+    raise FileNotFoundError(f"surya output not found after pipeline run: {output_root}")
 
 
 def prepare_surya_structure_root(
@@ -195,15 +206,49 @@ def prepare_surya_structure_root(
 ) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
     candidate = repo_root / "surya_pipeline"
-    structure_root = candidate / "output" / "structure_ready"
+    output_root = candidate / "output"
+    structure_root = output_root / "structure_ready"
+    analyzer_root = repo_root / "structure_analyzer" / "output"
+
+    def has_structure_ready_output(root: Path) -> bool:
+        return (
+            root.exists()
+            and root.is_dir()
+            and (
+                any(root.glob("slide*.reordered.xml"))
+                or (root / "structure_analysis_manifest.json").exists()
+            )
+        )
+
+    def has_all_target_outputs(root: Path) -> bool:
+        target_names = [str(t).strip() for t in (targets or []) if str(t).strip()]
+        if target_names:
+            return all(
+                has_structure_ready_output(root / name)
+                or has_structure_ready_output(root / name / "05_structure_ready")
+                or has_structure_ready_output(root / name / "structure_ready")
+                for name in target_names
+            )
+        return has_structure_ready_output(root) or any(
+            has_structure_ready_output(child)
+            or has_structure_ready_output(child / "05_structure_ready")
+            or has_structure_ready_output(child / "structure_ready")
+            for child in root.glob("*")
+        )
 
     if reuse_existing_output:
         if (candidate / "structure_analysis_manifest.json").exists():
             return candidate
+        if has_all_target_outputs(output_root):
+            return output_root
         if structure_root.exists() and structure_root.is_dir():
             return structure_root
+        if has_all_target_outputs(analyzer_root):
+            return analyzer_root
         raise FileNotFoundError(
-            f"reused surya output not found under fixed surya_pipeline path: {structure_root}"
+            "reused surya output not found. Expected an existing cache under "
+            f"{structure_root} or compatible reordered XML under {analyzer_root}. "
+            "Run once without --reuse-surya-cache to regenerate Surya cache."
         )
 
     if (candidate / "run_surya_pipeline.py").exists():

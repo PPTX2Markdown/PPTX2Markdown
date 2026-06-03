@@ -18,6 +18,9 @@ from heading_rules import (
 from converter_models import ShapeBlock, SlideStats
 
 
+UNMATCHED_MARKER = "[unmatched]"
+
+
 @dataclass
 class SlideRenderState:
     used_headings: set[str] = field(default_factory=set)
@@ -72,6 +75,7 @@ class SlideConversionContext:
     ns: Dict[str, str]
     source_slide_xml: Optional[Path] = None
     source_pptx_path: Optional[Path] = None
+    heading_mode: str = "auto"
     rels_path: Optional[Path] = None
     rels_map: Dict[str, str] = field(default_factory=dict)
     heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
@@ -108,6 +112,19 @@ def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConv
         return
     lines.append(rendered)
     lines.append("")
+
+
+def _append_unmatched_marker(
+    lines: List[str],
+    child: ET.Element,
+    context: SlideConversionContext,
+    deps: SlideConversionDeps,
+) -> None:
+    sid = deps.shape_id_of(child)
+    hint = context.heading_hints.get(sid, {})
+    if hint.get("reading_order_source") == "xml_append":
+        lines.append(UNMATCHED_MARKER)
+        lines.append("")
 
 
 def _handle_text_shape_block(
@@ -156,6 +173,15 @@ def _handle_text_shape_block(
     depth = hint.get("heading_depth_hint")
     score = float(hint.get("heading_score", 0.0))
     is_candidate = bool(hint.get("is_heading_candidate", False))
+    heading_source = str(hint.get("heading_source") or "")
+    raw_heading_sources = hint.get("heading_sources")
+    if isinstance(raw_heading_sources, list):
+        heading_sources = {str(source) for source in raw_heading_sources}
+    elif heading_source:
+        heading_sources = {heading_source}
+    else:
+        heading_sources = set()
+    reading_order_source = str(hint.get("reading_order_source") or "")
     raw_font_pt = hint.get("font_pt")
     try:
         font_pt = float(raw_font_pt) if raw_font_pt is not None else None
@@ -165,7 +191,23 @@ def _handle_text_shape_block(
     rendered_text = re.sub(r"\s+", " ", (text or "").strip())
 
     strong_heading_signal = False
-    if (
+    if context.heading_mode == "surya":
+        depth = hint.get("surya_heading_depth_hint")
+        is_candidate = (
+            "surya_label" in heading_sources
+            and reading_order_source in {"surya_match", "surya_region"}
+            and isinstance(depth, int)
+            and 1 <= depth <= 6
+            and score >= heading_policy.threshold
+        )
+        if not is_candidate:
+            depth = None
+            score = 0.0
+        if has_math_shape:
+            is_candidate = False
+            depth = None
+            score = 0.0
+    elif (
         not strict_headings
         and is_candidate
         and isinstance(depth, int)
@@ -174,12 +216,21 @@ def _handle_text_shape_block(
     ):
         strong_heading_signal = True
 
-    if strict_headings:
+    if context.heading_mode == "surya":
+        pass
+    elif strict_headings:
         strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
         strict_depth = hr_strict_heading_depth_from_placeholder(strict_ph_type)
-        is_candidate = strict_depth is not None
-        depth = strict_depth
-        score = 1.0 if is_candidate else 0.0
+        if strict_depth is not None:
+            is_candidate = True
+            depth = strict_depth
+            score = 1.0
+        elif heading_source == "surya_label" and isinstance(depth, int) and 1 <= depth <= 6:
+            is_candidate = score >= heading_policy.threshold
+        else:
+            is_candidate = False
+            depth = None
+            score = 0.0
         if has_math_shape:
             is_candidate = False
             depth = None
@@ -217,7 +268,7 @@ def _handle_text_shape_block(
                 strong_heading_signal = True
 
     rendered = text
-    if not strict_headings and not strong_heading_signal:
+    if context.heading_mode != "surya" and not strict_headings and not strong_heading_signal:
         if has_list_semantics:
             is_candidate = False
         if hr_looks_like_multi_numbered_items(plain_text):
@@ -242,6 +293,7 @@ def _handle_text_shape_block(
             stats.skipped_blocks += 1
             return
 
+    _append_unmatched_marker(lines, child, context, deps)
     _append_rendered_text_block(lines, rendered, deps)
     stats.text_blocks += 1
     state.text_block_index += 1
@@ -291,6 +343,7 @@ def _handle_picture_block(
         else:
             stats.warnings.append(image_warn)
 
+    _append_unmatched_marker(lines, child, context, deps)
     lines.append(rendered_image)
     lines.append("")
     stats.image_blocks += 1
@@ -312,6 +365,7 @@ def _handle_graphic_frame_block(
     assets: SlideRenderAssets,
     deps: SlideConversionDeps,
 ) -> None:
+    _append_unmatched_marker(lines, child, context, deps)
     gf_kind = deps.graphic_frame_kind(child)
     if gf_kind == "chart":
         chart_md, chart_err = deps.convert_chart_to_markdown(

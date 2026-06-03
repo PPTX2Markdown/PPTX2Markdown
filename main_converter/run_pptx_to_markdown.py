@@ -432,6 +432,10 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
             "heading_depth_hint": row.get("heading_depth_hint"),
+            "surya_heading_depth_hint": row.get("surya_heading_depth_hint"),
+            "heading_source": row.get("heading_source"),
+            "heading_sources": row.get("heading_sources"),
+            "reading_order_source": row.get("reading_order_source"),
             "font_pt": row.get("font_pt"),
             "ph_type": row.get("ph_type"),
             "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
@@ -1344,7 +1348,9 @@ def convert_one_slide(
     context: SlideConversionContext,
     assets: SlideRenderAssets,
     strict_headings: bool = False,
+    heading_mode: str = "auto",
 ) -> Tuple[str, SlideStats]:
+    context.heading_mode = heading_mode
     return convert_one_slide_core(
         context=context,
         assets=assets,
@@ -1375,6 +1381,12 @@ def _parse_args() -> argparse.Namespace:
         choices=("xml", "surya", "xycut"),
         default="xml",
         help="Reading-order strategy. Default uses legacy XML-only ordering.",
+    )
+    parser.add_argument(
+        "--headings",
+        choices=("auto", "surya"),
+        default="auto",
+        help="Heading detection strategy. 'surya' requires --reading-order surya and uses only Surya layout heading labels.",
     )
     parser.add_argument(
         "--not-strict",
@@ -1437,6 +1449,8 @@ def _parse_args() -> argparse.Namespace:
 # 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
     main_converter_root = REPO_ROOT/ "main_converter"
+    if args.headings == "surya" and args.reading_order != "surya":
+        raise ValueError("--headings surya requires --reading-order surya")
     normalized_provider = normalize_provider(args.image_vlm_provider)
     api_key_env = str(args.image_vlm_api_key_env).strip()
     if not api_key_env or (
@@ -1454,6 +1468,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         output_dir=main_converter_root / "output" / args.reading_order,
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
+        heading_mode=str(args.headings),
         strict=bool(args.strict),
         reuse_surya_cache=bool(args.reuse_surya_cache),
         image_vlm_provider=normalized_provider,
@@ -1638,6 +1653,7 @@ def _convert_package(
                 context=context,
                 assets=assets,
                 strict_headings=config.strict,
+                heading_mode=config.heading_mode,
             )
             if config.reading_order == "surya":
                 row["surya_source"] = str(structure_output_dir)
