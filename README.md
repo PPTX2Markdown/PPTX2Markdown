@@ -55,6 +55,9 @@ Windows PowerShell:
 
 #### LibreOffice 설치
 
+LibreOffice는 `.ppt` 입력을 `.pptx`로 변환하는 fallback과 PDF 렌더링 단계에서 사용됩니다.
+Windows에서 PowerPoint가 설치되어 있으면 `.ppt` 변환은 기본적으로 PowerPoint COM 자동화를 먼저 사용합니다.
+
 macOS:
 
 ```bash
@@ -121,20 +124,32 @@ docker compose exec app bash
 
 기본 동작:
 
-- 인자를 생략하면 `main_converter/target_pptx/*.pptx` 전체를 처리합니다.
-- 인자를 지정하면 해당 `.pptx` 파일만 처리합니다.
+- 인자를 생략하면 `main_converter/target_pptx/*.pptx`와 `*.ppt` 전체를 처리합니다.
+- 같은 파일명 stem의 `.pptx`와 `.ppt`가 모두 있으면 `.pptx`를 우선합니다.
+- 인자를 지정하면 해당 `.pptx` 또는 `.ppt` 파일만 처리합니다.
+- `.ppt` 입력은 먼저 `main_converter/.cache/ppt_to_pptx/` 아래 `.pptx`로 변환한 뒤 기존 PPTX 변환 로직을 그대로 사용합니다.
 
 ### 기본 실행
 
 ```bash
-python main_converter/run_pptx_to_markdown.py [INPUT_PPTX ...]
+python main_converter/run_pptx_to_markdown.py [INPUT_PPTX_OR_PPT ...]
 ```
 
 예시:
 
 ```bash
 python main_converter/run_pptx_to_markdown.py
-python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.pptx
+python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.ppt
+```
+
+### PPT 변환 옵션
+
+기본값은 `auto`이며, Windows PowerPoint가 사용 가능하면 PowerPoint COM 자동화를 먼저 시도하고 실패하면 LibreOffice로 fallback합니다.
+
+```bash
+python main_converter/run_pptx_to_markdown.py --ppt-converter auto legacy.ppt
+python main_converter/run_pptx_to_markdown.py --ppt-converter powerpoint legacy.ppt
+python main_converter/run_pptx_to_markdown.py --ppt-converter libreoffice legacy.ppt
 ```
 
 ### Reading Order 옵션
@@ -291,6 +306,7 @@ python main_converter/run_pptx_to_markdown.py \
 python -m py_compile \
   image_pipeline/service.py \
   main_converter/converter_models.py \
+  main_converter/ppt_to_pptx.py \
   main_converter/slide_converter.py \
   main_converter/run_pptx_to_markdown.py
 ```

@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from itertools import count
@@ -50,6 +51,7 @@ from converter_models import (
     ShapeBlock,
     SlideStats,
 )
+from ppt_to_pptx import PptConversionError, convert_ppt_to_pptx
 from reading_order_pipeline import (
     prepare_surya_structure_root,
     resolve_surya_structure_dir,
@@ -126,6 +128,14 @@ def default_pptx_input_dir(base_dir: Path) -> Path:
     return local_target
 
 
+def default_ppt_conversion_cache_dir(base_dir: Path) -> Path:
+    cache_dir = base_dir / ".cache" / "ppt_to_pptx"
+    if cache_dir.exists() and not cache_dir.is_dir():
+        raise NotADirectoryError(f"ppt conversion cache path exists but is not a directory: {cache_dir}")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
 # 파일명 안의 숫자를 자연 정렬 기준으로 바꿔준다.
 # 예를 들어 slide2, slide10 같은 이름을 문자열 순서가 아니라 사람이 기대하는 순서대로 정렬할 때 사용한다.
 def natural_key(name: str) -> Tuple:
@@ -192,11 +202,10 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 
 # 원본 PPTX 파일을 target_slides 아래 관리되는 패키지 디렉터리로 추출한다.
 # 기존 추출 결과가 같은 원본에서 생성된 경우 재사용하고, 아니라면 필요 시 삭제 후 다시 풀며,
-# 추적용 marker 파일과 target_pptx 쪽의 staged 복사본도 함께 맞춰 둔다.
+# 추적용 marker 파일을 남겨 같은 입력의 추출 결과를 재사용할 수 있게 한다.
 def extract_pptx_to_target(
     package: PreparedPackage,
     extraction_root: Path,
-    staged_pptx_root: Path,
     allow_replace_unmanaged: bool = False,
 ) -> PreparedPackage:
     pptx_path = package.source_pptx_path
@@ -228,10 +237,6 @@ def extract_pptx_to_target(
                 raise
 
     if package_marker_matches(pkg_dir, pptx_path):
-        staged_pptx_root.mkdir(parents=True, exist_ok=True)
-        staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
-        if staged_pptx.resolve() != pptx_path.resolve():
-            shutil.copy2(pptx_path, staged_pptx)
         return package.with_package_dir(pkg_dir.resolve())
 
     marker = pkg_dir / ".pptx_source.json"
@@ -266,25 +271,24 @@ def extract_pptx_to_target(
         encoding="utf-8",
     )
 
-    staged_pptx_root.mkdir(parents=True, exist_ok=True)
-    staged_pptx = staged_pptx_root / f"{pkg_name}.pptx"
-    if staged_pptx.resolve() != pptx_path.resolve():
-        shutil.copy2(pptx_path, staged_pptx)
-
     return package.with_package_dir(pkg_dir.resolve())
 
 
 # Office가 임시로 만드는 잠금 파일인지 판별한다.
-# "~$"로 시작하는 PPTX는 실제 입력으로 처리하면 안 되므로 자동 탐색에서 제외한다.
-def is_ignored_pptx_file(path: Path) -> bool:
+# "~$"로 시작하는 PPT/PPTX는 실제 입력으로 처리하면 안 되므로 자동 탐색에서 제외한다.
+def is_ignored_presentation_file(path: Path) -> bool:
     # Skip Office lock/temp files like "~$sample1.pptx".
     return path.name.startswith("~$")
 
 
-# 사용자가 넘긴 입력 문자열을 실제 PPTX 파일 경로로 해석한다.
+def is_supported_presentation_file(path: Path) -> bool:
+    return path.suffix.lower() in {".pptx", ".ppt"} and not is_ignored_presentation_file(path)
+
+
+# 사용자가 넘긴 입력 문자열을 실제 PPT/PPTX 파일 경로로 해석한다.
 # 현재 작업 디렉터리, 기본 입력 디렉터리, 추출 디렉터리를 차례로 후보에 넣고
-# 확장자가 생략된 경우 ".pptx"를 보완해서 찾는다. 실패 시에는 확인한 후보 목록도 함께 돌려준다.
-def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
+# 확장자가 생략된 경우 ".pptx", ".ppt" 순서로 보완해서 찾는다. 실패 시에는 확인한 후보 목록도 함께 돌려준다.
+def resolve_input_presentation_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
     search_roots = [cwd, default_pptx_input_dir(cwd), default_target_dir(cwd)]
 
     candidates: List[Path] = []
@@ -292,7 +296,8 @@ def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[
 
     # 같은 경로 후보가 여러 번 들어오지 않도록 중복을 제거하면서 순서를 유지한다.
     def add_candidate(path: Path) -> None:
-        key = str(path)
+        key_path = path if path.is_absolute() else cwd / path
+        key = str(key_path.resolve())
         if key not in seen:
             seen.add(key)
             candidates.append(path)
@@ -303,15 +308,30 @@ def resolve_input_pptx_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[
         add_candidate(root / item)
 
     for cand in candidates:
-        if cand.exists() and cand.is_file() and cand.suffix.lower() == ".pptx":
-            if is_ignored_pptx_file(cand):
-                continue
+        if cand.exists() and cand.is_file() and is_supported_presentation_file(cand):
             return cand.resolve(), candidates
-        if cand.suffix.lower() != ".pptx":
-            cand_pptx = cand.with_suffix(".pptx")
-            if cand_pptx.exists() and cand_pptx.is_file() and not is_ignored_pptx_file(cand_pptx):
-                return cand_pptx.resolve(), candidates
+        if not cand.suffix:
+            for suffix in (".pptx", ".ppt"):
+                cand_with_suffix = cand.with_suffix(suffix)
+                if cand_with_suffix.exists() and cand_with_suffix.is_file() and is_supported_presentation_file(cand_with_suffix):
+                    return cand_with_suffix.resolve(), candidates
     return None, candidates
+
+
+def normalize_presentation_to_pptx(cwd: Path, path: Path, ppt_converter: str) -> Path:
+    suffix = path.suffix.lower()
+    if suffix == ".pptx":
+        return path
+    if suffix != ".ppt":
+        raise ValueError(f"unsupported presentation input: {path}")
+    result = convert_ppt_to_pptx(
+        path,
+        default_ppt_conversion_cache_dir(cwd),
+        mode=ppt_converter,  # type: ignore[arg-type]
+    )
+    action = "reused" if result.reused_cache else "converted"
+    logger.info("[ppt-convert] %s %s -> %s (%s)", action, path.name, result.pptx_path.name, result.converter)
+    return result.pptx_path
 
 
 # 입력 인자를 실제 추출 대상 패키지 경로 목록으로 준비한다.
@@ -321,6 +341,7 @@ def prepare_package_inputs(
     cwd: Path,
     raw_inputs: Sequence[str],
     force_extract: bool = False,
+    ppt_converter: str = "auto",
 ) -> Tuple[List[PreparedPackage], List[Dict[str, object]]]:
     if not raw_inputs:
         return [], []
@@ -328,10 +349,9 @@ def prepare_package_inputs(
     prepared: List[PreparedPackage] = []
     missing_inputs: List[Dict[str, object]] = []
     extraction_root = default_target_dir(cwd)
-    staged_pptx_root = default_pptx_input_dir(cwd)
 
     for item in raw_inputs:
-        picked_file, candidates = resolve_input_pptx_path(cwd, item)
+        picked_file, candidates = resolve_input_presentation_path(cwd, item)
         if picked_file is None:
             missing_inputs.append(
                 {
@@ -340,6 +360,11 @@ def prepare_package_inputs(
                 }
             )
             continue
+        try:
+            picked_file = normalize_presentation_to_pptx(cwd, picked_file, ppt_converter)
+        except PptConversionError as exc:
+            logger.error("[ppt-convert] failed: %s", exc)
+            raise ValueError("ppt conversion failed") from exc
         package = PreparedPackage(
             package_dir=extraction_root / picked_file.stem,
             source_pptx_path=picked_file,
@@ -347,23 +372,36 @@ def prepare_package_inputs(
         package = extract_pptx_to_target(
             package,
             extraction_root,
-            staged_pptx_root=staged_pptx_root,
             allow_replace_unmanaged=force_extract,
         )
         prepared.append(package)
     return prepared, missing_inputs
 
 
-# 기본 입력 디렉터리 아래의 모든 PPTX 파일을 자동 수집한다.
+# 기본 입력 디렉터리 아래의 모든 PPT/PPTX 파일을 자동 수집한다.
 # 잠금 파일은 제외하고, 파일명은 자연 정렬한 뒤 중복 없는 절대경로 문자열 목록으로 반환한다.
-def collect_target_pptx_inputs(cwd: Path) -> List[str]:
-    files: List[Path] = []
-    for path in default_pptx_input_dir(cwd).glob("*.pptx"):
-        if path.is_file() and not is_ignored_pptx_file(path):
-            files.append(path.resolve())
-    files = sorted(files, key=lambda p: natural_key(p.name))
-    uniq: Dict[str, Path] = {str(p): p for p in files}
-    return [str(p) for p in uniq.values()]
+def collect_target_presentation_inputs(cwd: Path) -> List[str]:
+    by_stem: Dict[str, Path] = {}
+    for path in default_pptx_input_dir(cwd).iterdir():
+        if not path.is_file() or not is_supported_presentation_file(path):
+            continue
+        resolved = path.resolve()
+        key = path.stem.lower()
+        existing = by_stem.get(key)
+        if existing is None or (existing.suffix.lower() == ".ppt" and path.suffix.lower() == ".pptx"):
+            by_stem[key] = resolved
+    files = sorted(by_stem.values(), key=lambda p: natural_key(p.name))
+    return [str(p) for p in files]
+
+
+def stage_surya_pptx_inputs(packages: Sequence[PreparedPackage], stage_dir: Path) -> Path:
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    for package in packages:
+        staged_pptx = stage_dir / f"{package.name}.pptx"
+        if staged_pptx.exists():
+            staged_pptx.unlink()
+        shutil.copy2(package.source_pptx_path, staged_pptx)
+    return stage_dir
 
 
 # slide12.xml 같은 파일명에서 슬라이드 번호를 추출한다.
@@ -1366,8 +1404,8 @@ def _parse_args() -> argparse.Namespace:
         "inputs",
         nargs="*",
         help=(
-            "Optional .pptx selections (e.g., sample3.pptx sample4.pptx). "
-            "If omitted, all .pptx files under main_converter/target_pptx are extracted/processed."
+            "Optional .pptx/.ppt selections (e.g., sample3.pptx sample4.ppt). "
+            "If omitted, all .pptx/.ppt files under main_converter/target_pptx are extracted/processed."
         ),
     )
     parser.add_argument(
@@ -1387,6 +1425,12 @@ def _parse_args() -> argparse.Namespace:
         "--reuse-surya-cache",
         action="store_true",
         help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
+    )
+    parser.add_argument(
+        "--ppt-converter",
+        choices=("auto", "powerpoint", "libreoffice"),
+        default="auto",
+        help="Converter used for legacy .ppt inputs. auto tries PowerPoint on Windows, then LibreOffice.",
     )
     parser.add_argument(
         "--image-vlm-provider",
@@ -1456,6 +1500,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         reading_order=str(args.reading_order),
         strict=bool(args.strict),
         reuse_surya_cache=bool(args.reuse_surya_cache),
+        ppt_converter=str(args.ppt_converter),
         image_vlm_provider=normalized_provider,
         image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
         image_vlm_prompt=str(args.image_vlm_prompt),
@@ -1473,7 +1518,7 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
     def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
         if not missing_inputs:
             return
-        logger.error("Input .pptx file not found.")
+        logger.error("Input .pptx/.ppt file not found.")
         for row in missing_inputs:
             requested = str(row.get("input", "")).strip()
             if requested:
@@ -1484,27 +1529,39 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
                     logger.error("  checked: %s", candidate)
 
     if config.inputs:
-        non_pptx_inputs = [x for x in config.inputs if Path(x).suffix.lower() != ".pptx"]
-        if non_pptx_inputs:
-            logger.error("Only .pptx inputs are allowed.")
-            logger.error("Provide files like: sample1.pptx sample2.pptx")
-            for item in non_pptx_inputs:
+        unsupported_inputs = [
+            x for x in config.inputs if Path(x).suffix and Path(x).suffix.lower() not in {".pptx", ".ppt"}
+        ]
+        if unsupported_inputs:
+            logger.error("Only .pptx/.ppt inputs are allowed.")
+            logger.error("Provide files like: sample1.pptx sample2.ppt")
+            for item in unsupported_inputs:
                 logger.error("- %s", item)
-            raise ValueError("invalid non-pptx inputs")
-        prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, config.inputs, force_extract=True)
+            raise ValueError("invalid presentation inputs")
+        prepared_inputs, missing_inputs = prepare_package_inputs(
+            config.cwd,
+            config.inputs,
+            force_extract=True,
+            ppt_converter=config.ppt_converter,
+        )
         if missing_inputs:
             _log_missing_inputs(missing_inputs)
-            raise ValueError("missing pptx inputs")
+            raise ValueError("missing presentation inputs")
         return prepared_inputs
 
-    auto_pptx_inputs = collect_target_pptx_inputs(config.cwd)
-    if not auto_pptx_inputs:
-        logger.info("No .pptx files found in: %s", default_pptx_input_dir(config.cwd).resolve())
+    auto_presentation_inputs = collect_target_presentation_inputs(config.cwd)
+    if not auto_presentation_inputs:
+        logger.info("No .pptx/.ppt files found in: %s", default_pptx_input_dir(config.cwd).resolve())
         return []
-    prepared_inputs, missing_inputs = prepare_package_inputs(config.cwd, auto_pptx_inputs, force_extract=True)
+    prepared_inputs, missing_inputs = prepare_package_inputs(
+        config.cwd,
+        auto_presentation_inputs,
+        force_extract=True,
+        ppt_converter=config.ppt_converter,
+    )
     if missing_inputs:
         _log_missing_inputs(missing_inputs)
-        raise ValueError("missing auto-discovered pptx inputs")
+        raise ValueError("missing auto-discovered presentation inputs")
     return prepared_inputs
 
 
@@ -1703,13 +1760,23 @@ def main() -> int:
 
     surya_structure_root: Optional[Path] = None
     if config.reading_order == "surya":
-        surya_structure_root = prepare_surya_structure_root(
-            force=not config.reuse_surya_cache,
-            reuse_existing_output=config.reuse_surya_cache,
-            targets=[pkg.name for pkg in packages],
-            target_pptx_dir=default_pptx_input_dir(config.cwd).resolve(),
-            target_slides_dir=default_target_dir(config.cwd).resolve(),
-        )
+        if config.reuse_surya_cache:
+            surya_structure_root = prepare_surya_structure_root(
+                force=False,
+                reuse_existing_output=True,
+                targets=[pkg.name for pkg in packages],
+                target_slides_dir=default_target_dir(config.cwd).resolve(),
+            )
+        else:
+            with tempfile.TemporaryDirectory(prefix="pptx2md-surya-pptx-") as stage_dir_name:
+                stage_dir = stage_surya_pptx_inputs(packages, Path(stage_dir_name))
+                surya_structure_root = prepare_surya_structure_root(
+                    force=True,
+                    reuse_existing_output=False,
+                    targets=[pkg.name for pkg in packages],
+                    target_pptx_dir=stage_dir.resolve(),
+                    target_slides_dir=default_target_dir(config.cwd).resolve(),
+                )
 
     manifest = ConversionManifest()
 
