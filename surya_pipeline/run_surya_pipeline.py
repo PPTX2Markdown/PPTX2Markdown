@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -113,7 +114,7 @@ def normalize_pptx_selector(raw: str) -> str:
     s = (raw or "").strip()
     if not s:
         return s
-    return Path(s).stem
+    return unicodedata.normalize("NFC", Path(s).stem)
 
 
 def load_pptx_map_from_input_dir(input_dir: Path) -> Dict[str, Path]:
@@ -122,7 +123,7 @@ def load_pptx_map_from_input_dir(input_dir: Path) -> Dict[str, Path]:
     for p in sorted(input_dir.glob("*.pptx")):
         if not p.is_file() or is_ignored_pptx_file(p):
             continue
-        out[p.stem] = p
+        out[unicodedata.normalize("NFC", p.stem)] = p
     return out
 
 
@@ -271,11 +272,9 @@ def main() -> int:
     target_pptx = Path(args.target_pptx_dir).resolve() if args.target_pptx_dir else (surya_dir / "target_pptx")
     target_pdf = surya_dir / "target_pdf"
     target_slides = Path(args.target_slides_dir).resolve() if args.target_slides_dir else (surya_dir / "target_slides")
-    output_layout = surya_dir / "output" / "layout_result"
-    output_norm = surya_dir / "output" / "normalized"
-    output_struct = surya_dir / "output" / "structure_ready"
+    output_root = surya_dir / "output"
 
-    for required_dir in [target_pdf, target_slides, output_layout, output_norm, output_struct]:
+    for required_dir in [target_pdf, target_slides, output_root]:
         if required_dir.exists() and not required_dir.is_dir():
             raise NotADirectoryError(f"required path exists but is not a directory: {required_dir}")
         required_dir.mkdir(parents=True, exist_ok=True)
@@ -362,17 +361,23 @@ def main() -> int:
         stem = pdf_path.stem
         print(f"[PDF {idx}/{len(pdf_files)}] {pdf_path.name}")
 
-        layout_json = output_layout / stem / "results.json"
-        normalized_json = output_norm / f"{stem}_normalized.json"
-        structure_dir = output_struct / stem
+        package_dir = output_root / stem
+        layout_result_json = package_dir / "results.json"
+        layout_json = package_dir / "00_raw_surya_result.json"
+        normalized_json = package_dir / "04_normalized.json"
+        structure_dir = package_dir / "05_structure_ready"
         reordered_xmls = sorted(structure_dir.glob("slide*.reordered.xml"))
 
         # Step 2: layout
+        if not layout_json.exists() and layout_result_json.exists():
+            layout_result_json.replace(layout_json)
         if args.force or not layout_json.exists():
             print("  [2/4] Running surya_layout...")
-            run_surya_cli("layout", pdf_path, output_layout, cwd=surya_dir)
+            run_surya_cli("layout", pdf_path, output_root, cwd=surya_dir)
         else:
             print("  [2/4] Skip surya_layout (exists)")
+        if layout_result_json.exists():
+            layout_result_json.replace(layout_json)
         prettify_json_file(layout_json)
 
         # Step 3: normalize
