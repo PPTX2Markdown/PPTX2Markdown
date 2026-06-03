@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 import xml.etree.ElementTree as ET
 
 from heading_rules import (
@@ -19,6 +19,45 @@ from converter_models import ShapeBlock, SlideStats
 
 
 UNMATCHED_MARKER = "[unmatched]"
+_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
+_LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
+_LARGE_INT = 10**18
+
+
+@dataclass(frozen=True)
+class _GroupTransform:
+    sx: float = 1.0
+    sy: float = 1.0
+    tx: float = 0.0
+    ty: float = 0.0
+
+    def apply_bbox(self, bbox: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+        x1, y1, x2, y2 = bbox
+        return (
+            int(round(self.sx * x1 + self.tx)),
+            int(round(self.sy * y1 + self.ty)),
+            int(round(self.sx * x2 + self.tx)),
+            int(round(self.sy * y2 + self.ty)),
+        )
+
+    def compose(self, inner: "_GroupTransform") -> "_GroupTransform":
+        return _GroupTransform(
+            sx=self.sx * inner.sx,
+            sy=self.sy * inner.sy,
+            tx=self.sx * inner.tx + self.tx,
+            ty=self.sy * inner.ty + self.ty,
+        )
+
+
+@dataclass(frozen=True)
+class FlattenedShape:
+    elem: ET.Element
+    tag: str
+    shape_id: str
+    name: str
+    group_path: Tuple[str, ...]
+    z_path: Tuple[int, ...]
+    bbox: Optional[Tuple[int, int, int, int]]
 
 
 @dataclass
@@ -35,7 +74,7 @@ class SlideConversionDeps:
     build_rels_map: Callable[[Optional[Path]], Dict[str, str]]
     load_heading_hints: Callable[[Path], Dict[str, Dict[str, object]]]
     collect_table_overlay_pictures: Callable[
-        [ET.Element, Path, Dict[str, str], Optional[Path]],
+        [Sequence[Dict[str, object]], Path, Dict[str, str], Optional[Path]],
         Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int],
     ]
     extract_shape_blocks: Callable[[ET.Element], List[ShapeBlock]]
@@ -83,12 +122,115 @@ class SlideConversionContext:
     consumed_picture_ids: set[str] = field(default_factory=set)
 
 
-def _iter_sp_tree_children(sp_tree: ET.Element, deps: SlideConversionDeps) -> List[ET.Element]:
-    expanded: List[ET.Element] = []
-    for child in list(sp_tree):
-        tag = deps.local_name(child.tag)
+def _local_name(tag: str) -> str:
+    return tag.split("}", 1)[-1]
+
+
+def _parse_int(value: Optional[str], default: int = _LARGE_INT) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _first(elem: ET.Element, paths: Tuple[str, ...], ns: Dict[str, str]) -> Optional[ET.Element]:
+    for path in paths:
+        found = elem.find(path, ns)
+        if found is not None:
+            return found
+    return None
+
+
+def _point_attrs(node: Optional[ET.Element], x_name: str, y_name: str) -> Optional[Tuple[int, int]]:
+    if node is None:
+        return None
+    x = _parse_int(node.attrib.get(x_name))
+    y = _parse_int(node.attrib.get(y_name))
+    if x >= _LARGE_INT or y >= _LARGE_INT:
+        return None
+    return x, y
+
+
+def _shape_id_name(elem: ET.Element, tag: str, ns: Dict[str, str]) -> Tuple[str, str]:
+    paths = {
+        "sp": "./p:nvSpPr/p:cNvPr",
+        "pic": "./p:nvPicPr/p:cNvPr",
+        "graphicFrame": "./p:nvGraphicFramePr/p:cNvPr",
+        "grpSp": "./p:nvGrpSpPr/p:cNvPr",
+        "cxnSp": "./p:nvCxnSpPr/p:cNvPr",
+    }
+    c_nv_pr = elem.find(paths.get(tag, ".//p:cNvPr"), ns)
+    if c_nv_pr is None:
+        return "", ""
+    return c_nv_pr.attrib.get("id", ""), c_nv_pr.attrib.get("name", "")
+
+
+def _extract_local_bbox_emu(elem: ET.Element, ns: Dict[str, str]) -> Optional[Tuple[int, int, int, int]]:
+    off = _first(
+        elem,
+        (
+            "./p:spPr/a:xfrm/a:off",
+            "./p:grpSpPr/a:xfrm/a:off",
+            "./p:xfrm/a:off",
+        ),
+        ns,
+    )
+    ext = _first(
+        elem,
+        (
+            "./p:spPr/a:xfrm/a:ext",
+            "./p:grpSpPr/a:xfrm/a:ext",
+            "./p:xfrm/a:ext",
+        ),
+        ns,
+    )
+    origin = _point_attrs(off, "x", "y")
+    size = _point_attrs(ext, "cx", "cy")
+    if origin is None or size is None:
+        return None
+    x, y = origin
+    w, h = size
+    if w <= 0 or h <= 0:
+        return None
+    return (x, y, x + w, y + h)
+
+
+def _group_child_transform(group: ET.Element, ns: Dict[str, str]) -> _GroupTransform:
+    xfrm = group.find("./p:grpSpPr/a:xfrm", ns)
+    if xfrm is None:
+        return _GroupTransform()
+
+    off = _point_attrs(xfrm.find("./a:off", ns), "x", "y")
+    ext = _point_attrs(xfrm.find("./a:ext", ns), "cx", "cy")
+    ch_off = _point_attrs(xfrm.find("./a:chOff", ns), "x", "y")
+    ch_ext = _point_attrs(xfrm.find("./a:chExt", ns), "cx", "cy")
+    if off is None or ext is None or ch_off is None or ch_ext is None:
+        return _GroupTransform()
+
+    off_x, off_y = off
+    ext_x, ext_y = ext
+    ch_off_x, ch_off_y = ch_off
+    ch_ext_x, ch_ext_y = ch_ext
+    if ch_ext_x <= 0 or ch_ext_y <= 0:
+        return _GroupTransform()
+
+    sx = ext_x / ch_ext_x
+    sy = ext_y / ch_ext_y
+    return _GroupTransform(
+        sx=sx,
+        sy=sy,
+        tx=off_x - sx * ch_off_x,
+        ty=off_y - sy * ch_off_y,
+    )
+
+
+def _expanded_children(elem: ET.Element) -> Iterable[ET.Element]:
+    for child in list(elem):
+        tag = _local_name(child.tag)
         if tag != "AlternateContent":
-            expanded.append(child)
+            yield child
             continue
 
         selected = child.find("./{*}Choice")
@@ -96,8 +238,104 @@ def _iter_sp_tree_children(sp_tree: ET.Element, deps: SlideConversionDeps) -> Li
             selected = child.find("./{*}Fallback")
         if selected is None:
             continue
-        expanded.extend(list(selected))
-    return expanded
+        yield from list(selected)
+
+
+def _iter_flattened_shapes(
+    container: ET.Element,
+    ns: Dict[str, str],
+    *,
+    include_groups: bool = False,
+) -> Iterable[FlattenedShape]:
+    def walk(
+        elem: ET.Element,
+        transform: _GroupTransform,
+        group_path: Tuple[str, ...],
+        z_prefix: Tuple[int, ...],
+    ) -> Iterable[FlattenedShape]:
+        ordinal = 0
+        for child in _expanded_children(elem):
+            tag = _local_name(child.tag)
+            if tag not in _DRAWABLE_TAGS:
+                continue
+
+            ordinal += 1
+            z_path = z_prefix + (ordinal,)
+            shape_id, name = _shape_id_name(child, tag, ns)
+            local_bbox = _extract_local_bbox_emu(child, ns)
+            bbox = transform.apply_bbox(local_bbox) if local_bbox is not None else None
+
+            if tag == "grpSp":
+                if include_groups:
+                    yield FlattenedShape(
+                        elem=child,
+                        tag=tag,
+                        shape_id=shape_id,
+                        name=name,
+                        group_path=group_path,
+                        z_path=z_path,
+                        bbox=bbox,
+                    )
+                group_key = shape_id or ".".join(str(part) for part in z_path)
+                group_transform = _group_child_transform(child, ns)
+                yield from walk(
+                    child,
+                    transform.compose(group_transform),
+                    group_path + (group_key,),
+                    z_path,
+                )
+                continue
+
+            if tag in _LEAF_DRAWABLE_TAGS:
+                yield FlattenedShape(
+                    elem=child,
+                    tag=tag,
+                    shape_id=shape_id,
+                    name=name,
+                    group_path=group_path,
+                    z_path=z_path,
+                    bbox=bbox,
+                )
+
+    yield from walk(container, _GroupTransform(), (), ())
+
+
+def _flatten_slide_shapes(sp_tree: ET.Element, context: SlideConversionContext) -> List[FlattenedShape]:
+    return list(_iter_flattened_shapes(sp_tree, context.ns))
+
+
+def _ordered_flattened_shapes(items: List[FlattenedShape], context: SlideConversionContext) -> List[FlattenedShape]:
+    known = 0
+    for item in items:
+        hint = context.heading_hints.get(item.shape_id, {})
+        if "order_index" in hint:
+            known += 1
+
+    if known < max(1, len(items) // 2):
+        return items
+
+    def sort_key(item: FlattenedShape) -> Tuple[int, int, Tuple[int, ...]]:
+        hint = context.heading_hints.get(item.shape_id, {})
+        raw_order = hint.get("order_index")
+        try:
+            order_index = int(raw_order)
+        except (TypeError, ValueError):
+            return (1, 0, item.z_path)
+        return (0, order_index, item.z_path)
+
+    return sorted(items, key=sort_key)
+
+
+def _table_overlay_shape_entries(items: Sequence[FlattenedShape]) -> List[Dict[str, object]]:
+    return [
+        {
+            "elem": item.elem,
+            "tag": item.tag,
+            "shape_id": item.shape_id,
+            "bbox": item.bbox,
+        }
+        for item in items
+    ]
 
 
 def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConversionDeps) -> None:
@@ -451,13 +689,19 @@ def convert_one_slide(
     context.rels_path = deps.choose_rels_in_package(context.slide_xml, source_slide_xml=context.source_slide_xml)
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
+    flattened_shapes = _ordered_flattened_shapes(_flatten_slide_shapes(sp_tree, context), context)
     (
         context.table_overlay_map,
         context.consumed_picture_ids,
         overlay_warnings,
         overlay_resolved,
         overlay_unresolved,
-    ) = deps.collect_table_overlay_pictures(sp_tree, context.slide_xml, context.rels_map, context.rels_path)
+    ) = deps.collect_table_overlay_pictures(
+        _table_overlay_shape_entries(flattened_shapes),
+        context.slide_xml,
+        context.rels_map,
+        context.rels_path,
+    )
 
     lines: List[str] = [f"[Page_{context.page_no}]", ""]
     state = SlideRenderState()
@@ -469,9 +713,10 @@ def convert_one_slide(
     stats.resolved_images += overlay_resolved
     stats.unresolved_images += overlay_unresolved
 
-    for child in _iter_sp_tree_children(sp_tree, deps):
-        tag = deps.local_name(child.tag)
-        if tag not in {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}:
+    for item in flattened_shapes:
+        child = item.elem
+        tag = item.tag
+        if tag not in {"sp", "pic", "graphicFrame", "cxnSp"}:
             continue
         stats.blocks_total += 1
 
@@ -479,7 +724,7 @@ def convert_one_slide(
             stats.skipped_blocks += 1
             continue
 
-        if tag in {"sp", "grpSp"}:
+        if tag == "sp":
             _handle_text_shape_block(
                 child,
                 lines=lines,

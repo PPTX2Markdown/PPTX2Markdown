@@ -610,7 +610,11 @@ wheels = [
 [[package]]
 name = "omml2latex"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main#0d163c5291cc0e396db21c713573bbcfdc5232b2" }
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/38/f80a393859b7ea9f86d1f87400fca056764a748d6b1f1abbe4bde23b5384/omml2latex-0.1.0.tar.gz", hash = "sha256:ccdfae7b337beeef660b4ce90944f99a676d3db4ba1a4a050fc9d297af3f9fb1", size = 34160, upload-time = "2026-04-09T16:38:23.311Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/12/2884a9458fcf66e651924504760f9b2b90e85cc2a714faeb079acbe60148/omml2latex-0.1.0-py3-none-any.whl", hash = "sha256:00bd0368d8ad8500967b3b532875aa54c42e596a1b0914e1ca3a154d216e29e4", size = 30644, upload-time = "2026-04-09T16:38:21.465Z" },
+]
 
 [[package]]
 name = "opencv-python-headless"
@@ -715,7 +719,7 @@ requires-dist = [
     { name = "accelerate", specifier = ">=1.0.0,<2" },
     { name = "chart2md" },
     { name = "numpy", specifier = "==2.2.6" },
-    { name = "omml2latex", git = "ssh://git@github.com/PPTX2Markdown/OMML2Latex.git?rev=main" },
+    { name = "omml2latex" },
     { name = "opencv-python-headless", specifier = "==4.11.0.86" },
     { name = "pillow", specifier = "==10.4.0" },
     { name = "pydantic", specifier = ">=2.10.0,<3" },
