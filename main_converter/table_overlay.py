@@ -84,29 +84,29 @@ def bbox_contains_point(bbox: Tuple[int, int, int, int], point: Tuple[int, int])
 
 
 def collect_table_overlay_pictures(
-    sp_tree: ET.Element,
+    shape_items: Sequence[Dict[str, object]],
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
     *,
     ns: Dict[str, str],
-    local_name_fn: Callable[[str], str],
     resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
 ) -> Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int]:
     table_bboxes: List[Tuple[str, Tuple[int, int, int, int]]] = []
     picture_infos: List[Dict[str, object]] = []
 
-    for child in list(sp_tree):
-        tag = local_name_fn(child.tag)
+    for item in shape_items:
+        child = item.get("elem")
+        tag = str(item.get("tag", ""))
+        bbox = item.get("bbox")
+        sid = str(item.get("shape_id", ""))
+        if child is None or not isinstance(bbox, tuple) or len(bbox) != 4:
+            continue
         if tag == "graphicFrame":
             tbl = child.find(".//a:tbl", ns)
-            bbox = extract_bbox_emu(child, ns)
-            sid = shape_id_of(child, ns)
-            if tbl is not None and bbox is not None and sid:
+            if tbl is not None and sid:
                 table_bboxes.append((sid, bbox))
         elif tag == "pic":
-            bbox = extract_bbox_emu(child, ns)
-            sid = shape_id_of(child, ns)
-            if bbox is None or not sid:
+            if not sid:
                 continue
             blip = child.find(".//a:blip", ns)
             embed = blip.attrib.get(f"{{{ns['r']}}}embed") if blip is not None else None

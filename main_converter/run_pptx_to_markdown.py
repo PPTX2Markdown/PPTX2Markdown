@@ -422,13 +422,15 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     if not isinstance(rows, list):
         return {}
     out: Dict[str, Dict[str, object]] = {}
-    for row in rows:
+    for order_index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
         sid = str(row.get("shape_id", "")).strip()
         if not sid:
             continue
         out[sid] = {
+            "order_index": order_index,
+            "xml_index": row.get("xml_index"),
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
             "heading_depth_hint": row.get("heading_depth_hint"),
@@ -884,7 +886,7 @@ def normalize_list_levels(blocks: Sequence[ShapeBlock]) -> List[ShapeBlock]:
 # 각 문단을 plain text / unordered list / ordered list로 분류하고 필요한 level도 함께 기록한다.
 def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
     blocks: List[ShapeBlock] = []
-    for p in shape_elem.findall(".//p:txBody/a:p", NS):
+    for p in shape_elem.findall("./p:txBody/a:p", NS):
         segments = parse_paragraph_segments(p)
         if not segments:
             continue
@@ -1258,18 +1260,17 @@ def overlay_content_text(
 # 실제 구현은 table_overlay 모듈에 두고, 여기서는 현재 파일의 namespace와
 # 이미지 경로 해석 함수를 주입하는 어댑터 역할만 맡는다.
 def collect_table_overlay_pictures(
-    sp_tree: ET.Element,
+    shape_items: Sequence[Dict[str, object]],
     slide_xml: Path,
     rels_map: Dict[str, str],
     rels_path: Optional[Path],
 ) -> Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int]:
     _ = slide_xml
     return collect_table_overlay_pictures_core(
-        sp_tree,
+        shape_items,
         rels_map,
         rels_path,
         ns=NS,
-        local_name_fn=local_name,
         resolve_image_path_fn=resolve_image_path,
     )
 

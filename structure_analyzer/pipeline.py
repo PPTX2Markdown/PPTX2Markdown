@@ -69,6 +69,8 @@ def object_to_dict(
         "heading_score": round(score, 3),
         "heading_depth_hint": depth,
         "bbox": list(obj.bbox) if obj.bbox is not None else None,
+        "group_path": list(obj.group_path),
+        "z_path": list(obj.z_path),
         "bucket": bucket(obj, context),
         "reason": reason(obj, context),
     }
@@ -152,7 +154,8 @@ def write_outputs(
     ordered_indexes = [obj.xml_index for obj in ordered]
 
     tree = ET.parse(slide_xml)
-    reorder_tree_by_indexes(tree, ordered_indexes)
+    if not bool(meta.get("flattened_groups", False)):
+        reorder_tree_by_indexes(tree, ordered_indexes)
 
     stem = slide_xml.stem
     json_path = output_dir / f"{stem}.structure_analysis.json"
@@ -175,7 +178,9 @@ def write_outputs(
             "layout_coord_used": sum(1 for obj in objects if obj.coord_source == "layout"),
             "xml_tables": len(meta.get("xml_tables", [])),
             "xml_images": len(meta.get("xml_images", [])),
+            "groups": int(meta.get("group_count", 0)),
         },
+        "flattened_groups": bool(meta.get("flattened_groups", False)),
         "xml_tables": meta.get("xml_tables", []),
         "xml_images": meta.get("xml_images", []),
         "structure_order": [object_to_dict(obj, context, ordered_heading_depths, strict=strict) for obj in ordered],

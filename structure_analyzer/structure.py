@@ -36,6 +36,8 @@ class SlideObject:
     is_title_placeholder: bool
     font_pt: Optional[float]
     bbox: Optional[Tuple[int, int, int, int]] = None
+    group_path: Tuple[str, ...] = ()
+    z_path: Tuple[int, ...] = ()
 
 
 @dataclass

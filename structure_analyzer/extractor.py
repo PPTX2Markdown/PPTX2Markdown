@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from .constants import (
@@ -19,12 +20,50 @@ from .constants import (
 from .structure import SlideObject
 from .text_rules import is_numbered_heading_text, normalize_text
 from .xml_primitives import (
-    extract_bbox_emu,
     first_off,
     get_nvpr_paths,
     local_name,
     parse_int,
 )
+
+
+LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
+
+
+@dataclass(frozen=True)
+class _GroupTransform:
+    sx: float = 1.0
+    sy: float = 1.0
+    tx: float = 0.0
+    ty: float = 0.0
+
+    def apply_bbox(self, bbox: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+        x1, y1, x2, y2 = bbox
+        return (
+            int(round(self.sx * x1 + self.tx)),
+            int(round(self.sy * y1 + self.ty)),
+            int(round(self.sx * x2 + self.tx)),
+            int(round(self.sy * y2 + self.ty)),
+        )
+
+    def compose(self, inner: "_GroupTransform") -> "_GroupTransform":
+        return _GroupTransform(
+            sx=self.sx * inner.sx,
+            sy=self.sy * inner.sy,
+            tx=self.sx * inner.tx + self.tx,
+            ty=self.sy * inner.ty + self.ty,
+        )
+
+
+@dataclass(frozen=True)
+class _FlattenedShape:
+    elem: ET.Element
+    tag: str
+    shape_id: str
+    name: str
+    group_path: Tuple[str, ...]
+    z_path: Tuple[int, ...]
+    bbox: Optional[Tuple[int, int, int, int]]
 
 
 def resolve_slide_layout(slide_xml: Path) -> Optional[Path]:
@@ -140,6 +179,148 @@ def extract_font_pt(elem: ET.Element) -> Optional[float]:
     return max(sizes)
 
 
+def _first(elem: ET.Element, paths: Tuple[str, ...]) -> Optional[ET.Element]:
+    for path in paths:
+        found = elem.find(path, NS)
+        if found is not None:
+            return found
+    return None
+
+
+def _point_attrs(node: Optional[ET.Element], x_name: str, y_name: str) -> Optional[Tuple[int, int]]:
+    if node is None:
+        return None
+    x = parse_int(node.attrib.get(x_name))
+    y = parse_int(node.attrib.get(y_name))
+    if x >= LARGE_INT or y >= LARGE_INT:
+        return None
+    return x, y
+
+
+def _shape_id_name(elem: ET.Element, tag: str) -> Tuple[str, str]:
+    c_nv_path, _ = get_nvpr_paths(tag)
+    c_nv_pr = elem.find(c_nv_path, NS)
+    if c_nv_pr is None:
+        return "", ""
+    return c_nv_pr.attrib.get("id", ""), c_nv_pr.attrib.get("name", "")
+
+
+def _extract_local_bbox_emu(elem: ET.Element) -> Optional[Tuple[int, int, int, int]]:
+    off = _first(
+        elem,
+        (
+            "./p:spPr/a:xfrm/a:off",
+            "./p:grpSpPr/a:xfrm/a:off",
+            "./p:xfrm/a:off",
+        ),
+    )
+    ext = _first(
+        elem,
+        (
+            "./p:spPr/a:xfrm/a:ext",
+            "./p:grpSpPr/a:xfrm/a:ext",
+            "./p:xfrm/a:ext",
+        ),
+    )
+    origin = _point_attrs(off, "x", "y")
+    size = _point_attrs(ext, "cx", "cy")
+    if origin is None or size is None:
+        return None
+    x, y = origin
+    w, h = size
+    if w <= 0 or h <= 0:
+        return None
+    return (x, y, x + w, y + h)
+
+
+def _group_child_transform(group: ET.Element) -> _GroupTransform:
+    xfrm = group.find("./p:grpSpPr/a:xfrm", NS)
+    if xfrm is None:
+        return _GroupTransform()
+
+    off = _point_attrs(xfrm.find("./a:off", NS), "x", "y")
+    ext = _point_attrs(xfrm.find("./a:ext", NS), "cx", "cy")
+    ch_off = _point_attrs(xfrm.find("./a:chOff", NS), "x", "y")
+    ch_ext = _point_attrs(xfrm.find("./a:chExt", NS), "cx", "cy")
+    if off is None or ext is None or ch_off is None or ch_ext is None:
+        return _GroupTransform()
+
+    off_x, off_y = off
+    ext_x, ext_y = ext
+    ch_off_x, ch_off_y = ch_off
+    ch_ext_x, ch_ext_y = ch_ext
+    if ch_ext_x <= 0 or ch_ext_y <= 0:
+        return _GroupTransform()
+
+    sx = ext_x / ch_ext_x
+    sy = ext_y / ch_ext_y
+    return _GroupTransform(
+        sx=sx,
+        sy=sy,
+        tx=off_x - sx * ch_off_x,
+        ty=off_y - sy * ch_off_y,
+    )
+
+
+def _expanded_children(elem: ET.Element) -> Iterable[ET.Element]:
+    for child in list(elem):
+        tag = local_name(child.tag)
+        if tag != "AlternateContent":
+            yield child
+            continue
+
+        selected = child.find("./{*}Choice")
+        if selected is None:
+            selected = child.find("./{*}Fallback")
+        if selected is None:
+            continue
+        yield from list(selected)
+
+
+def _iter_flattened_shapes(container: ET.Element) -> Iterable[_FlattenedShape]:
+    def walk(
+        elem: ET.Element,
+        transform: _GroupTransform,
+        group_path: Tuple[str, ...],
+        z_prefix: Tuple[int, ...],
+    ) -> Iterable[_FlattenedShape]:
+        ordinal = 0
+        for child in _expanded_children(elem):
+            tag = local_name(child.tag)
+            if tag not in REORDERABLE:
+                continue
+
+            ordinal += 1
+            z_path = z_prefix + (ordinal,)
+            shape_id, name = _shape_id_name(child, tag)
+            local_bbox = _extract_local_bbox_emu(child)
+            bbox = transform.apply_bbox(local_bbox) if local_bbox is not None else None
+
+            if tag == "grpSp":
+                group_key = shape_id or ".".join(str(part) for part in z_path)
+                group_transform = _group_child_transform(child)
+                yield from walk(
+                    child,
+                    transform.compose(group_transform),
+                    group_path + (group_key,),
+                    z_path,
+                )
+                continue
+
+            if tag in LEAF_DRAWABLE_TAGS:
+                yield _FlattenedShape(
+                    elem=child,
+                    tag=tag,
+                    shape_id=shape_id,
+                    name=name,
+                    group_path=group_path,
+                    z_path=z_path,
+                    bbox=bbox,
+                )
+
+    yield from walk(container, _GroupTransform(), (), ())
+
+
 def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[List[SlideObject], Dict[str, object]]:
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
@@ -153,31 +334,30 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
     xml_tables: List[Dict[str, object]] = []
     xml_images: List[Dict[str, object]] = []
     xml_idx = 0
+    group_count = len(sp_tree.findall(".//p:grpSp", NS))
 
-    for child in list(sp_tree):
-        tag = local_name(child.tag)
-        if tag not in REORDERABLE:
-            continue
+    for item in _iter_flattened_shapes(sp_tree):
+        child = item.elem
+        tag = item.tag
         xml_idx += 1
 
-        c_nv_path, ph_path = get_nvpr_paths(tag)
-        c_nv_pr = child.find(c_nv_path, NS)
+        _, ph_path = get_nvpr_paths(tag)
         ph = child.find(ph_path, NS)
 
-        shape_id = c_nv_pr.attrib.get("id", "") if c_nv_pr is not None else ""
-        name = c_nv_pr.attrib.get("name", "") if c_nv_pr is not None else ""
+        shape_id = item.shape_id
+        name = item.name
         ph_type = ph.attrib.get("type") if ph is not None else None
         ph_idx = ph.attrib.get("idx") if ph is not None else None
-        bbox = extract_bbox_emu(child)
+        bbox = item.bbox
 
         off = first_off(child)
         coord_source = "direct"
-        if off is not None:
-            x = parse_int(off.attrib.get("x"))
-            y = parse_int(off.attrib.get("y"))
-        elif bbox is not None:
+        if bbox is not None:
             x = bbox[0]
             y = bbox[1]
+        elif off is not None:
+            x = parse_int(off.attrib.get("x"))
+            y = parse_int(off.attrib.get("y"))
         else:
             x = LARGE_INT
             y = LARGE_INT
@@ -220,6 +400,8 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
                 is_title_placeholder=ph_type in TITLE_TYPES,
                 font_pt=extract_font_pt(child),
                 bbox=bbox,
+                group_path=item.group_path,
+                z_path=item.z_path,
             )
         )
 
@@ -248,5 +430,7 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
         "layout_placeholder_count": len(layout_map),
         "xml_tables": xml_tables,
         "xml_images": xml_images,
+        "group_count": group_count,
+        "flattened_groups": group_count > 0,
     }
     return objects, meta
