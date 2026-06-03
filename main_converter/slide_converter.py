@@ -73,6 +73,7 @@ class SlideConversionDeps:
     choose_rels_in_package: Callable[[Path, Optional[Path]], Optional[Path]]
     build_rels_map: Callable[[Optional[Path]], Dict[str, str]]
     load_heading_hints: Callable[[Path], Dict[str, Dict[str, object]]]
+    load_effective_properties: Callable[[Path], Dict[str, Dict[str, object]]]
     collect_table_overlay_pictures: Callable[
         [Sequence[Dict[str, object]], Path, Dict[str, str], Optional[Path]],
         Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int],
@@ -118,6 +119,7 @@ class SlideConversionContext:
     rels_path: Optional[Path] = None
     rels_map: Dict[str, str] = field(default_factory=dict)
     heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    effective_properties: Dict[str, Dict[str, object]] = field(default_factory=dict)
     table_overlay_map: Dict[str, List[Dict[str, object]]] = field(default_factory=dict)
     consumed_picture_ids: set[str] = field(default_factory=set)
 
@@ -352,6 +354,41 @@ def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConv
     lines.append("")
 
 
+def _apply_effective_list_properties(
+    blocks: List[ShapeBlock],
+    props: Dict[str, object],
+) -> List[ShapeBlock]:
+    if not props.get("has_list_semantics"):
+        return blocks
+    raw_list_kind = str(props.get("list_kind") or "").strip()
+    list_kind = {"ul": "list_ul", "ol": "list_ol"}.get(raw_list_kind, raw_list_kind)
+    if list_kind not in {"list_ul", "list_ol"}:
+        return blocks
+    try:
+        level = int(props.get("list_level") or 0)
+    except (TypeError, ValueError):
+        level = 0
+
+    converted: List[ShapeBlock] = []
+    changed = False
+    for block in blocks:
+        if block.kind in {"list_ul", "list_ol"}:
+            converted.append(block)
+            continue
+        if block.kind != "text" or not block.plain_text:
+            converted.append(block)
+            continue
+        converted.append(
+            ShapeBlock(
+                kind=list_kind,
+                level=level,
+                segments=block.segments,
+            )
+        )
+        changed = True
+    return converted if changed else blocks
+
+
 def _append_unmatched_marker(
     lines: List[str],
     child: ET.Element,
@@ -382,7 +419,9 @@ def _handle_text_shape_block(
         stats.skipped_blocks += 1
         return
 
-    shape_blocks = deps.extract_shape_blocks(child)
+    sid = deps.shape_id_of(child)
+    props = context.effective_properties.get(sid, {})
+    shape_blocks = _apply_effective_list_properties(deps.extract_shape_blocks(child), props)
     has_list_semantics = any(block.kind in {"list_ul", "list_ol"} for block in shape_blocks)
     has_math_shape = any(block.has_math for block in shape_blocks)
     text = deps.render_shape_blocks(shape_blocks)
@@ -406,7 +445,6 @@ def _handle_text_shape_block(
                 stats.math_conversion_failures += 1
                 stats.warnings.append("OMML to LaTeX conversion failed; used math fallback text")
 
-    sid = deps.shape_id_of(child)
     hint = context.heading_hints.get(sid, {})
     depth = hint.get("heading_depth_hint")
     score = float(hint.get("heading_score", 0.0))
@@ -689,6 +727,7 @@ def convert_one_slide(
     context.rels_path = deps.choose_rels_in_package(context.slide_xml, source_slide_xml=context.source_slide_xml)
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
+    context.effective_properties = deps.load_effective_properties(context.slide_xml)
     flattened_shapes = _ordered_flattened_shapes(_flatten_slide_shapes(sp_tree, context), context)
     (
         context.table_overlay_map,
@@ -721,6 +760,12 @@ def convert_one_slide(
         stats.blocks_total += 1
 
         if tag == "cxnSp":
+            stats.skipped_blocks += 1
+            continue
+
+        sid = deps.shape_id_of(child)
+        props = context.effective_properties.get(sid, {})
+        if props.get("is_decorative"):
             stats.skipped_blocks += 1
             continue
 

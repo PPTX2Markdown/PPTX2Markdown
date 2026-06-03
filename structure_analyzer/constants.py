@@ -11,6 +11,9 @@ REL_NS = {"rel": "http://schemas.openxmlformats.org/package/2006/relationships"}
 SLIDE_LAYOUT_REL_TYPE = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout"
 )
+SLIDE_MASTER_REL_TYPE = (
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster"
+)
 
 REORDERABLE = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
 FOOTER_TYPES = {"sldNum", "ftr", "dt"}

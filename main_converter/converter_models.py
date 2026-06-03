@@ -184,6 +184,8 @@ class ConverterConfig(BaseModel):
     reading_order: str = "xml"
     heading_mode: str = "auto"
     strict: bool = True
+    pptx_inheritance: str = "style"
+    inherited_shapes: str = "visible"
     reuse_surya_cache: bool = False
     image_vlm_provider: str = "local"
     image_vlm_model: Optional[str] = None

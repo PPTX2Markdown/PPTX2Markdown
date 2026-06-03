@@ -69,6 +69,8 @@ def run_structure_analysis_stage(
     slide_xmls: Sequence[Path],
     strict: bool = False,
     mode: str = "xml",
+    pptx_inheritance: str = "style",
+    inherited_shapes: str = "visible",
 ) -> Tuple[Dict[str, Path], Path]:
     ro_script = repo_root / "structure_analyzer" / "extract_structure_analysis.py"
     if not ro_script.exists():
@@ -90,9 +92,14 @@ def run_structure_analysis_stage(
     ]
     if strict:
         cmd.append("--strict")
+    cmd.extend(["--placeholder-inheritance", pptx_inheritance])
+    cmd.extend(["--inherited-shapes", inherited_shapes])
     cmd.extend(str(p.resolve()) for p in slide_xmls)
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     if proc.returncode != 0:
         raise RuntimeError(
             "structure_analysis stage failed\n"

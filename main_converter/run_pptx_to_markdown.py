@@ -471,7 +471,7 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "xml_index": row.get("xml_index"),
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
-            "heading_depth_hint": row.get("heading_depth_hint"),
+            "heading_depth_hint": row.get("heading_depth_hint", row.get("heading_depth")),
             "surya_heading_depth_hint": row.get("surya_heading_depth_hint"),
             "heading_source": row.get("heading_source"),
             "heading_sources": row.get("heading_sources"),
@@ -479,6 +479,37 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "font_pt": row.get("font_pt"),
             "ph_type": row.get("ph_type"),
             "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
+        }
+    return out
+
+
+def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
+    sidecar = find_sidecar_json(slide_xml)
+    if sidecar is None:
+        return {}
+    try:
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    rows = payload.get("structure_order")
+    if not isinstance(rows, list):
+        rows = payload.get("reading_order")
+    if not isinstance(rows, list):
+        return {}
+
+    out: Dict[str, Dict[str, object]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("shape_id", "")).strip()
+        if not sid:
+            continue
+        out[sid] = {
+            "list_kind": row.get("list_kind"),
+            "list_level": row.get("list_level"),
+            "has_list_semantics": bool(row.get("has_list_semantics", False)),
+            "ph_type": row.get("ph_type"),
+            "is_decorative": bool(row.get("is_decorative", False)),
         }
     return out
 
@@ -569,12 +600,12 @@ def choose_rels_in_package(
     source_slide_xml: Optional[Path] = None,
 ) -> Optional[Path]:
     # Strictly stay inside same ppt package to avoid cross-package mismatches.
-    sidecar = rels_from_sidecar(slide_xml)
-    if sidecar:
-        return sidecar
     fallback = fallback_rels(slide_xml)
     if fallback:
         return fallback
+    sidecar = rels_from_sidecar(slide_xml)
+    if sidecar:
+        return sidecar
     return source_slide_rels(source_slide_xml)
 
 
@@ -1372,6 +1403,7 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         choose_rels_in_package=choose_rels_in_package,
         build_rels_map=build_rels_map,
         load_heading_hints=load_heading_hints,
+        load_effective_properties=load_effective_properties,
         collect_table_overlay_pictures=collect_table_overlay_pictures,
         extract_shape_blocks=extract_shape_blocks,
         render_shape_blocks=render_shape_blocks,
@@ -1441,6 +1473,29 @@ def _parse_args() -> argparse.Namespace:
         action="store_false",
         default=True,
         help="Disable strict heading detection in xml reading-order mode.",
+    )
+    parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help=(
+            "Placeholder inheritance depth for markdown extraction. "
+            "none uses slide XML only; geometry inherits placeholder type/bbox; "
+            "style also inherits text style signals such as font size and list semantics. "
+            "Legacy values placeholder=geometry and semantic=style are accepted."
+        ),
+    )
+    parser.add_argument(
+        "--inherited-shapes",
+        choices=("none", "visible", "all", "semantic"),
+        default="visible",
+        help=(
+            "Materialize layout/master-only shapes into effective structure properties. "
+            "visible keeps slideshow-visible text/images while filtering placeholder prompts; "
+            "all keeps every shape. Legacy semantic=visible is accepted."
+        ),
     )
     parser.add_argument(
         "--reuse-surya-cache",
@@ -1523,6 +1578,8 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         reading_order=str(args.reading_order),
         heading_mode=str(args.headings),
         strict=bool(args.strict),
+        pptx_inheritance=str(args.pptx_inheritance),
+        inherited_shapes=str(args.inherited_shapes),
         reuse_surya_cache=bool(args.reuse_surya_cache),
         ppt_converter=str(args.ppt_converter),
         image_vlm_provider=normalized_provider,
@@ -1654,6 +1711,8 @@ def _convert_package(
                 slide_xmls=slide_xmls,
                 strict=config.strict,
                 mode=config.reading_order,
+                pptx_inheritance=config.pptx_inheritance,
+                inherited_shapes=config.inherited_shapes,
             )
             pkg_row["structure_analysis_output_dir"] = str(ro_output)
         except Exception as e:  # noqa: BLE001

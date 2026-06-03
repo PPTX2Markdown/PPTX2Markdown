@@ -52,6 +52,29 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use stricter xml heading detection and candidacy thresholds.",
     )
+    parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help=(
+            "Placeholder inheritance depth for markdown extraction. "
+            "none uses slide XML only; geometry inherits placeholder type/bbox; "
+            "style also inherits text style signals such as font size and list semantics. "
+            "Legacy values placeholder=geometry and semantic=style are accepted."
+        ),
+    )
+    parser.add_argument(
+        "--inherited-shapes",
+        choices=("none", "visible", "all", "semantic"),
+        default="visible",
+        help=(
+            "Whether to materialize layout/master-only shapes. "
+            "visible keeps slideshow-visible text/images while filtering placeholder prompts; "
+            "all keeps every shape. Legacy semantic=visible is accepted."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -74,7 +97,14 @@ def main() -> None:
 
     for slide_xml in sorted(inputs, key=natural_key):
         try:
-            row = write_outputs(slide_xml, output_dir, mode=args.mode, strict=args.strict)
+            row = write_outputs(
+                slide_xml,
+                output_dir,
+                mode=args.mode,
+                strict=args.strict,
+                pptx_inheritance=args.pptx_inheritance,
+                inherited_shapes=args.inherited_shapes,
+            )
             manifest["processed"].append(row)
             print(f"Processed: {slide_xml.name}")
         except Exception as exc:  # noqa: BLE001

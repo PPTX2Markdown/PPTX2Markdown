@@ -38,6 +38,10 @@ class SlideObject:
     bbox: Optional[Tuple[int, int, int, int]] = None
     group_path: Tuple[str, ...] = ()
     z_path: Tuple[int, ...] = ()
+    source_part: str = "slide"
+    inheritance_kind: str = "direct"
+    list_kind: Optional[str] = None
+    list_level: Optional[int] = None
 
 
 @dataclass

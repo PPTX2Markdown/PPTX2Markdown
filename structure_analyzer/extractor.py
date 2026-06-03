@@ -25,6 +25,12 @@ from .xml_primitives import (
     local_name,
     parse_int,
 )
+from pptx_inheritance.resolver import (
+    EffectiveShape,
+    normalize_inherited_shapes_mode,
+    normalize_pptx_inheritance_mode,
+    resolve_effective_slide,
+)
 
 
 LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
@@ -321,11 +327,57 @@ def _iter_flattened_shapes(container: ET.Element) -> Iterable[_FlattenedShape]:
     yield from walk(container, _GroupTransform(), (), ())
 
 
-def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[List[SlideObject], Dict[str, object]]:
+def _slide_object_from_effective(shape: EffectiveShape) -> SlideObject:
+    return SlideObject(
+        shape_id=shape.shape_id,
+        xml_index=shape.xml_index,
+        tag=shape.tag,
+        name=shape.name,
+        ph_type=shape.ph_type,
+        ph_idx=shape.ph_idx,
+        x=shape.x,
+        y=shape.y,
+        coord_source=shape.coord_source,
+        text=shape.text,
+        normalized=shape.normalized,
+        is_footer=shape.is_footer,
+        is_decorative=shape.is_decorative,
+        is_heading=shape.is_heading,
+        is_title_placeholder=shape.is_title_placeholder,
+        font_pt=shape.font_pt,
+        list_kind=shape.list_kind,
+        list_level=shape.list_level,
+        bbox=shape.bbox,
+        source_part=shape.source_part,
+        inheritance_kind=shape.inheritance_kind,
+    )
+
+
+def extract_slide_objects_xml(
+    slide_xml: Path,
+    strict: bool = False,
+    pptx_inheritance: str = "style",
+    inherited_shapes: str = "visible",
+) -> Tuple[List[SlideObject], Dict[str, object]]:
+    pptx_inheritance = normalize_pptx_inheritance_mode(pptx_inheritance)
+    inherited_shapes = normalize_inherited_shapes_mode(inherited_shapes)
+
     root = ET.parse(slide_xml).getroot()
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return [], {"error": "Missing p:cSld/p:spTree"}
+
+    effective_slide = resolve_effective_slide(
+        slide_xml,
+        strict=strict,
+        pptx_inheritance=pptx_inheritance,
+        inherited_shapes=inherited_shapes,
+    )
+    effective_by_shape_id = {
+        shape.shape_id: shape
+        for shape in effective_slide.shapes
+        if shape.source_part == "slide"
+    }
 
     layout_xml = resolve_slide_layout(slide_xml)
     layout_map = parse_layout_placeholders(layout_xml)
@@ -349,12 +401,20 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
         ph_type = ph.attrib.get("type") if ph is not None else None
         ph_idx = ph.attrib.get("idx") if ph is not None else None
         bbox = item.bbox
+        effective = effective_by_shape_id.get(shape_id)
+        if effective is not None:
+            ph_type = effective.ph_type
+            ph_idx = effective.ph_idx
+            if bbox is None:
+                bbox = effective.bbox
 
         off = first_off(child)
         coord_source = "direct"
         if bbox is not None:
             x = bbox[0]
             y = bbox[1]
+            if effective is not None and item.bbox is None:
+                coord_source = effective.coord_source
         elif off is not None:
             x = parse_int(off.attrib.get("x"))
             y = parse_int(off.attrib.get("y"))
@@ -376,6 +436,23 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
 
         text = normalize_text("".join(t.text or "" for t in child.findall(".//a:t", NS)))
         normalized = text
+        font_pt = extract_font_pt(child)
+        list_kind = None
+        list_level = None
+        is_decorative_value = is_decorative(tag, text)
+        is_heading_value = looks_heading(text, ph_type, strict=strict)
+        source_part = "slide"
+        inheritance_kind = "placeholder" if coord_source in {"layout", "master"} else "direct"
+        if effective is not None:
+            text = effective.text
+            normalized = effective.normalized
+            font_pt = effective.font_pt
+            list_kind = effective.list_kind
+            list_level = effective.list_level
+            is_decorative_value = effective.is_decorative
+            is_heading_value = effective.is_heading
+            source_part = effective.source_part
+            inheritance_kind = effective.inheritance_kind
 
         objects.append(
             SlideObject(
@@ -391,13 +468,17 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
                 text=text,
                 normalized=normalized,
                 is_footer=(ph_type in FOOTER_TYPES) or bool(re.fullmatch(r"\d+", normalized)),
-                is_decorative=is_decorative(tag, text),
-                is_heading=looks_heading(text, ph_type, strict=strict),
+                is_decorative=is_decorative_value,
+                is_heading=is_heading_value,
                 is_title_placeholder=ph_type in TITLE_TYPES,
-                font_pt=extract_font_pt(child),
+                font_pt=font_pt,
+                list_kind=list_kind,
+                list_level=list_level,
                 bbox=bbox,
                 group_path=item.group_path,
                 z_path=item.z_path,
+                source_part=source_part,
+                inheritance_kind=inheritance_kind,
             )
         )
 
@@ -421,12 +502,13 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
                 }
             )
 
-    meta = {
-        "layout_xml": str(layout_xml) if layout_xml else None,
-        "layout_placeholder_count": len(layout_map),
-        "xml_tables": xml_tables,
-        "xml_images": xml_images,
-        "group_count": group_count,
-        "flattened_groups": group_count > 0,
-    }
+    for shape in effective_slide.shapes:
+        if shape.inheritance_kind == "materialized":
+            objects.append(_slide_object_from_effective(shape))
+
+    meta = effective_slide.meta()
+    meta["xml_tables"] = xml_tables
+    meta["xml_images"] = xml_images
+    meta["group_count"] = group_count
+    meta["flattened_groups"] = group_count > 0
     return objects, meta

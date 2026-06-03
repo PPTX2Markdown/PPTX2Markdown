@@ -265,6 +265,14 @@ def main() -> int:
             "Prefer existing slide XML roots from --target-slides-dir instead of re-extracting from pptx."
         ),
     )
+    parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help="Placeholder inheritance depth passed to normalize/build steps.",
+    )
     args = parser.parse_args()
 
     surya_dir = Path(__file__).resolve().parent
@@ -401,6 +409,8 @@ def main() -> int:
                     *ppt_locator_args,
                     "--output-json",
                     str(normalized_json),
+                    "--placeholder-inheritance",
+                    args.pptx_inheritance,
                 ],
                 cwd=surya_dir,
             )
@@ -425,6 +435,8 @@ def main() -> int:
                     *ppt_locator_args,
                     "--output-dir",
                     str(structure_dir),
+                    "--placeholder-inheritance",
+                    args.pptx_inheritance,
                 ],
                 cwd=surya_dir,
             )
