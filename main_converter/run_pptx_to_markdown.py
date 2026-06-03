@@ -775,8 +775,17 @@ def _build_block_math_segment(math_elem: ET.Element) -> ParagraphSegment:
 
 
 def _extract_run_text(run_elem: ET.Element) -> str:
-    texts = [node.text or "" for node in run_elem.findall(".//a:t", NS) if (node.text or "").strip()]
-    return normalize_text(" ".join(texts))
+    return "".join(node.text or "" for node in run_elem.findall(".//a:t", NS))
+
+
+def _append_text_segment(segments: List[ParagraphSegment], text: str) -> None:
+    if not text:
+        return
+    if segments and segments[-1].kind == "text":
+        previous = segments[-1]
+        segments[-1] = ParagraphSegment(kind="text", text=previous.text + text)
+        return
+    segments.append(ParagraphSegment(kind="text", text=text))
 
 
 def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment]) -> bool:
@@ -824,8 +833,7 @@ def parse_paragraph_segments(paragraph: ET.Element) -> List[ParagraphSegment]:
         tag = local_name(child.tag)
         if tag in {"r", "fld"}:
             text = _extract_run_text(child)
-            if text:
-                segments.append(ParagraphSegment(kind="text", text=text))
+            _append_text_segment(segments, text)
             continue
         if tag == "br":
             segments.append(ParagraphSegment(kind="break", text=""))

@@ -374,12 +374,8 @@ def extract_slide_objects_xml(slide_xml: Path, strict: bool = False) -> Tuple[Li
             else:
                 coord_source = "unknown"
 
-        texts: List[str] = []
-        for t in child.findall(".//a:t", NS):
-            if t.text and t.text.strip():
-                texts.append(t.text.strip())
-        text = " ".join(texts)
-        normalized = normalize_text(text)
+        text = normalize_text("".join(t.text or "" for t in child.findall(".//a:t", NS)))
+        normalized = text
 
         objects.append(
             SlideObject(
