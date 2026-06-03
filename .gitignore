@@ -25,6 +25,10 @@
 *.md
 !/README.md
 !/README.eg.md
+!/surya_pipeline/README.md
+!/surya_pipeline/surya_heading_rules.md
+!/surya_pipeline/docs/
+!/surya_pipeline/docs/*.md
 
 # Inputs / outputs (never commit)
 /main_converter/raw_pptx/**
