@@ -474,11 +474,12 @@ def _handle_text_shape_block(
             and reading_order_source in {"surya_match", "surya_region"}
             and isinstance(depth, int)
             and 1 <= depth <= 6
-            and score >= heading_policy.threshold
         )
         if not is_candidate:
             depth = None
             score = 0.0
+        else:
+            score = max(score, heading_policy.threshold)
         if has_math_shape:
             is_candidate = False
             depth = None
