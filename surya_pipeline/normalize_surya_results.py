@@ -23,6 +23,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ppt-root", type=Path)
     parser.add_argument("--pptx-path", type=Path)
     parser.add_argument("--output-json", required=True, type=Path)
+    parser.add_argument(
+        "--placeholder-inheritance",
+        "--pptx-inheritance",
+        dest="pptx_inheritance",
+        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        default="style",
+        help="Accepted for compatibility with the Surya pipeline driver.",
+    )
     return parser.parse_args()
 
 
