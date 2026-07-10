@@ -23,20 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 
-COPY requirements.txt /tmp/requirements.txt
+COPY . /workspace
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install torch==2.10.0 torchvision==0.25.0 --index-url ${TORCH_INDEX_URL} && \
-    pip install -r /tmp/requirements.txt
+    pip install torch torchvision --index-url ${TORCH_INDEX_URL} && \
+    pip install ".[all]"
 
-RUN python -c "import torch; print(torch.__version__)" && \
-    python -c "import torch; print('torch_cuda_build=', torch.version.cuda)" && \
-    python -c "import torchvision; print(torchvision.__version__)" && \
-    python -c "import accelerate; print(accelerate.__version__)" && \
-    python -c "import transformers; print(transformers.__version__)" && \
-    python -c "import cv2; print(cv2.__version__)" && \
-    python -c "from PIL import Image; print('PIL ok')" && \
+RUN python -c "import torch; print('torch', torch.__version__, 'cuda_build=', torch.version.cuda)" && \
+    python -c "import pptx2markdown; print('pptx2markdown', pptx2markdown.__version__)" && \
     python -c "from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration; print('qwen vl ok')" && \
-    python -c "from surya.table_rec import TableRecPredictor; print('surya ok')"
+    python -c "from surya.layout import LayoutPredictor; print('surya ok')"
 
 CMD ["sleep", "infinity"]

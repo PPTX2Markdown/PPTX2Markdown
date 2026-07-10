@@ -1,86 +1,27 @@
-# Private 
-/test
-
 # macOS
 .DS_Store
 
-# evironment
+# environment
 .env
-
-# cache
-.cache
-
-# python evironment 
 .python-version
-.venv
+.venv/
 
-# Do not commit local XML,JSON sources/results
-/table_extractor/extract_results/*.xml
-/table_extractor/extract_results/manifest.json
-/table_extractor/target_slides/*.xml
-/table_parser/parsing_results/*.json
-/table_parser/tables/*.md
-*.xml
-*.json
-*.md
-!/README.md
-!/README.eg.md
-!/surya_pipeline/README.md
-!/surya_pipeline/surya_heading_rules.md
-!/surya_pipeline/docs/
-!/surya_pipeline/docs/*.md
+# Python
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
 
-# Inputs / outputs (never commit)
-/main_converter/raw_pptx/**
-/main_converter/target_pptx/**
-/main_converter/target_slides/**
-/main_converter/output/**
-/surya_pipeline/target_pptx/**
-/surya_pipeline/target_pdf/**
-/surya_pipeline/target_slides/**
-/surya_pipeline/output/**
-/structure_analyzer/target_slides/**
-/structure_analyzer/output/**
-/table_extractor/target_slides/**
-/table_extractor/extract_results/**
-/table_parser/parsing_results/**
-/table_parser/tables/**
-/main_converter/*.zip
-/main_converter/raw_pptx.zip
+# runtime inputs / outputs (never commit)
+output/
+.pptx2markdown/
+.cache/
+pptx_samples/
+/test
 *.pptx
 *.ppt
 *.pdf
 
-# Keep required directory skeletons via .gitkeep only
-!/main_converter/raw_pptx/
-!/main_converter/raw_pptx/.gitkeep
-!/main_converter/target_pptx/
-!/main_converter/target_pptx/.gitkeep
-!/main_converter/target_slides/
-!/main_converter/target_slides/.gitkeep
-!/main_converter/output/
-!/main_converter/output/.gitkeep
-!/structure_analyzer/target_slides/
-!/structure_analyzer/target_slides/.gitkeep
-!/structure_analyzer/output/
-!/structure_analyzer/output/.gitkeep
-!/table_extractor/target_slides/
-!/table_extractor/target_slides/.gitkeep
-!/table_extractor/extract_results/
-!/table_extractor/extract_results/.gitkeep
-!/table_parser/parsing_results/
-!/table_parser/parsing_results/.gitkeep
-!/table_parser/tables/
-!/table_parser/tables/.gitkeep
-!/surya_pipeline/target_pptx/
-!/surya_pipeline/target_pptx/.gitkeep
-!/surya_pipeline/target_pdf/
-!/surya_pipeline/target_pdf/.gitkeep
-!/surya_pipeline/target_slides/
-!/surya_pipeline/target_slides/.gitkeep
-!/surya_pipeline/output/
-!/surya_pipeline/output/.gitkeep
-
-# Python cache
-__pycache__/
-*.py[cod]
+# Claude Code local settings
+.claude/settings.local.json
