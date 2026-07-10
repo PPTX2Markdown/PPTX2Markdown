@@ -30,12 +30,12 @@ def infer_heading_depth_fallback(
         return None
     if raw.startswith(("▶", "-", "*", "√")):
         return None
-    numeric_markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
+    numeric_markers = re.findall(r"(?:^|\s)\d+\s*\.\s+", raw)
     if len(numeric_markers) >= 2:
         return None
-    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
+    if re.match(r"^\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?\s+", raw):
         return 3
-    if re.match(r"^\d+\.\s+", raw):
+    if re.match(r"^\d+\s*\.\s+", raw):
         if font_pt is None or font_pt < policy.numeric_heading_min_font_pt:
             return None
         return 2
@@ -58,7 +58,7 @@ def looks_like_multi_numbered_items(text: str) -> bool:
     raw = re.sub(r"\s+", " ", (text or "").strip())
     if not raw:
         return False
-    markers = re.findall(r"(?:^|\s)\d+\.\s+", raw)
+    markers = re.findall(r"(?:^|\s)\d+\s*\.\s+", raw)
     return len(markers) >= 2
 
 

@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
-
 PptConverterMode = Literal["auto", "powerpoint", "libreoffice"]
 _WINDOWS_RESERVED_FILENAMES = {
     "CON",
@@ -70,7 +69,9 @@ def _marker_matches(marker_path: Path, ppt_path: Path, mode: PptConverterMode) -
     )
 
 
-def _write_marker(marker_path: Path, ppt_path: Path, mode: PptConverterMode, converter: str) -> None:
+def _write_marker(
+    marker_path: Path, ppt_path: Path, mode: PptConverterMode, converter: str
+) -> None:
     stat = ppt_path.stat()
     marker_path.write_text(
         json.dumps(
@@ -97,7 +98,12 @@ def _resolve_soffice_cmd() -> Optional[str]:
         candidates.extend(
             [
                 Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-                Path.home() / "Applications" / "LibreOffice.app" / "Contents" / "MacOS" / "soffice",
+                Path.home()
+                / "Applications"
+                / "LibreOffice.app"
+                / "Contents"
+                / "MacOS"
+                / "soffice",
             ]
         )
     elif sys.platform.startswith("win"):
@@ -120,7 +126,9 @@ def _resolve_soffice_cmd() -> Optional[str]:
 def _convert_with_libreoffice(ppt_path: Path, output_path: Path) -> None:
     soffice_cmd = _resolve_soffice_cmd()
     if not soffice_cmd:
-        raise PptConversionError("LibreOffice converter not found. Install LibreOffice or set SOFFICE_PATH.")
+        raise PptConversionError(
+            "LibreOffice converter not found. Install LibreOffice or set SOFFICE_PATH."
+        )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     profile_dir = Path(tempfile.mkdtemp(prefix="libreoffice-profile-"))
@@ -191,7 +199,9 @@ def _convert_with_powerpoint(ppt_path: Path, output_path: Path) -> None:
         pythoncom.CoUninitialize()
 
 
-def convert_ppt_to_pptx(ppt_path: Path, cache_root: Path, mode: PptConverterMode = "auto") -> PptConversionResult:
+def convert_ppt_to_pptx(
+    ppt_path: Path, cache_root: Path, mode: PptConverterMode = "auto"
+) -> PptConversionResult:
     if mode not in {"auto", "powerpoint", "libreoffice"}:
         raise ValueError(f"unsupported ppt converter mode: {mode}")
     ppt_path = ppt_path.resolve()
@@ -206,8 +216,12 @@ def convert_ppt_to_pptx(ppt_path: Path, cache_root: Path, mode: PptConverterMode
     if output_path.exists() and _marker_matches(marker_path, ppt_path, mode):
         try:
             if output_path.stat().st_size > 0:
-                converter = json.loads(marker_path.read_text(encoding="utf-8")).get("converter", "cache")
-                return PptConversionResult(output_path.resolve(), str(converter), reused_cache=True)
+                converter = json.loads(marker_path.read_text(encoding="utf-8")).get(
+                    "converter", "cache"
+                )
+                return PptConversionResult(
+                    output_path.resolve(), str(converter), reused_cache=True
+                )
         except OSError:
             pass
 
@@ -217,7 +231,9 @@ def convert_ppt_to_pptx(ppt_path: Path, cache_root: Path, mode: PptConverterMode
 
     errors: list[str] = []
     if mode == "auto":
-        converters = ("powerpoint", "libreoffice") if sys.platform.startswith("win") else ("libreoffice",)
+        converters = (
+            ("powerpoint", "libreoffice") if sys.platform.startswith("win") else ("libreoffice",)
+        )
     else:
         converters = (mode,)
     for converter in converters:

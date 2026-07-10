@@ -26,7 +26,11 @@ class ShapeBlock:
 
     @property
     def plain_text(self) -> str:
-        parts = [segment.text for segment in self.segments if segment.kind != "break" and segment.text.strip()]
+        parts = [
+            segment.text
+            for segment in self.segments
+            if segment.kind != "break" and segment.text.strip()
+        ]
         return " ".join(parts).strip()
 
     @property
@@ -52,7 +56,9 @@ class ShapeBlock:
     @property
     def is_math_only(self) -> bool:
         non_empty = [segment for segment in self.segments if segment.text.strip()]
-        return bool(non_empty) and all(segment.kind in {"math_inline", "math_block"} for segment in non_empty)
+        return bool(non_empty) and all(
+            segment.kind in {"math_inline", "math_block"} for segment in non_empty
+        )
 
 
 class SlideStats(BaseModel):
@@ -169,20 +175,16 @@ class PreparedPackage(BaseModel):
         return self.model_copy(update={"package_dir": package_dir})
 
 
-# main_convert 로직을 실행에 필요한 설정값들을 모아둔 내부 모델
-# 입/출력 경로, 명령어 옵션 정보 등을 저장한다. 
+# 전체 변환 파이프라인의 정규화된 실행 설정이다.
 class ConverterConfig(BaseModel):
-    # Pydantic 모델 설정 
-    # - arbitrary_types_allowed=True : Pydantic이 기본 내장타입만이 아니라 Path같은 파이썬 객체 타입도 필드 타입으로 받아들이게 설정
-    # - extra="forbid" : Pydantic 모델에서 정의하지 않은 필드 값이 들어오면 허용하지 않고 에러를 내겠다.
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
-    cwd: Path # 작업 루트(추출/캐시/중간 산출물이 저장되는 work dir)
-    output_dir: Path # 변환 결과를 저장할 디렉터리 경로 : <output>/<xml | surya>
-    inputs: List[str] = Field(default_factory=list) # 사용자가 CLI로 지정한 입력 PPTX 목록
+    cwd: Path
+    output_dir: Path
+    inputs: List[str] = Field(default_factory=list)
     reading_order: str = "xml"
     heading_mode: str = "auto"
-    strict: bool = True
+    strict: bool = False
     pptx_inheritance: str = "style"
     inherited_shapes: str = "visible"
     reuse_surya_cache: bool = False

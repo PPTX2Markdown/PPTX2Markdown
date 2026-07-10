@@ -12,7 +12,6 @@ from typing import Iterator, Optional, Tuple
 
 from .constants import DEFAULT_TRANSPARENT_BG_GRAY
 
-
 SUPPORTED_IMAGE_SUFFIXES = {
     ".png",
     ".jpg",
@@ -96,14 +95,18 @@ def _rasterize_vector_image(image_path: Path) -> Path:
         if not output_path.exists():
             pngs = sorted(tmp_root.glob("*.png"))
             if not pngs:
-                raise RuntimeError(f"vector image rasterization produced no PNG output: {image_path.name}")
+                raise RuntimeError(
+                    f"vector image rasterization produced no PNG output: {image_path.name}"
+                )
             output_path = pngs[0]
         persisted_output = Path(tempfile.mkdtemp(prefix="vector_raster_png_")) / output_path.name
         shutil.copy2(output_path, persisted_output)
         return persisted_output
 
 
-def _flatten_transparent_image(image_path: Path, bg_gray: int = DEFAULT_TRANSPARENT_BG_GRAY) -> Optional[Path]:
+def _flatten_transparent_image(
+    image_path: Path, bg_gray: int = DEFAULT_TRANSPARENT_BG_GRAY
+) -> Optional[Path]:
     from PIL import Image, ImageOps
 
     with Image.open(image_path) as loaded:
@@ -122,7 +125,9 @@ def _flatten_transparent_image(image_path: Path, bg_gray: int = DEFAULT_TRANSPAR
         background = Image.new("RGBA", rgba.size, (bg_gray, bg_gray, bg_gray, 255))
         composited = Image.alpha_composite(background, rgba).convert("RGB")
 
-        persisted_output = Path(tempfile.mkdtemp(prefix="prepared_image_png_")) / f"{image_path.stem}.png"
+        persisted_output = (
+            Path(tempfile.mkdtemp(prefix="prepared_image_png_")) / f"{image_path.stem}.png"
+        )
         composited.save(persisted_output, format="PNG")
         return persisted_output
 

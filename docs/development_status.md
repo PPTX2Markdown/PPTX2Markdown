@@ -1,0 +1,184 @@
+# Development Status and Handoff
+
+Last updated: 2026-07-11
+
+This document records the current development state so a new work context can
+continue without reconstructing the history from chat logs. Read this file and
+`git status --short` before changing the worktree.
+
+## Repository State
+
+- Active branch: `dev`
+- Current committed HEAD when this document was created: `65cafa7`
+- The worktree contains intentional, uncommitted changes. Do not reset or
+  discard them.
+- `pptx_samples/`, `output/`, and `.pptx2markdown/` are local QA inputs and
+  generated artifacts. They are not release source files.
+- The version immediately before the PyPI restructure is commit `f6fc8c4`.
+  Preserve it as branch `archive-pre-pypi-restructure` and annotated tag
+  `pre-pypi-restructure`. A local source archive is also stored under the
+  ignored `archives/` directory.
+
+## Completed Work
+
+### PyPI packaging
+
+- Reorganized the package under `src/pptx2markdown` with Hatchling.
+- Verified the `pptx2markdown` console entry point from a built wheel.
+- Restricted sdist contents to package source, license, READMEs, and
+  `pyproject.toml`.
+- Removed package placeholder files from runtime target directories.
+- Updated README output paths and made project links usable on PyPI.
+- Built wheel and sdist offline and passed `twine check`.
+
+### Pipeline readability refactor
+
+- Moved presentation input and extraction concerns from the main converter to
+  `main_converter/package_inputs.py`.
+- Kept the table pipeline around one executable entry point and small
+  parse/render APIs.
+- Consolidated image provider protocol, result types, and shared adapter
+  helpers in `image_pipeline/provider_base.py`.
+- Split Surya runner argument, path, preparation, and cleanup responsibilities.
+- Simplified structure-analysis reporting and inheritance resolver formatting.
+- Preserved existing pipeline behavior with sample smoke tests.
+
+### XYCut regression recovery
+
+Git history showed the following sequence:
+
+- `c11839e`: introduced a Y-first XYCut implementation.
+- `519d330`: removed XYCut while integrating slide/layout/master inheritance.
+- `36b4e3a`: exposed the removed, pre-inheritance implementation again during
+  the PyPI package restructure.
+
+The recovered implementation now:
+
+- honors an explicit contiguous numbering sequence when every object in the
+  region supplies one;
+- keeps comparison-column headings with the body below each heading;
+- retains the prior Y-then-X XYCut behavior as the fallback.
+
+Regression coverage is in `tests/test_xycut_reading_order.py`.
+
+### Content regression fixes
+
+- Chart and SmartArt relationship targets are normalized back to their OOXML
+  package part beginning at `ppt/`. This supports both original and reordered
+  relationship files.
+- Master/layout-only objects are materialized even when the source slide has no
+  direct shapes. This restores master-only text on otherwise empty slides.
+- Extremely thin inherited pictures are treated as decorative rules and are
+  not repeated as content images on every slide.
+- `sample1.pptx` now emits its slide 9 scatter chart and slide 11 master text
+  without the repeated thin stripe image.
+
+### Heading modes
+
+- `--headings auto` is the default and uses placeholder, numbering, font-size,
+  and position evidence.
+- `--headings strict` emits headings only for title/subtitle placeholders.
+- `--headings surya` remains available with `--reading-order surya`.
+- The old `--not-strict` option remains as a hidden compatibility alias for
+  automatic detection.
+- Numbered headings tolerate spaces around periods, such as `3 . Heading`.
+
+### Regression and quality gates
+
+- `tests/test_content_regressions.py` covers relationship normalization,
+  master-only materialization, inherited stripe filtering, and numbered
+  heading syntax.
+- `tests/test_sample_regressions.py` converts eight local sample decks and
+  checks reading order, chart, math, table, SmartArt, inheritance, and heading
+  contracts. It skips explicitly when ignored local sample files are absent.
+- Ruff enforces import ordering, unused-code checks, selected PEP 8 errors, a
+  99-character line length, and formatting for `src` and `tests`.
+- `.github/workflows/quality.yml` runs lint, format, tests, build, and Twine
+  package checks on pushes and pull requests.
+
+### Dead-code and module consolidation
+
+- Merged the two-type `image_pipeline/schemas.py` and provider-only
+  `provider_helpers.py` into `provider_base.py`.
+- Removed the duplicate table extraction module. `table_pipeline/run.py` is the
+  only table pipeline executable and owns extraction.
+- Removed dormant file/batch CLIs and unused HTML/CSV rendering from the table
+  parse/render modules. Only the Markdown behavior used by the package remains.
+- Removed the table spinner/durable-write utility after its shared callers were
+  deleted; the remaining sequential writes now use `Path.write_bytes` and
+  `Path.write_text` directly.
+- Removed unused usage helpers, a pass-through write wrapper, and an ignored
+  presentation-collection parameter.
+- Reduced the source tree by four Python modules and about 730 lines without
+  changing the supported `pptx2markdown` or table-pipeline entry points.
+
+## Latest Verification Baseline
+
+The following checks passed after completing work items 1 through 4:
+
+- `python -m compileall -q src/pptx2markdown tests`
+- `PYTHONPATH=src python -m unittest discover -v`: 13 tests passed
+- `ruff check src tests`
+- `ruff format --check src tests`
+- all 12 local sample decks: 128 slides converted, 0 slide failures
+- 50 math blocks, 35 charts, 15 SmartArt objects, and 39 tables converted
+- 25 meaningful images resolved and 0 images unresolved after inherited
+  decoration filtering
+- wheel and sdist built successfully from the current worktree
+- `twine check` passed for both artifacts
+- the wheel-installed CLI converted all 17 slides and charts in `chart.pptx`
+- the table pipeline directly processed 15 slides and rendered 15 tables from
+  `table_demo.pptx` with 0 errors after dead-code removal
+
+The XYCut recovery intentionally changed these pages relative to the broken
+pre-fix output:
+
+- `reading_order_test.pptx`: slides 3 and 4
+- `문제점 목록 발표.pptx`: slide 15
+
+## Known Issues
+
+1. Diagram connectors are not represented semantically.
+2. Sample-based tests depend on ignored local `pptx_samples/` files and skip in
+   a clean checkout. The always-on unit tests still cover the fixed algorithms.
+3. The optional Surya and local-VLM dependency paths were not executed in this
+   offline verification run.
+
+## Completed Work Sequence
+
+1. Fixed chart relationships, inherited master text, and repeated decoration.
+2. Clarified and improved automatic/strict heading behavior.
+3. Added unit and sample-based golden regression coverage.
+4. Added Ruff and CI quality gates and completed full package verification.
+
+The next review can focus on one pipeline at a time, starting with the main
+converter. Preserve behavior with the regression suite while splitting long
+or mixed-responsibility functions only where the result is easier to read.
+
+## Important Files
+
+- `src/pptx2markdown/main_converter/run_pptx_to_markdown.py`: conversion
+  orchestration, relationship resolution, chart and SmartArt adapters.
+- `src/pptx2markdown/main_converter/slide_converter.py`: slide object rendering
+  into Markdown.
+- `src/pptx2markdown/structure_analyzer/structure.py`: reading order and heading
+  depth rules.
+- `src/pptx2markdown/structure_analyzer/pipeline.py`: structure sidecars and
+  reordered slide XML generation.
+- `src/pptx2markdown/pptx_inheritance/resolver.py`: effective
+  slide/layout/master object resolution.
+- `tests/test_xycut_reading_order.py`: current regression tests.
+- `tests/test_content_regressions.py`: focused content-loss regression tests.
+- `tests/test_sample_regressions.py`: local end-to-end sample contracts.
+
+## New Context Startup
+
+1. Read this document.
+2. Run `git status --short` and preserve all listed changes.
+3. Run `PYTHONPATH=src .venv/bin/python -m unittest discover -v`.
+4. Use fresh temporary output/work directories for sample conversion so prior
+   artifacts do not hide regressions.
+5. Run `ruff check src tests` and `ruff format --check src tests` before and
+   after refactoring a pipeline.
+6. Update this document after each completed work item with changed behavior,
+   tests, and remaining risks.

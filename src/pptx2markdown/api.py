@@ -22,7 +22,7 @@ def convert(
     work_dir: Optional[PathLike] = None,
     reading_order: str = "xml",
     headings: str = "auto",
-    strict_headings: bool = True,
+    strict_headings: Optional[bool] = None,
     placeholder_inheritance: str = "style",
     inherited_shapes: str = "visible",
     reuse_surya_cache: bool = False,
@@ -72,13 +72,19 @@ def convert(
     else:
         input_list = [str(p) for p in inputs]
 
+    heading_mode = headings
+    if strict_headings is not None:
+        if headings == "surya" and strict_headings:
+            raise ValueError("strict_headings=True cannot be combined with headings='surya'")
+        heading_mode = "strict" if strict_headings else headings
+
     args = argparse.Namespace(
         inputs=input_list,
         output_dir=str(output_dir) if output_dir else None,
         work_dir=str(work_dir) if work_dir else None,
         reading_order=reading_order,
-        headings=headings,
-        strict=bool(strict_headings),
+        headings=heading_mode,
+        legacy_not_strict=False,
         pptx_inheritance=placeholder_inheritance,
         inherited_shapes=inherited_shapes,
         reuse_surya_cache=bool(reuse_surya_cache),
@@ -87,7 +93,9 @@ def convert(
         image_vlm_model=image_vlm_model,
         image_vlm_prompt=image_vlm_prompt if image_vlm_prompt is not None else DEFAULT_PROMPT,
         image_vlm_max_new_tokens=(
-            image_vlm_max_new_tokens if image_vlm_max_new_tokens is not None else DEFAULT_MAX_NEW_TOKENS
+            image_vlm_max_new_tokens
+            if image_vlm_max_new_tokens is not None
+            else DEFAULT_MAX_NEW_TOKENS
         ),
         image_vlm_api_key_env=image_vlm_api_key_env or DEFAULT_GEMINI_API_KEY_ENV,
         ignore_image_vlm_cache=bool(ignore_image_vlm_cache),

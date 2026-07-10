@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree as ET
 
-
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -123,7 +122,9 @@ def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_presentation_root(*, ppt_root: Path | None = None, pptx_path: Path | None = None) -> tuple[Path, Any]:
+def load_presentation_root(
+    *, ppt_root: Path | None = None, pptx_path: Path | None = None
+) -> tuple[Path, Any]:
     if ppt_root is not None:
         return ppt_root, None
     if pptx_path is None:
@@ -158,7 +159,9 @@ def _local_name(tag: str) -> str:
 
 
 def _first_text(node: ET.Element) -> str:
-    return " ".join(t.text.strip() for t in node.findall(".//a:t", NS) if t.text and t.text.strip())
+    return " ".join(
+        t.text.strip() for t in node.findall(".//a:t", NS) if t.text and t.text.strip()
+    )
 
 
 def _shape_id(node: ET.Element) -> str:
@@ -263,7 +266,9 @@ def parse_slide_xml_objects(slide_xml: Path) -> list[XmlObject]:
     return objects
 
 
-def _placeholder_bbox_lookup(slide_xml: Path) -> dict[tuple[str | None, str | None], tuple[BBox, str]]:
+def _placeholder_bbox_lookup(
+    slide_xml: Path,
+) -> dict[tuple[str | None, str | None], tuple[BBox, str]]:
     lookup: dict[tuple[str | None, str | None], tuple[BBox, str]] = {}
     layout_xml = _related_part(slide_xml, "slideLayout")
     if layout_xml is not None:
@@ -276,7 +281,9 @@ def _placeholder_bbox_lookup(slide_xml: Path) -> dict[tuple[str | None, str | No
     return lookup
 
 
-def _placeholder_boxes_in_part(xml_path: Path) -> dict[tuple[str | None, str | None], tuple[BBox, str]]:
+def _placeholder_boxes_in_part(
+    xml_path: Path,
+) -> dict[tuple[str | None, str | None], tuple[BBox, str]]:
     if not xml_path.exists():
         return {}
     root = ET.parse(xml_path).getroot()
@@ -326,7 +333,9 @@ def parse_surya_blocks(layout_json: dict[str, Any], slide_size: SlideSize) -> li
     pages = _layout_pages(layout_json)
     blocks: list[LayoutBlock] = []
     for page_index, page in enumerate(pages, start=1):
-        image_bbox = _bbox_from_raw(page.get("image_bbox")) or _fallback_image_bbox(page, slide_size)
+        image_bbox = _bbox_from_raw(page.get("image_bbox")) or _fallback_image_bbox(
+            page, slide_size
+        )
         for pos, raw in enumerate(_raw_blocks(page), start=1):
             bbox_px = _bbox_from_raw(raw.get("bbox"))
             if bbox_px is None:
@@ -378,12 +387,22 @@ def _fallback_image_bbox(page: dict[str, Any], slide_size: SlideSize) -> BBox:
 
 def _bbox_from_raw(raw: Any) -> BBox | None:
     if isinstance(raw, dict):
-        vals = [raw.get("x"), raw.get("y"), raw.get("w") or raw.get("width"), raw.get("h") or raw.get("height")]
+        vals = [
+            raw.get("x"),
+            raw.get("y"),
+            raw.get("w") or raw.get("width"),
+            raw.get("h") or raw.get("height"),
+        ]
         if all(v is not None for v in vals):
             return BBox(float(vals[0]), float(vals[1]), float(vals[2]), float(vals[3]))
         vals = [raw.get("x1"), raw.get("y1"), raw.get("x2"), raw.get("y2")]
         if all(v is not None for v in vals):
-            return BBox(float(vals[0]), float(vals[1]), float(vals[2]) - float(vals[0]), float(vals[3]) - float(vals[1]))
+            return BBox(
+                float(vals[0]),
+                float(vals[1]),
+                float(vals[2]) - float(vals[0]),
+                float(vals[3]) - float(vals[1]),
+            )
     if isinstance(raw, list) and len(raw) >= 4:
         x1, y1, x2, y2 = [float(v) for v in raw[:4]]
         return BBox(x1, y1, x2 - x1, y2 - y1)
@@ -394,7 +413,12 @@ def _bbox_from_xywh(raw: Any) -> BBox | None:
     if isinstance(raw, list) and len(raw) >= 4:
         return BBox(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
     if isinstance(raw, dict):
-        vals = [raw.get("x"), raw.get("y"), raw.get("w") or raw.get("width"), raw.get("h") or raw.get("height")]
+        vals = [
+            raw.get("x"),
+            raw.get("y"),
+            raw.get("w") or raw.get("width"),
+            raw.get("h") or raw.get("height"),
+        ]
         if all(v is not None for v in vals):
             return BBox(float(vals[0]), float(vals[1]), float(vals[2]), float(vals[3]))
     return None
@@ -440,7 +464,9 @@ def build_normalized_pages(layout_json: dict[str, Any], ppt_root: Path) -> list[
     for page_num, slide_xml in enumerate(slide_xml_paths(ppt_root), start=1):
         objects = parse_slide_xml_objects(slide_xml)
         page_blocks = blocks_by_page.get(page_num, [])
-        reading_order, unmatched_blocks, decorative_objects = match_page(page_num, page_blocks, objects, slide_size)
+        reading_order, unmatched_blocks, decorative_objects = match_page(
+            page_num, page_blocks, objects, slide_size
+        )
         match_candidates = build_match_candidates(page_num, page_blocks, objects)
         pages.append(
             {
@@ -499,8 +525,14 @@ def build_match_candidate_pages(
     xml_by_page = {int(page["page"]): page for page in xml_bbox_pages}
     surya_by_page = {int(page["page"]): page for page in surya_bbox_pages}
     for page_num in sorted(set(xml_by_page) | set(surya_by_page)):
-        objects = [_xml_object_from_dict(item) for item in xml_by_page.get(page_num, {}).get("objects", [])]
-        blocks = [_layout_block_from_dict(item) for item in surya_by_page.get(page_num, {}).get("blocks", [])]
+        objects = [
+            _xml_object_from_dict(item)
+            for item in xml_by_page.get(page_num, {}).get("objects", [])
+        ]
+        blocks = [
+            _layout_block_from_dict(item)
+            for item in surya_by_page.get(page_num, {}).get("blocks", [])
+        ]
         pages.append(
             {
                 "page": page_num,
@@ -510,7 +542,9 @@ def build_match_candidate_pages(
     return pages
 
 
-def build_match_candidates(page_num: int, blocks: list[LayoutBlock], objects: list[XmlObject]) -> list[dict[str, Any]]:
+def build_match_candidates(
+    page_num: int, blocks: list[LayoutBlock], objects: list[XmlObject]
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     matchable_objects = [obj for obj in objects if not obj.is_decorative]
     for block in sorted(blocks, key=lambda b: b.model_position):
@@ -547,7 +581,11 @@ def match_page(
     for block in sorted(blocks, key=lambda b: b.model_position):
         role = _label_role(block.label, block.top_k)
         candidates = sorted(
-            (_candidate(block, obj) for obj in matchable_objects if obj.shape_id not in assigned and obj.bbox is not None),
+            (
+                _candidate(block, obj)
+                for obj in matchable_objects
+                if obj.shape_id not in assigned and obj.bbox is not None
+            ),
             key=lambda c: c.score,
             reverse=True,
         )
@@ -571,7 +609,15 @@ def match_page(
             if obj is None or obj.shape_id in assigned:
                 continue
             assigned.add(obj.shape_id)
-            rows.append(_reading_row(page_num, block, obj, candidate, "surya_region" if len(selected) > 1 else "surya_match"))
+            rows.append(
+                _reading_row(
+                    page_num,
+                    block,
+                    obj,
+                    candidate,
+                    "surya_region" if len(selected) > 1 else "surya_match",
+                )
+            )
 
     fallback_objects = [obj for obj in matchable_objects if obj.shape_id not in assigned]
     for obj in sorted(fallback_objects, key=_object_sort_key):
@@ -588,7 +634,13 @@ def _candidate(block: LayoutBlock, obj: XmlObject) -> MatchCandidate:
     overlap_min, layout_coverage, object_coverage = _overlap_features(block.bbox_emu, obj.bbox)
     center = _center_score(block.bbox_emu, obj.bbox)
     compatibility, reason = _compatibility(block, obj)
-    score = (0.35 * overlap_min) + (0.25 * layout_coverage) + (0.15 * object_coverage) + (0.15 * center) + compatibility
+    score = (
+        (0.35 * overlap_min)
+        + (0.25 * layout_coverage)
+        + (0.15 * object_coverage)
+        + (0.15 * center)
+        + compatibility
+    )
     return MatchCandidate(
         shape_id=obj.shape_id,
         score=max(0.0, min(1.0, score)),
@@ -727,8 +779,16 @@ def _assign_surya_heading_depths(
 ) -> None:
     if not rows:
         return
-    slide_height = float(slide_size.cy) if slide_size is not None else max((block.bbox_emu.y2 for block in blocks), default=1.0)
-    slide_width = float(slide_size.cx) if slide_size is not None else max((block.bbox_emu.x2 for block in blocks), default=1.0)
+    slide_height = (
+        float(slide_size.cy)
+        if slide_size is not None
+        else max((block.bbox_emu.y2 for block in blocks), default=1.0)
+    )
+    slide_width = (
+        float(slide_size.cx)
+        if slide_size is not None
+        else max((block.bbox_emu.x2 for block in blocks), default=1.0)
+    )
     heading_rows = [
         row
         for row in rows
@@ -750,7 +810,9 @@ def _assign_surya_heading_depths(
         score = (0.45 * normalized_height) + (0.30 * normalized_width) + (0.25 * topness)
         row["surya_heading_primary_score"] = score
 
-    primary = max(heading_rows, key=lambda row: float(row.get("surya_heading_primary_score") or 0.0))
+    primary = max(
+        heading_rows, key=lambda row: float(row.get("surya_heading_primary_score") or 0.0)
+    )
     for row in heading_rows:
         row["surya_heading_depth_hint"] = 1 if row is primary else 2
 
@@ -764,7 +826,9 @@ def _reading_row(
 ) -> dict[str, Any]:
     role = _label_role(block.label, block.top_k) if block else ""
     has_text = bool(obj.text.strip())
-    is_heading = bool(has_text and (obj.is_title_placeholder or obj.is_subtitle_placeholder or role == "heading"))
+    is_heading = bool(
+        has_text and (obj.is_title_placeholder or obj.is_subtitle_placeholder or role == "heading")
+    )
     heading_sources: list[str] = []
     if is_heading and (obj.is_title_placeholder or obj.is_subtitle_placeholder):
         heading_sources.append("placeholder")
@@ -801,11 +865,15 @@ def _reading_row(
         "match_reason": candidate.reason if candidate else "xml_spatial_fallback",
         "is_title_placeholder": obj.is_title_placeholder,
         "is_heading_candidate": is_heading,
-        "heading_score": 1.0 if is_heading and obj.is_title_placeholder else (0.80 if is_heading else 0.0),
+        "heading_score": 1.0
+        if is_heading and obj.is_title_placeholder
+        else (0.80 if is_heading else 0.0),
         "heading_depth_hint": depth,
         "surya_heading_depth_hint": None,
         "heading_sources": heading_sources,
-        "heading_source": "placeholder" if is_heading and (obj.is_title_placeholder or obj.is_subtitle_placeholder) else ("surya_label" if is_heading else None),
+        "heading_source": "placeholder"
+        if is_heading and (obj.is_title_placeholder or obj.is_subtitle_placeholder)
+        else ("surya_label" if is_heading else None),
     }
     if candidate:
         row.update(

@@ -151,7 +151,8 @@ def generate_chat_completion(
                 )
                 _defer_next_request(delay)
                 logger.warning(
-                    "  [image-vlm] OpenRouter retry scheduled: %s (model=%s, status=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    "  [image-vlm] OpenRouter retry scheduled: %s "
+                    "(model=%s, status=%s, wait=%.1fs, next_attempt=%d/%d)",
                     image_path.name,
                     model_id,
                     exc.code,
@@ -173,7 +174,8 @@ def generate_chat_completion(
                 )
                 _defer_next_request(delay)
                 logger.warning(
-                    "  [image-vlm] OpenRouter retry scheduled: %s (model=%s, error=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    "  [image-vlm] OpenRouter retry scheduled: %s "
+                    "(model=%s, error=%s, wait=%.1fs, next_attempt=%d/%d)",
                     image_path.name,
                     model_id,
                     type(exc).__name__,

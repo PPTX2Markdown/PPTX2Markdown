@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Optional, Tuple
-import xml.etree.ElementTree as ET
 
 from .constants import LARGE_INT, NS
 

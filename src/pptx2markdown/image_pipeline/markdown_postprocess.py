@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import re
 
-
 _PROMPT_ECHO_PHRASES = {
     "return markdown only.",
     "extract only document-worthy information from this image as concise markdown for retrieval.",
     "rules:",
-    "1. keep only information that is useful for search, retrieval, or understanding the document.",
+    (
+        "1. keep only information that is useful for search, retrieval, "
+        "or understanding the document."
+    ),
     "2. omit unreadable, uncertain, or purely decorative content.",
     "3. do not invent missing text or details.",
     "4. do not wrap the answer in triple backticks.",
@@ -26,16 +28,25 @@ _PROMPT_ECHO_PHRASES = {
     "preserve headings, bullet points, and short paragraph structure when visible.",
     "if the image is an informative figure, chart, diagram, screenshot, or illustration:",
     "first write exactly one concise sentence summarizing what information the image conveys.",
-    "then list any clearly readable labels, legends, axis names, key values, or embedded text in markdown bullets.",
+    (
+        "then list any clearly readable labels, legends, axis names, key values, "
+        "or embedded text in markdown bullets."
+    ),
     "if the image is decorative, redundant, or not useful for document retrieval:",
     "answer exactly: 불필요한 정보",
     "additional constraints:",
     "prefer faithful extraction over fluent rewriting.",
-    "keep the output concise, but do not drop important entities, numbers, labels, or relationships.",
+    (
+        "keep the output concise, but do not drop important entities, numbers, "
+        "labels, or relationships."
+    ),
     "preserve technical terms as written in the image.",
     "if only part of the image is readable, extract only that readable part.",
     "do not wrap the answer in triple backticks.",
-    "이미지에서 문서 검색, 검색 증강, 문서 이해에 유용한 정보만 간결한 한국어 markdown으로 추출하세요.",
+    (
+        "이미지에서 문서 검색, 검색 증강, 문서 이해에 유용한 정보만 "
+        "간결한 한국어 markdown으로 추출하세요."
+    ),
     "규칙:",
     "1. 답변은 반드시 한국어로 작성하세요.",
     "2. 검색, 검색 증강, 문서 이해에 유용한 정보만 남기세요.",
@@ -56,7 +67,10 @@ _PROMPT_ECHO_PHRASES = {
     "보이는 제목, 불릿, 짧은 문단 구조를 보존하세요.",
     "이미지가 의미 있는 그림, 차트, 다이어그램, 스크린샷, 일러스트인 경우:",
     "먼저 이미지가 전달하는 정보를 한국어 한 문장으로 간결하게 요약하세요.",
-    "이어서 읽을 수 있는 라벨, 범례, 축 이름, 주요 값, 포함된 텍스트를 markdown 불릿으로 나열하세요.",
+    (
+        "이어서 읽을 수 있는 라벨, 범례, 축 이름, 주요 값, 포함된 텍스트를 "
+        "markdown 불릿으로 나열하세요."
+    ),
     "이미지가 장식용이거나 중복되거나 문서 검색에 유용하지 않은 경우:",
     "정확히 다음과 같이 답하세요: 불필요한 정보",
     "추가 제약:",
@@ -85,9 +99,13 @@ def _is_prompt_echo_line(line: str) -> bool:
 
 def normalize_markdown(text: str) -> str:
     normalized = text.strip()
-    fence_match = re.fullmatch(r"```(?:markdown|md)?\s*(.*?)```", normalized, flags=re.DOTALL | re.IGNORECASE)
+    fence_match = re.fullmatch(
+        r"```(?:markdown|md)?\s*(.*?)```", normalized, flags=re.DOTALL | re.IGNORECASE
+    )
     if fence_match:
         normalized = fence_match.group(1).strip()
-    kept_lines = [line.rstrip() for line in normalized.splitlines() if not _is_prompt_echo_line(line)]
+    kept_lines = [
+        line.rstrip() for line in normalized.splitlines() if not _is_prompt_echo_line(line)
+    ]
     normalized = "\n".join(line for line in kept_lines).strip()
     return normalized.rstrip() + "\n" if normalized else ""

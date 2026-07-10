@@ -1,22 +1,30 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
-import xml.etree.ElementTree as ET
-
-from .heading_rules import (
-    HeadingPolicy,
-    clean_heading_text_for_render as hr_clean_heading_text_for_render,
-    infer_heading_depth_fallback as hr_infer_heading_depth_fallback,
-    is_body_like_long_sentence as hr_is_body_like_long_sentence,
-    looks_like_multi_numbered_items as hr_looks_like_multi_numbered_items,
-    strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
-)
 
 from .converter_models import ShapeBlock, SlideStats
-
+from .heading_rules import (
+    HeadingPolicy,
+)
+from .heading_rules import (
+    clean_heading_text_for_render as hr_clean_heading_text_for_render,
+)
+from .heading_rules import (
+    infer_heading_depth_fallback as hr_infer_heading_depth_fallback,
+)
+from .heading_rules import (
+    is_body_like_long_sentence as hr_is_body_like_long_sentence,
+)
+from .heading_rules import (
+    looks_like_multi_numbered_items as hr_looks_like_multi_numbered_items,
+)
+from .heading_rules import (
+    strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
+)
 
 UNMATCHED_MARKER = "[unmatched]"
 _DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
@@ -83,13 +91,25 @@ class SlideConversionDeps:
     split_triangle_bullets: Callable[[str], List[str]]
     normalize_text: Callable[[str], str]
     shape_id_of: Callable[[ET.Element], str]
-    resolve_image_path: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]]
+    resolve_image_path: Callable[
+        [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
+    ]
     format_markdown_image: Callable[..., Tuple[str, Optional[str], bool, bool, bool]]
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
-    convert_chart_to_markdown: Callable[[ET.Element, Optional[Path], Dict[str, str], Optional[Path]], Tuple[Optional[str], Optional[str]]]
+    convert_chart_to_markdown: Callable[
+        [ET.Element, Optional[Path], Dict[str, str], Optional[Path]],
+        Tuple[Optional[str], Optional[str]],
+    ]
     convert_smartart_to_markdown: Callable[
-        [ET.Element, Optional[Path], Dict[str, str], Optional[Path], Optional[Path], Optional[Path]],
+        [
+            ET.Element,
+            Optional[Path],
+            Dict[str, str],
+            Optional[Path],
+            Optional[Path],
+            Optional[Path],
+        ],
         Tuple[Optional[str], Optional[str]],
     ]
     normalize_single_heading_to_h1: Callable[[List[str]], List[str]]
@@ -145,7 +165,9 @@ def _first(elem: ET.Element, paths: Tuple[str, ...], ns: Dict[str, str]) -> Opti
     return None
 
 
-def _point_attrs(node: Optional[ET.Element], x_name: str, y_name: str) -> Optional[Tuple[int, int]]:
+def _point_attrs(
+    node: Optional[ET.Element], x_name: str, y_name: str
+) -> Optional[Tuple[int, int]]:
     if node is None:
         return None
     x = _parse_int(node.attrib.get(x_name))
@@ -169,7 +191,9 @@ def _shape_id_name(elem: ET.Element, tag: str, ns: Dict[str, str]) -> Tuple[str,
     return c_nv_pr.attrib.get("id", ""), c_nv_pr.attrib.get("name", "")
 
 
-def _extract_local_bbox_emu(elem: ET.Element, ns: Dict[str, str]) -> Optional[Tuple[int, int, int, int]]:
+def _extract_local_bbox_emu(
+    elem: ET.Element, ns: Dict[str, str]
+) -> Optional[Tuple[int, int, int, int]]:
     off = _first(
         elem,
         (
@@ -302,11 +326,15 @@ def _iter_flattened_shapes(
     yield from walk(container, _GroupTransform(), (), ())
 
 
-def _flatten_slide_shapes(sp_tree: ET.Element, context: SlideConversionContext) -> List[FlattenedShape]:
+def _flatten_slide_shapes(
+    sp_tree: ET.Element, context: SlideConversionContext
+) -> List[FlattenedShape]:
     return list(_iter_flattened_shapes(sp_tree, context.ns))
 
 
-def _ordered_flattened_shapes(items: List[FlattenedShape], context: SlideConversionContext) -> List[FlattenedShape]:
+def _ordered_flattened_shapes(
+    items: List[FlattenedShape], context: SlideConversionContext
+) -> List[FlattenedShape]:
     known = 0
     for item in items:
         hint = context.heading_hints.get(item.shape_id, {})
@@ -340,7 +368,9 @@ def _table_overlay_shape_entries(items: Sequence[FlattenedShape]) -> List[Dict[s
     ]
 
 
-def _append_rendered_text_block(lines: List[str], rendered: str, deps: SlideConversionDeps) -> None:
+def _append_rendered_text_block(
+    lines: List[str], rendered: str, deps: SlideConversionDeps
+) -> None:
     if rendered.startswith("#"):
         lines.append(rendered)
         lines.append("")
@@ -526,18 +556,25 @@ def _handle_text_shape_block(
             score = 0.0
         if not has_math_shape and not is_candidate:
             if has_list_semantics:
-                if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", rendered_text):
+                if re.match(
+                    r"^\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?\s+",
+                    rendered_text,
+                ):
                     fb_depth = 3
-                elif re.match(r"^\d+\.\s+", rendered_text):
+                elif re.match(r"^\d+\s*\.\s+", rendered_text):
                     fb_depth = 2
                 else:
                     fb_depth = None
             else:
                 fb_depth = None
             if fb_depth is None:
-                fb_depth = hr_infer_heading_depth_fallback(rendered_text, state.text_block_index, font_pt=font_pt)
+                fb_depth = hr_infer_heading_depth_fallback(
+                    rendered_text, state.text_block_index, font_pt=font_pt
+                )
             if fb_depth is None:
-                fb_depth = hr_infer_heading_depth_fallback(plain_text, state.text_block_index, font_pt=font_pt)
+                fb_depth = hr_infer_heading_depth_fallback(
+                    plain_text, state.text_block_index, font_pt=font_pt
+                )
             if fb_depth is not None:
                 depth = fb_depth
                 score = max(score, 0.8)
@@ -559,7 +596,10 @@ def _handle_text_shape_block(
             heading_text = plain_text
         else:
             heading_source = plain_text
-            if re.match(r"^\d+(?:\.\d+)*\.?\s+", rendered_text):
+            if re.match(
+                r"^\d+(?:\s*\.\s*\d+)*\s*\.?\s+",
+                rendered_text,
+            ):
                 heading_source = rendered_text
             heading_text = hr_clean_heading_text_for_render(heading_source)
         key = deps.normalize_text(heading_text)
@@ -703,7 +743,11 @@ def _handle_graphic_frame_block(
     _append_unsupported_graphic_frame(lines, stats)
     if err:
         normalized_err = str(err).lower()
-        if "api key not found" in normalized_err or "modulenotfounderror" in normalized_err or "importerror" in normalized_err:
+        if (
+            "api key not found" in normalized_err
+            or "modulenotfounderror" in normalized_err
+            or "importerror" in normalized_err
+        ):
             if not state.image_pipeline_unavailable_reported:
                 stats.warnings.append(err)
                 state.image_pipeline_unavailable_reported = True
@@ -725,7 +769,9 @@ def convert_one_slide(
     if sp_tree is None:
         raise ValueError("missing p:cSld/p:spTree")
 
-    context.rels_path = deps.choose_rels_in_package(context.slide_xml, source_slide_xml=context.source_slide_xml)
+    context.rels_path = deps.choose_rels_in_package(
+        context.slide_xml, source_slide_xml=context.source_slide_xml
+    )
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
     context.effective_properties = deps.load_effective_properties(context.slide_xml)

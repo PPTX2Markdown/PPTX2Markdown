@@ -10,7 +10,9 @@ from .layout_matcher import load_presentation_root, reorder_slide_xml, slide_xml
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build structure-ready reordered slide XML files from normalized Surya matches."
+        description=(
+            "Build structure-ready reordered slide XML files from normalized Surya matches."
+        )
     )
     parser.add_argument("--normalized-json", required=True, type=Path)
     parser.add_argument("--ppt-root", type=Path)
@@ -104,7 +106,9 @@ def main() -> None:
             "unmatched_layout_blocks": page.get("unmatched_layout_blocks", []),
             "decorative_objects": page.get("decorative_objects", []),
         }
-        sidecar_json.write_text(json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8")
+        sidecar_json.write_text(
+            json.dumps(sidecar, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         manifest["slides"].append(
             {
                 "page": page_num,

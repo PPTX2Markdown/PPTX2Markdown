@@ -11,7 +11,6 @@ from .provider_openai import OpenAIImageProvider
 from .provider_openrouter import OpenRouterImageProvider
 from .provider_qwen_local import QwenLocalImageProvider
 
-
 _PROVIDER_REGISTRY: Dict[str, ImageMarkdownProvider] = {
     "local": QwenLocalImageProvider(),
     "gemini": GoogleGeminiImageProvider(),

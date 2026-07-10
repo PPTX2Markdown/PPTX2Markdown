@@ -15,17 +15,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-from pathlib import Path
 import re
-import sys
 import shutil
-import zipfile
+import sys
 import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
 
 from pptx2markdown.table_pipeline import parse as table_parse
 from pptx2markdown.table_pipeline import render as table_render
-
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
@@ -49,7 +47,11 @@ def _collect_default_pptx_inputs(base_dir: Path) -> list[Path]:
     target_dir = base_dir / "target_pptx"
     target_dir.mkdir(parents=True, exist_ok=True)
     return sorted(
-        [p.resolve() for p in target_dir.glob("*.pptx") if p.is_file() and not p.name.startswith("~$")],
+        [
+            path.resolve()
+            for path in target_dir.glob("*.pptx")
+            if path.is_file() and not path.name.startswith("~$")
+        ],
         key=lambda p: _natural_key(p.name),
     )
 
@@ -123,22 +125,6 @@ def _pretty_xml_bytes(elem: ET.Element) -> bytes:
     return b"\n".join(lines) + b"\n"
 
 
-def _write_bytes(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as f:
-        f.write(payload)
-        f.flush()
-        os.fsync(f.fileno())
-
-
-def _render_markdown(parsed: dict[str, object]) -> str:
-    return table_render.render_parsed_table_to_markdown(
-        parsed_table=parsed,
-        header_rows=1,
-        fill_merged=table_render.FILL_BOTH,
-    )
-
-
 def run_pipeline(pptx_paths: list[Path]) -> int:
     base_dir = Path.cwd()
     extract_dir = base_dir / "artifacts" / "extract_results"
@@ -204,7 +190,7 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
                     json_path = parsing_dir / f"{base_name}_grid.json"
                     md_path = tables_dir / f"{base_name}_grid.md"
 
-                    _write_bytes(extract_path, _pretty_xml_bytes(table_elem))
+                    extract_path.write_bytes(_pretty_xml_bytes(table_elem))
                     summary["tables_extracted"] = int(summary.get("tables_extracted", 0)) + 1
 
                     try:
@@ -212,13 +198,17 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
                             table_elem,
                             source=f"{pptx_path}#{slide_path.relative_to(pkg_dir)}:{idx}",
                         )
-                        _write_bytes(
-                            json_path,
-                            json.dumps(parsed, ensure_ascii=False, indent=2).encode("utf-8"),
+                        json_path.write_text(
+                            json.dumps(parsed, ensure_ascii=False, indent=2),
+                            encoding="utf-8",
                         )
                         summary["tables_parsed"] = int(summary.get("tables_parsed", 0)) + 1
 
-                        md = _render_markdown(parsed)
+                        md = table_render.render_parsed_table_to_markdown(
+                            parsed_table=parsed,
+                            header_rows=1,
+                            fill_merged=table_render.FILL_BOTH,
+                        )
                         md_path.write_text(md, encoding="utf-8")
                         summary["tables_rendered"] = int(summary.get("tables_rendered", 0)) + 1
                     except Exception as exc:
@@ -268,7 +258,11 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Run table pipeline from target_pptx/*.pptx")
-    parser.add_argument("inputs", nargs="*", help="Optional .pptx file paths. If omitted, scans ./target_pptx")
+    parser.add_argument(
+        "inputs",
+        nargs="*",
+        help="Optional .pptx file paths. If omitted, scans ./target_pptx",
+    )
     args = parser.parse_args(argv[1:])
 
     if args.inputs:

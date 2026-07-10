@@ -14,7 +14,6 @@ import argparse
 import json
 import os
 import shutil
-import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
@@ -28,7 +27,6 @@ from .xml_primitives import (
     local_name,
     natural_key,
 )
-
 
 OVERLAY_PICTURE_MIN_RATIO = 0.80
 
@@ -198,16 +196,26 @@ def inspect_ppt_root(ppt_root: Path) -> Dict[str, Any]:
         "slides": len(slides),
         "native_tables": sum(int(row.get("counts", {}).get("native_tables", 0)) for row in slides),
         "pictures": sum(int(row.get("counts", {}).get("pictures", 0)) for row in slides),
-        "overlay_pictures": sum(int(row.get("counts", {}).get("overlay_pictures", 0)) for row in slides),
-        "standalone_pictures": sum(int(row.get("counts", {}).get("standalone_pictures", 0)) for row in slides),
-        "slides_with_native_tables": sum(1 for row in slides if int(row.get("counts", {}).get("native_tables", 0)) > 0),
-        "slides_with_pictures": sum(1 for row in slides if int(row.get("counts", {}).get("pictures", 0)) > 0),
+        "overlay_pictures": sum(
+            int(row.get("counts", {}).get("overlay_pictures", 0)) for row in slides
+        ),
+        "standalone_pictures": sum(
+            int(row.get("counts", {}).get("standalone_pictures", 0)) for row in slides
+        ),
+        "slides_with_native_tables": sum(
+            1 for row in slides if int(row.get("counts", {}).get("native_tables", 0)) > 0
+        ),
+        "slides_with_pictures": sum(
+            1 for row in slides if int(row.get("counts", {}).get("pictures", 0)) > 0
+        ),
         "slides_needing_image_verifier": sum(
             1 for row in slides if int(row.get("counts", {}).get("standalone_pictures", 0)) > 0
         ),
     }
     totals["native_first_picture_reduction_ratio"] = round(
-        1.0 - (float(totals["standalone_pictures"]) / float(totals["pictures"])) if totals["pictures"] > 0 else 0.0,
+        1.0 - (float(totals["standalone_pictures"]) / float(totals["pictures"]))
+        if totals["pictures"] > 0
+        else 0.0,
         4,
     )
 
@@ -218,8 +226,8 @@ def inspect_ppt_root(ppt_root: Path) -> Dict[str, Any]:
         "decision": {
             "native_first_viable": totals["native_tables"] > 0 or totals["overlay_pictures"] > 0,
             "recommended_strategy": (
-                "Use native PPTX tables first, skip overlay pictures, and send only standalone pictures "
-                "to image verification."
+                "Use native PPTX tables first, skip overlay pictures, and send only "
+                "standalone pictures to image verification."
             ),
         },
     }
@@ -249,7 +257,10 @@ def render_text_report(report: Dict[str, Any]) -> str:
 
     for slide in report["slides"]:
         counts = slide.get("counts", {})
-        if not any(int(counts.get(key, 0)) > 0 for key in ("native_tables", "pictures", "overlay_pictures", "standalone_pictures")):
+        if not any(
+            int(counts.get(key, 0)) > 0
+            for key in ("native_tables", "pictures", "overlay_pictures", "standalone_pictures")
+        ):
             continue
 
         lines.append(
@@ -280,7 +291,9 @@ def render_text_report(report: Dict[str, Any]) -> str:
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Probe whether native PPTX structure can drive table candidate screening.")
+    parser = argparse.ArgumentParser(
+        description="Probe whether native PPTX structure can drive table candidate screening."
+    )
     parser.add_argument("--ppt-root", help="Extracted PPTX root containing ppt/slides.")
     parser.add_argument("--pptx-path", help="Source .pptx file to extract temporarily.")
     parser.add_argument("--output", help="Optional path to write JSON report.")
@@ -309,7 +322,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.output:
             output_path = Path(args.output).resolve()
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            output_path.write_text(
+                json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
         if args.format == "json":
             print(json.dumps(report, ensure_ascii=False, indent=2))
         else:

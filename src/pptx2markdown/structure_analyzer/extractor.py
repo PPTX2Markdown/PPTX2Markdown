@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import os
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
-import xml.etree.ElementTree as ET
+
+from pptx2markdown.pptx_inheritance.resolver import (
+    EffectiveShape,
+    normalize_inherited_shapes_mode,
+    normalize_pptx_inheritance_mode,
+    resolve_effective_slide,
+)
 
 from .constants import (
     FOOTER_TYPES,
     LARGE_INT,
     NS,
-    REORDERABLE,
     REL_NS,
+    REORDERABLE,
     SLIDE_LAYOUT_REL_TYPE,
     STRICT_HEADING_PLACEHOLDER_TYPES,
     TITLE_TYPES,
@@ -26,13 +33,6 @@ from .xml_primitives import (
     local_name,
     parse_int,
 )
-from pptx2markdown.pptx_inheritance.resolver import (
-    EffectiveShape,
-    normalize_inherited_shapes_mode,
-    normalize_pptx_inheritance_mode,
-    resolve_effective_slide,
-)
-
 
 LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
 
@@ -91,7 +91,9 @@ def resolve_slide_layout(slide_xml: Path) -> Optional[Path]:
     return None
 
 
-def parse_layout_placeholders(layout_xml: Optional[Path]) -> Dict[Tuple[str, str], Tuple[int, int]]:
+def parse_layout_placeholders(
+    layout_xml: Optional[Path],
+) -> Dict[Tuple[str, str], Tuple[int, int]]:
     out: Dict[Tuple[str, str], Tuple[int, int]] = {}
     if layout_xml is None or not layout_xml.exists():
         return out
@@ -194,7 +196,9 @@ def _first(elem: ET.Element, paths: Tuple[str, ...]) -> Optional[ET.Element]:
     return None
 
 
-def _point_attrs(node: Optional[ET.Element], x_name: str, y_name: str) -> Optional[Tuple[int, int]]:
+def _point_attrs(
+    node: Optional[ET.Element], x_name: str, y_name: str
+) -> Optional[Tuple[int, int]]:
     if node is None:
         return None
     x = parse_int(node.attrib.get(x_name))
@@ -375,9 +379,7 @@ def extract_slide_objects_xml(
         inherited_shapes=inherited_shapes,
     )
     effective_by_shape_id = {
-        shape.shape_id: shape
-        for shape in effective_slide.shapes
-        if shape.source_part == "slide"
+        shape.shape_id: shape for shape in effective_slide.shapes if shape.source_part == "slide"
     }
 
     layout_xml = resolve_slide_layout(slide_xml)

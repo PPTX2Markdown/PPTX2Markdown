@@ -20,9 +20,19 @@ import sys
 import tempfile
 import unicodedata
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 from xml.dom import minidom
+
+
+@dataclass(frozen=True)
+class PipelinePaths:
+    work_dir: Path
+    target_pptx: Path
+    target_pdf: Path
+    target_slides: Path
+    output_root: Path
 
 
 def is_ignored_pptx_file(path: Path) -> bool:
@@ -50,10 +60,7 @@ def run_cmd(
             )
             return False
         raise RuntimeError(
-            "command failed\n"
-            f"cmd: {' '.join(cmd)}\n"
-            f"stdout:\n{proc.stdout}\n"
-            f"stderr:\n{proc.stderr}"
+            f"command failed\ncmd: {' '.join(cmd)}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
         )
     if proc.stdout.strip():
         print(proc.stdout.strip())
@@ -233,8 +240,10 @@ def export_pptx_bundle_from_pptx(pptx_path: Path, target_slides_root: Path) -> i
     return len(slide_xmls)
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run convert + Surya + normalize for target_pptx/*.pptx")
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run convert + Surya + normalize for target_pptx/*.pptx"
+    )
     parser.add_argument(
         "--force",
         action="store_true",
@@ -270,7 +279,8 @@ def main() -> int:
         "--prefer-existing-target-slides",
         action="store_true",
         help=(
-            "Prefer existing slide XML roots from --target-slides-dir instead of re-extracting from pptx."
+            "Prefer existing slide XML roots from --target-slides-dir instead "
+            "of re-extracting from pptx."
         ),
     )
     parser.add_argument(
@@ -281,38 +291,70 @@ def main() -> int:
         default="style",
         help="Placeholder inheritance depth passed to normalize/build steps.",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def resolve_paths(args: argparse.Namespace) -> PipelinePaths:
     work_dir = Path(args.work_dir).resolve() if args.work_dir else Path.cwd()
+    return PipelinePaths(
+        work_dir=work_dir,
+        target_pptx=(
+            Path(args.target_pptx_dir).resolve()
+            if args.target_pptx_dir
+            else work_dir / "target_pptx"
+        ),
+        target_pdf=work_dir / "target_pdf",
+        target_slides=(
+            Path(args.target_slides_dir).resolve()
+            if args.target_slides_dir
+            else work_dir / "target_slides"
+        ),
+        output_root=work_dir / "output",
+    )
 
-    target_pptx = Path(args.target_pptx_dir).resolve() if args.target_pptx_dir else (work_dir / "target_pptx")
-    target_pdf = work_dir / "target_pdf"
-    target_slides = Path(args.target_slides_dir).resolve() if args.target_slides_dir else (work_dir / "target_slides")
-    output_root = work_dir / "output"
 
-    for required_dir in [target_pdf, target_slides, output_root]:
+def ensure_pipeline_dirs(paths: PipelinePaths) -> None:
+    for required_dir in [paths.target_pdf, paths.target_slides, paths.output_root]:
         if required_dir.exists() and not required_dir.is_dir():
-            raise NotADirectoryError(f"required path exists but is not a directory: {required_dir}")
+            raise NotADirectoryError(
+                f"required path exists but is not a directory: {required_dir}"
+            )
         required_dir.mkdir(parents=True, exist_ok=True)
-    if target_pptx.exists() and not target_pptx.is_dir():
-        raise NotADirectoryError(f"target pptx path exists but is not a directory: {target_pptx}")
-    target_pptx.mkdir(parents=True, exist_ok=True)
+    if paths.target_pptx.exists() and not paths.target_pptx.is_dir():
+        raise NotADirectoryError(
+            f"target pptx path exists but is not a directory: {paths.target_pptx}"
+        )
+    paths.target_pptx.mkdir(parents=True, exist_ok=True)
 
-    selected_stems: Set[str] = {normalize_pptx_selector(x) for x in args.targets if normalize_pptx_selector(x)}
-    staged_pptx_dir, pptx_map = stage_input_as_pptx(target_pptx, selected_stems)
 
-    # Resolve per-stem ppt roots, preferring existing roots when requested.
+def selected_target_stems(args: argparse.Namespace) -> Set[str]:
+    return {stem for stem in (normalize_pptx_selector(raw) for raw in args.targets) if stem}
+
+
+def prepare_ppt_roots(
+    *,
+    pptx_map: Dict[str, Path],
+    target_slides: Path,
+    prefer_existing: bool,
+) -> Tuple[Dict[str, Path], Dict[str, Path], List[Path]]:
     valid_pptx_map: Dict[str, Path] = {}
     ppt_root_map: Dict[str, Path] = {}
     temp_ppt_roots: List[Path] = []
+
     for stem, pptx_path in sorted(pptx_map.items()):
         ppt_root: Optional[Path] = None
-        if args.prefer_existing_target_slides:
-            ppt_root = resolve_existing_ppt_root(stem=stem, target_slides=target_slides)
+        if prefer_existing:
+            ppt_root = resolve_existing_ppt_root(
+                stem=stem,
+                target_slides=target_slides,
+            )
             if ppt_root is None and has_flat_slide_xmls(target_slides):
                 ppt_root = build_temp_ppt_root_from_flat_slides(target_slides, stem)
                 temp_ppt_roots.append(ppt_root.parent)
-                print(f"[slides] {stem}: using flat slide xmls from {target_slides} via temp ppt-root {ppt_root}")
+                print(
+                    f"[slides] {stem}: using flat slide xmls from "
+                    f"{target_slides} via temp ppt-root {ppt_root}"
+                )
             elif ppt_root is not None:
                 print(f"[slides] {stem}: reusing existing ppt-root -> {ppt_root}")
 
@@ -333,14 +375,32 @@ def main() -> int:
             continue
         valid_pptx_map[stem] = pptx_path
         ppt_root_map[stem] = ppt_root
-    pptx_map = valid_pptx_map
+
+    return valid_pptx_map, ppt_root_map, temp_ppt_roots
+
+
+def cleanup_paths(paths: Sequence[Path]) -> None:
+    for path in paths:
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def main() -> int:
+    args = parse_args()
+    paths = resolve_paths(args)
+    ensure_pipeline_dirs(paths)
+
+    selected_stems = selected_target_stems(args)
+    staged_pptx_dir, pptx_map = stage_input_as_pptx(paths.target_pptx, selected_stems)
+    pptx_map, ppt_root_map, temp_ppt_roots = prepare_ppt_roots(
+        pptx_map=pptx_map,
+        target_slides=paths.target_slides,
+        prefer_existing=bool(args.prefer_existing_target_slides),
+    )
+
     if not pptx_map:
         print("[INFO] No valid PPTX files available after slide-xml extraction.")
-        if staged_pptx_dir.exists():
-            shutil.rmtree(staged_pptx_dir, ignore_errors=True)
-        for tmp in temp_ppt_roots:
-            if tmp.exists():
-                shutil.rmtree(tmp, ignore_errors=True)
+        cleanup_paths([staged_pptx_dir, *temp_ppt_roots])
         return 0
 
     # Step 1: PPTX -> PDF
@@ -353,19 +413,18 @@ def main() -> int:
             "--input-dir",
             str(staged_pptx_dir),
             "--output-dir",
-            str(target_pdf),
+            str(paths.target_pdf),
         ],
-        cwd=work_dir,
+        cwd=paths.work_dir,
         allow_fail=True,
     )
 
-    pdf_files = sorted(target_pdf.glob("*.pdf"))
+    pdf_files = sorted(paths.target_pdf.glob("*.pdf"))
     if selected_stems:
         pdf_files = [p for p in pdf_files if p.stem in selected_stems]
     if not pdf_files:
         print("[INFO] No PDF files found in target_pdf after conversion.")
-        if staged_pptx_dir.exists():
-            shutil.rmtree(staged_pptx_dir, ignore_errors=True)
+        cleanup_paths([staged_pptx_dir, *temp_ppt_roots])
         return 0
 
     try:
@@ -381,7 +440,7 @@ def main() -> int:
         stem = pdf_path.stem
         print(f"[PDF {idx}/{len(pdf_files)}] {pdf_path.name}")
 
-        package_dir = output_root / stem
+        package_dir = paths.output_root / stem
         layout_result_json = package_dir / "results.json"
         layout_json = package_dir / "00_raw_surya_result.json"
         normalized_json = package_dir / "04_normalized.json"
@@ -393,7 +452,7 @@ def main() -> int:
             layout_result_json.replace(layout_json)
         if args.force or not layout_json.exists():
             print("  [2/4] Running surya_layout...")
-            run_surya_cli("layout", pdf_path, output_root, cwd=work_dir)
+            run_surya_cli("layout", pdf_path, paths.output_root, cwd=paths.work_dir)
         else:
             print("  [2/4] Skip surya_layout (exists)")
         if layout_result_json.exists():
@@ -425,7 +484,7 @@ def main() -> int:
                     "--placeholder-inheritance",
                     args.pptx_inheritance,
                 ],
-                cwd=work_dir,
+                cwd=paths.work_dir,
             )
         else:
             print("  [3/4] Skip normalize (exists)")
@@ -452,17 +511,13 @@ def main() -> int:
                     "--placeholder-inheritance",
                     args.pptx_inheritance,
                 ],
-                cwd=work_dir,
+                cwd=paths.work_dir,
             )
         else:
             print("  [4/4] Skip structure-ready (exists)")
 
     print("[DONE] Pipeline finished.")
-    if staged_pptx_dir.exists():
-        shutil.rmtree(staged_pptx_dir, ignore_errors=True)
-    for tmp in temp_ppt_roots:
-        if tmp.exists():
-            shutil.rmtree(tmp, ignore_errors=True)
+    cleanup_paths([staged_pptx_dir, *temp_ppt_roots])
     return 0
 
 

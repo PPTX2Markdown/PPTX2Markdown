@@ -28,7 +28,12 @@ def resolve_soffice_cmd() -> str | None:
         candidates.extend(
             [
                 Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
-                Path.home() / "Applications" / "LibreOffice.app" / "Contents" / "MacOS" / "soffice",
+                Path.home()
+                / "Applications"
+                / "LibreOffice.app"
+                / "Contents"
+                / "MacOS"
+                / "soffice",
             ]
         )
     elif sys.platform.startswith("win"):
@@ -50,7 +55,9 @@ def resolve_soffice_cmd() -> str | None:
     return None
 
 
-def convert_one(soffice_cmd: str, pptx_path: Path, output_dir: Path) -> subprocess.CompletedProcess[str]:
+def convert_one(
+    soffice_cmd: str, pptx_path: Path, output_dir: Path
+) -> subprocess.CompletedProcess[str]:
     profile_dir = Path(tempfile.mkdtemp(prefix="libreoffice-profile-"))
     cmd = [
         soffice_cmd,
@@ -130,7 +137,8 @@ def main() -> int:
                 print(f"  stderr: {proc.stderr.strip()}")
 
     print(
-        f"[SUMMARY] total={len(pptx_files)} success={len(pptx_files) - failed} failed={failed} output={output_dir}"
+        f"[SUMMARY] total={len(pptx_files)} success={len(pptx_files) - failed} "
+        f"failed={failed} output={output_dir}"
     )
     return 1 if failed else 0
 

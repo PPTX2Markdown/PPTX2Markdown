@@ -114,7 +114,9 @@ def run_structure_analysis_stage(
     env = os.environ.copy()
     env.setdefault("PYTHONUTF8", "1")
     env.setdefault("PYTHONIOENCODING", "utf-8")
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env
+    )
     if proc.returncode != 0:
         raise RuntimeError(
             "structure_analysis stage failed\n"
@@ -134,7 +136,9 @@ def run_structure_analysis_stage(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     failed = manifest.get("failed", [])
     if isinstance(failed, list) and failed:
-        raise RuntimeError(f"structure_analysis stage reported failures: {json.dumps(failed, ensure_ascii=False)}")
+        raise RuntimeError(
+            f"structure_analysis stage reported failures: {json.dumps(failed, ensure_ascii=False)}"
+        )
 
     mapping: Dict[str, Path] = {}
     processed = manifest.get("processed", [])
@@ -212,7 +216,7 @@ def run_surya_pipeline_stage(
     logger.info("[surya] Running pipeline: %s", " ".join(cmd))
     proc = subprocess.run(cmd, text=True, cwd=str(surya_work))
     if proc.returncode != 0:
-        raise RuntimeError("surya pipeline failed\n" f"cmd: {' '.join(cmd)}\n")
+        raise RuntimeError(f"surya pipeline failed\ncmd: {' '.join(cmd)}\n")
 
     output_root = surya_work / "output"
     legacy_structure_root = output_root / "structure_ready"

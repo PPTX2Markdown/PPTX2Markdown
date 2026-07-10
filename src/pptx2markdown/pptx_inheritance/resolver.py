@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import xml.etree.ElementTree as ET
 
 from pptx2markdown.structure_analyzer.constants import (
     FOOTER_TYPES,
@@ -146,7 +146,8 @@ def _relationship_target(source_xml: Path, rel_type: str) -> Optional[Path]:
     rel_root = ET.parse(rels).getroot()
     for rel in rel_root.findall("rel:Relationship", REL_NS):
         current_type = str(rel.attrib.get("Type", ""))
-        if current_type != rel_type and not current_type.endswith("/" + rel_type.rsplit("/", 1)[-1]):
+        expected_suffix = "/" + rel_type.rsplit("/", 1)[-1]
+        if current_type != rel_type and not current_type.endswith(expected_suffix):
             continue
         target = rel.attrib.get("Target")
         if not target:
@@ -187,7 +188,11 @@ def _placeholder_idx(ph: Optional[ET.Element]) -> Optional[str]:
     return _normalize_placeholder_idx(ph.attrib.get("idx"))
 
 
-def _effective_placeholder_attr(name: str, default: str, chain: PlaceholderChain) -> Optional[str]:
+def _effective_placeholder_attr(
+    name: str,
+    default: str,
+    chain: PlaceholderChain,
+) -> Optional[str]:
     for ph in (chain.slide_ph, chain.layout_ph, chain.master_ph):
         if ph is not None and name in ph.attrib:
             return ph.attrib[name]
@@ -229,7 +234,11 @@ def _build_placeholder_index(part_xml: Optional[Path]) -> Tuple[Dict[str, ET.Ele
     return out, ambiguous
 
 
-def _placeholder_for_idx(index: Dict[str, ET.Element], ambiguous: set[str], idx: Optional[str]) -> Optional[ET.Element]:
+def _placeholder_for_idx(
+    index: Dict[str, ET.Element],
+    ambiguous: set[str],
+    idx: Optional[str],
+) -> Optional[ET.Element]:
     if idx is None or _is_special_placeholder_idx(idx) or idx in ambiguous:
         return None
     return index.get(idx)
@@ -313,7 +322,10 @@ def _xfrm_components(elem: Optional[ET.Element]) -> Dict[str, Optional[int]]:
     }
 
 
-def _resolve_effective_bbox(slide_elem: ET.Element, chain: PlaceholderChain) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[str]]:
+def _resolve_effective_bbox(
+    slide_elem: ET.Element,
+    chain: PlaceholderChain,
+) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[str]]:
     sources = [
         ("direct", _xfrm_components(slide_elem)),
         ("layout", _xfrm_components(chain.layout_elem)),
@@ -335,7 +347,12 @@ def _resolve_effective_bbox(slide_elem: ET.Element, chain: PlaceholderChain) -> 
     if values["cx"] <= 0 or values["cy"] <= 0:
         return None, None
 
-    bbox = (values["x"], values["y"], values["x"] + values["cx"], values["y"] + values["cy"])
+    bbox = (
+        values["x"],
+        values["y"],
+        values["x"] + values["cx"],
+        values["y"] + values["cy"],
+    )
     if used_sources == {"direct"}:
         return bbox, None
     if "master" in used_sources:
@@ -368,7 +385,10 @@ def extract_font_pt(elem: Optional[ET.Element]) -> Optional[float]:
     return max(sizes)
 
 
-def _extract_font_pt_from_chain(slide_elem: ET.Element, chain: PlaceholderChain) -> Optional[float]:
+def _extract_font_pt_from_chain(
+    slide_elem: ET.Element,
+    chain: PlaceholderChain,
+) -> Optional[float]:
     for elem in (slide_elem, chain.layout_elem, chain.master_elem):
         font_pt = extract_font_pt(elem)
         if font_pt is not None:
@@ -399,7 +419,9 @@ def _list_semantics_from_ppr(p_pr: Optional[ET.Element]) -> Tuple[Optional[str],
     return None, None
 
 
-def _extract_list_semantics_from_shape(elem: Optional[ET.Element]) -> Tuple[Optional[str], Optional[int]]:
+def _extract_list_semantics_from_shape(
+    elem: Optional[ET.Element],
+) -> Tuple[Optional[str], Optional[int]]:
     if elem is None:
         return None, None
     for p_pr in elem.findall(".//a:pPr", NS):
@@ -417,7 +439,11 @@ def _tx_style_name(ph_type: Optional[str]) -> str:
     return "otherStyle"
 
 
-def _extract_master_tx_style_font_pt(master_xml: Optional[Path], ph_type: Optional[str], paragraph_level: int) -> Optional[float]:
+def _extract_master_tx_style_font_pt(
+    master_xml: Optional[Path],
+    ph_type: Optional[str],
+    paragraph_level: int,
+) -> Optional[float]:
     if master_xml is None or not master_xml.exists():
         return None
     root = ET.parse(master_xml).getroot()
@@ -425,7 +451,10 @@ def _extract_master_tx_style_font_pt(master_xml: Optional[Path], ph_type: Option
     if style is None:
         return None
     level = max(0, min(paragraph_level, 8)) + 1
-    candidates = [style.find(f"a:lvl{level}pPr/a:defRPr", NS), style.find("a:defPPr/a:defRPr", NS)]
+    candidates = [
+        style.find(f"a:lvl{level}pPr/a:defRPr", NS),
+        style.find("a:defPPr/a:defRPr", NS),
+    ]
     for def_rpr in candidates:
         if def_rpr is None:
             continue
@@ -438,7 +467,11 @@ def _extract_master_tx_style_font_pt(master_xml: Optional[Path], ph_type: Option
     return None
 
 
-def _master_tx_style_level_ppr(master_xml: Optional[Path], ph_type: Optional[str], paragraph_level: int) -> Optional[ET.Element]:
+def _master_tx_style_level_ppr(
+    master_xml: Optional[Path],
+    ph_type: Optional[str],
+    paragraph_level: int,
+) -> Optional[ET.Element]:
     if master_xml is None or not master_xml.exists():
         return None
     root = ET.parse(master_xml).getroot()
@@ -449,20 +482,32 @@ def _master_tx_style_level_ppr(master_xml: Optional[Path], ph_type: Optional[str
     return style.find(f"a:lvl{level}pPr", NS)
 
 
-def _extract_semantic_font_pt(slide_elem: ET.Element, chain: PlaceholderChain, ph_type: Optional[str], master_xml: Optional[Path]) -> Optional[float]:
+def _extract_semantic_font_pt(
+    slide_elem: ET.Element,
+    chain: PlaceholderChain,
+    ph_type: Optional[str],
+    master_xml: Optional[Path],
+) -> Optional[float]:
     font_pt = _extract_font_pt_from_chain(slide_elem, chain)
     if font_pt is not None:
         return font_pt
     return _extract_master_tx_style_font_pt(master_xml, ph_type, _paragraph_level(slide_elem))
 
 
-def _extract_semantic_list_semantics(slide_elem: ET.Element, chain: PlaceholderChain, ph_type: Optional[str], master_xml: Optional[Path]) -> Tuple[Optional[str], Optional[int]]:
+def _extract_semantic_list_semantics(
+    slide_elem: ET.Element,
+    chain: PlaceholderChain,
+    ph_type: Optional[str],
+    master_xml: Optional[Path],
+) -> Tuple[Optional[str], Optional[int]]:
     for elem in (slide_elem, chain.layout_elem, chain.master_elem):
         kind, level = _extract_list_semantics_from_shape(elem)
         if kind is not None:
             return kind, 0 if level is None else level
     paragraph_level = _paragraph_level(slide_elem)
-    kind, level = _list_semantics_from_ppr(_master_tx_style_level_ppr(master_xml, ph_type, paragraph_level))
+    kind, level = _list_semantics_from_ppr(
+        _master_tx_style_level_ppr(master_xml, ph_type, paragraph_level)
+    )
     if kind is not None:
         return kind, 0 if level is None else level
     return None, None
@@ -504,7 +549,12 @@ def _has_embedded_image(elem: ET.Element) -> bool:
     return blip is not None and bool(blip.attrib.get(f"{{{NS['r']}}}embed"))
 
 
-def is_decorative(tag: str, text: str, elem: Optional[ET.Element] = None, ph_type: Optional[str] = None) -> bool:
+def is_decorative(
+    tag: str,
+    text: str,
+    elem: Optional[ET.Element] = None,
+    ph_type: Optional[str] = None,
+) -> bool:
     if tag == "cxnSp":
         return True
     if tag == "pic" and ph_type is not None and (elem is None or not _has_embedded_image(elem)):
@@ -521,10 +571,27 @@ def _is_visible_materialized_shape(elem: ET.Element, tag: str, ph_type: Optional
     if text.strip():
         return True
     if tag == "pic":
+        bbox = extract_bbox_emu(elem)
+        if bbox is None:
+            return True
+        width = bbox[2] - bbox[0]
+        height = bbox[3] - bbox[1]
+        longer_side = max(width, height)
+        shorter_side = min(width, height)
+        if longer_side > 0 and shorter_side / longer_side < 0.03:
+            return False
         return True
     if tag == "graphicFrame" and elem.find(".//a:tbl", NS) is not None:
         return True
     return False
+
+
+def _inheritance_kind(source_part: str, coord_source: str) -> str:
+    if source_part != "slide":
+        return "materialized"
+    if coord_source in {"layout", "master"}:
+        return "placeholder"
+    return "direct"
 
 
 def _shape_from_part(
@@ -578,7 +645,7 @@ def _shape_from_part(
         list_level=list_level,
         bbox=bbox,
         source_part=source_part,
-        inheritance_kind=("materialized" if source_part != "slide" else ("placeholder" if coord_source in {"layout", "master"} else "direct")),
+        inheritance_kind=_inheritance_kind(source_part, coord_source),
     )
 
 
@@ -609,7 +676,11 @@ def _materialize_part_shapes(
         if ph_idx is not None and ph_idx in used_placeholder_indexes:
             continue
         ph_type = ph.attrib.get("type", PLACEHOLDER_DEFAULT_TYPE) if ph is not None else None
-        if inherited_shapes == "visible" and not _is_visible_materialized_shape(child, tag, ph_type):
+        if inherited_shapes == "visible" and not _is_visible_materialized_shape(
+            child,
+            tag,
+            ph_type,
+        ):
             continue
         bbox = extract_bbox_emu(child)
         list_kind, list_level = _extract_list_semantics_from_shape(child)
@@ -676,7 +747,13 @@ def resolve_effective_slide(
         ph = child.find(ph_path, NS)
 
         if use_placeholder_inheritance:
-            chain = _placeholder_chain(ph, layout_index, layout_ambiguous, master_index, master_ambiguous)
+            chain = _placeholder_chain(
+                ph,
+                layout_index,
+                layout_ambiguous,
+                master_index,
+                master_ambiguous,
+            )
             ph_type = _effective_placeholder_type(chain)
             ph_idx = chain.idx
             bbox, inherited_coord_source = _resolve_effective_bbox(child, chain)
@@ -692,7 +769,12 @@ def resolve_effective_slide(
         coord_source = inherited_coord_source or "direct"
         if use_semantic_inheritance:
             font_pt = _extract_semantic_font_pt(child, chain, ph_type, master_xml)
-            list_kind, list_level = _extract_semantic_list_semantics(child, chain, ph_type, master_xml)
+            list_kind, list_level = _extract_semantic_list_semantics(
+                child,
+                chain,
+                ph_type,
+                master_xml,
+            )
         else:
             font_pt = extract_font_pt(child)
             list_kind, list_level = _extract_list_semantics_from_shape(child)
@@ -712,16 +794,48 @@ def resolve_effective_slide(
         shapes.append(shape)
 
         if bbox is not None and tag == "pic":
-            xml_images.append({"shape_id": shape.shape_id, "name": shape.name, "bbox": list(bbox), "tag": tag})
+            xml_images.append(
+                {
+                    "shape_id": shape.shape_id,
+                    "name": shape.name,
+                    "bbox": list(bbox),
+                    "tag": tag,
+                }
+            )
         if bbox is not None and tag == "graphicFrame" and (child.find(".//a:tbl", NS) is not None):
-            xml_tables.append({"shape_id": shape.shape_id, "name": shape.name, "bbox": list(bbox), "tag": tag})
+            xml_tables.append(
+                {
+                    "shape_id": shape.shape_id,
+                    "name": shape.name,
+                    "bbox": list(bbox),
+                    "tag": tag,
+                }
+            )
 
     if use_placeholder_inheritance and inherited_shapes != "none":
-        layout_shapes = _materialize_part_shapes(layout_xml, "layout", 1_000_000, used_placeholder_indexes, inherited_shapes, strict)
+        layout_shapes = _materialize_part_shapes(
+            layout_xml,
+            "layout",
+            1_000_000,
+            used_placeholder_indexes,
+            inherited_shapes,
+            strict,
+        )
         shapes.extend(layout_shapes)
-        used_placeholder_indexes.update(shape.ph_idx for shape in layout_shapes if shape.ph_idx is not None)
+        used_placeholder_indexes.update(
+            shape.ph_idx for shape in layout_shapes if shape.ph_idx is not None
+        )
         if _show_master_shapes(slide_xml, layout_xml):
-            shapes.extend(_materialize_part_shapes(master_xml, "master", 2_000_000, used_placeholder_indexes, inherited_shapes, strict))
+            shapes.extend(
+                _materialize_part_shapes(
+                    master_xml,
+                    "master",
+                    2_000_000,
+                    used_placeholder_indexes,
+                    inherited_shapes,
+                    strict,
+                )
+            )
 
     return EffectiveSlide(
         slide_xml=slide_xml,

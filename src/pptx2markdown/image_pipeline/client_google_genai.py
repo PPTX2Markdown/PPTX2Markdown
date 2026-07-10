@@ -111,7 +111,8 @@ def _mark_quota_exceeded(message: str, *, model_id: str) -> None:
         _QUOTA_EXCEEDED_MESSAGE = normalized
     if first_time:
         logger.warning(
-            "  [image-vlm] Gemini quota exceeded for this run; all remaining Gemini image requests will fall back without retry. (model=%s)",
+            "  [image-vlm] Gemini quota exceeded for this run; remaining requests "
+            "will fall back without retry. (model=%s)",
             model_id,
         )
 
@@ -313,7 +314,8 @@ def generate_content(
                 )
                 _defer_next_request(delay)
                 logger.warning(
-                    "  [image-vlm] Gemini retry scheduled: %s (model=%s, status=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    "  [image-vlm] Gemini retry scheduled: %s "
+                    "(model=%s, status=%s, wait=%.1fs, next_attempt=%d/%d)",
                     image_path.name,
                     model_id,
                     exc.code,
@@ -336,7 +338,8 @@ def generate_content(
                 )
                 _defer_next_request(delay)
                 logger.warning(
-                    "  [image-vlm] Gemini retry scheduled: %s (model=%s, error=%s, wait=%.1fs, next_attempt=%d/%d)",
+                    "  [image-vlm] Gemini retry scheduled: %s "
+                    "(model=%s, error=%s, wait=%.1fs, next_attempt=%d/%d)",
                     image_path.name,
                     model_id,
                     type(exc).__name__,

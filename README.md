@@ -2,11 +2,11 @@
 
 [![PyPI](https://img.shields.io/pypi/v/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
 [![Python](https://img.shields.io/pypi/pyversions/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
 
 Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markdown — built for RAG pipelines and document processing.
 
-[한국어 README](README.ko.md)
+[한국어 README](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.ko.md)
 
 ## Features
 
@@ -45,7 +45,7 @@ On Windows, PowerPoint COM automation is used for `.ppt` conversion when availab
 ## Quick start
 
 ```bash
-# Convert one file → ./output/xml/deck/result.md
+# Convert one file → ./output/xml/deck/deck.md
 pptx2markdown deck.pptx
 
 # Convert every .pptx/.ppt in the current directory
@@ -99,7 +99,7 @@ VLM results are cached in `~/.cache/pptx2markdown/` (override with `PPTX2MARKDOW
 | --- | --- | --- |
 | `-o, --output-dir` | `./output` | Where converted Markdown is written |
 | `--work-dir` | `./.pptx2markdown` | Intermediate files (extraction, caches) |
-| `--not-strict` | off | Relaxed heading detection |
+| `--headings` | `auto` | Heading detection (`auto`/`strict`/`surya`) |
 | `--placeholder-inheritance` | `style` | How much layout/master style to inherit (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | Materialize layout/master shapes (`none`/`visible`/`all`) |
 | `--ppt-converter` | `auto` | `.ppt` conversion backend (`powerpoint`/`libreoffice`) |
@@ -114,7 +114,7 @@ output/
 └── xml/                    # one folder per reading-order mode
     ├── convert_manifest.json
     └── <deck-name>/
-        ├── result.md
+        ├── <deck-name>.md
         └── media/          # copied image assets
 ```
 
@@ -122,11 +122,11 @@ output/
 
 ## Documentation
 
-- [Converter internals](docs/main_converter.md)
-- [Image VLM pipeline](docs/image_pipeline.md)
-- [Structure analyzer](docs/structure_analyzer.md)
-- [Surya pipeline](docs/surya_pipeline.md)
+- [Converter internals](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
+- [Image VLM pipeline](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/image_pipeline.md)
+- [Structure analyzer](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
+- [Surya pipeline](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/surya_pipeline.md)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)

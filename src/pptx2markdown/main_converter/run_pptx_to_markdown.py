@@ -8,7 +8,7 @@ Usage:
 Rules:
   - If no positional args are provided, all .pptx/.ppt files in the current
     directory are processed.
-  - Output is written to ./output/<reading-order>/<name>/result.md by default
+  - Output is written to ./output/<reading-order>/<name>/<name>.md by default
     (override with --output-dir).
   - Intermediate files (extracted packages, caches) live in ./.pptx2markdown
     by default (override with --work-dir).
@@ -22,20 +22,37 @@ import logging
 import os
 import posixpath
 import re
-import shutil
-import subprocess
-import sys
 import tempfile
-import time
+import xml.etree.ElementTree as ET
 import zipfile
 from itertools import count
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
-import xml.etree.ElementTree as ET
 
 from chart2md import ZipContext, convert_chart
 from omml2latex import convert_omml
-from smartart2md import ZipContext as SmartArtZipContext, convert_smartart
+from smartart2md import ZipContext as SmartArtZipContext
+from smartart2md import convert_smartart
+
+from pptx2markdown.image_pipeline.service import (
+    DEFAULT_GEMINI_API_KEY_ENV,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_OPENAI_API_KEY_ENV,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_OPENROUTER_API_KEY_ENV,
+    DEFAULT_OPENROUTER_MODEL,
+    extract_markdown_from_image,
+    normalize_provider,
+)
+from pptx2markdown.image_pipeline.service import (
+    DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
+)
+from pptx2markdown.image_pipeline.service import (
+    DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
+)
+from pptx2markdown.image_pipeline.service import (
+    DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
+)
 
 from .asset_utils import copy_media_asset
 from .converter_models import (
@@ -46,38 +63,36 @@ from .converter_models import (
     ShapeBlock,
     SlideStats,
 )
-from .ppt_to_pptx import PptConversionError, convert_ppt_to_pptx
+from .heading_rules import normalize_single_heading_to_h1
+from .package_inputs import (
+    collect_target_presentation_inputs,
+    default_target_dir,
+    natural_key,
+    prepare_package_inputs,
+    stage_surya_pptx_inputs,
+)
 from .reading_order_pipeline import (
     prepare_surya_structure_root,
     resolve_surya_structure_dir,
     run_structure_analysis_stage,
 )
-from .heading_rules import normalize_single_heading_to_h1
-from pptx2markdown.image_pipeline.service import (
-    DEFAULT_GEMINI_API_KEY_ENV,
-    DEFAULT_GEMINI_MODEL,
-    DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    DEFAULT_OPENAI_API_KEY_ENV,
-    DEFAULT_OPENAI_MODEL,
-    DEFAULT_OPENROUTER_API_KEY_ENV,
-    DEFAULT_OPENROUTER_MODEL,
-    DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
-    DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
-    extract_markdown_from_image,
-    normalize_provider,
-)
 from .slide_converter import (
     SlideConversionContext,
     SlideConversionDeps,
     SlideRenderAssets,
+)
+from .slide_converter import (
     convert_one_slide as convert_one_slide_core,
 )
 from .table_overlay import (
     collect_table_overlay_pictures as collect_table_overlay_pictures_core,
+)
+from .table_overlay import (
     convert_table_to_markdown as convert_table_to_markdown_core,
+)
+from .table_overlay import (
     shape_id_of as shape_id_of_core,
 )
-
 
 NS = {
     "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
@@ -107,51 +122,6 @@ def _configure_logging(verbose: bool = False) -> None:
     logging.basicConfig(level=level, format="%(message)s")
 
 
-# 추출된 PPTX 패키지를 저장할 기본 디렉터리를 반환한다.
-# 항상 main_converter/target_slides 아래를 사용하며, 디렉터리가 없으면 생성하고
-# 같은 이름의 일반 파일이 있으면 잘못된 상태로 보고 예외를 발생시킨다.
-def default_target_dir(base_dir: Path) -> Path:
-    # Always anchor under main_converter/.
-    local_target = base_dir / "target_slides"
-    if local_target.exists() and not local_target.is_dir():
-        raise NotADirectoryError(f"target_slides path exists but is not a directory: {local_target}")
-    local_target.mkdir(parents=True, exist_ok=True)
-    return local_target
-
-
-# 원본 PPTX 입력 파일을 모아둘 기본 디렉터리를 반환한다.
-# 항상 main_converter/target_pptx 아래를 사용하며, 디렉터리 존재를 보장해
-# 이후 자동 탐색 로직이 별도 분기 없이 동작하게 만든다.
-def default_pptx_input_dir(base_dir: Path) -> Path:
-    # Always anchor under main_converter/.
-    local_target = base_dir / "target_pptx"
-    if local_target.exists() and not local_target.is_dir():
-        raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
-    local_target.mkdir(parents=True, exist_ok=True)
-    return local_target
-
-
-def default_ppt_conversion_cache_dir(base_dir: Path) -> Path:
-    cache_dir = base_dir / ".cache" / "ppt_to_pptx"
-    if cache_dir.exists() and not cache_dir.is_dir():
-        raise NotADirectoryError(f"ppt conversion cache path exists but is not a directory: {cache_dir}")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
-
-
-# 파일명 안의 숫자를 자연 정렬 기준으로 바꿔준다.
-# 예를 들어 slide2, slide10 같은 이름을 문자열 순서가 아니라 사람이 기대하는 순서대로 정렬할 때 사용한다.
-def natural_key(name: str) -> Tuple:
-    parts = re.split(r"(\d+)", name)
-    out: List[object] = []
-    for part in parts:
-        if part.isdigit():
-            out.append(int(part))
-        else:
-            out.append(part.lower())
-    return tuple(out)
-
-
 # XML 태그에서 네임스페이스를 제거하고 로컬 태그명만 꺼낸다.
 # ElementTree가 {namespace}tag 형태를 사용하므로, 분기 처리를 단순하게 만들기 위한 유틸이다.
 def local_name(tag: str) -> str:
@@ -164,251 +134,6 @@ def normalize_text(s: str) -> str:
     s = s.replace("\n", " ")
     s = re.sub(r"\s+", " ", s).strip()
     return s
-
-
-# 이미 추출된 패키지 디렉터리가 현재 PPTX 원본과 동일한 입력에서 만들어졌는지 검사한다.
-# .pptx_source.json 안의 경로/크기/mtime 정보를 원본 파일의 현재 상태와 비교해 캐시 재사용 가능 여부를 판단한다.
-def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
-    marker = pkg_dir / ".pptx_source.json"
-    if not marker.exists():
-        return False
-    try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    if not isinstance(payload, dict):
-        return False
-    slides_dir = pkg_dir / "ppt" / "slides"
-    if not slides_dir.exists():
-        return False
-    try:
-        stat = pptx_path.stat()
-    except OSError:
-        return False
-    return (
-        payload.get("source_path") == str(pptx_path.resolve())
-        and payload.get("size") == stat.st_size
-        and payload.get("mtime_ns") == stat.st_mtime_ns
-    )
-
-
-# PPTX(zip) 내부 엔트리를 안전하게 검증한 뒤 지정한 폴더에 압축 해제한다.
-# 상대경로 탈출 같은 위험한 엔트리를 막아서, 외부 경로로 파일이 풀리는 zip slip 문제를 방지한다.
-def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
-    with zipfile.ZipFile(pptx_path) as zf:
-        for member in zf.infolist():
-            member_path = Path(member.filename)
-            if member_path.is_absolute() or ".." in member_path.parts:
-                raise ValueError(f"Unsafe archive entry: {member.filename}")
-        zf.extractall(dest_dir)
-
-
-# 원본 PPTX 파일을 target_slides 아래 관리되는 패키지 디렉터리로 추출한다.
-# 기존 추출 결과가 같은 원본에서 생성된 경우 재사용하고, 아니라면 필요 시 삭제 후 다시 풀며,
-# 추적용 marker 파일을 남겨 같은 입력의 추출 결과를 재사용할 수 있게 한다.
-def extract_pptx_to_target(
-    package: PreparedPackage,
-    extraction_root: Path,
-    allow_replace_unmanaged: bool = False,
-) -> PreparedPackage:
-    pptx_path = package.source_pptx_path
-    stat = pptx_path.stat()
-    extraction_root.mkdir(parents=True, exist_ok=True)
-    pkg_name = package.package_dir_name
-    pkg_dir = extraction_root / pkg_name
-
-    # Raw extraction target should be a real managed directory, never a symlink.
-    # Remove legacy symlink targets (including valid/broken links) before extraction.
-    if pkg_dir.is_symlink():
-        try:
-            pkg_dir.unlink()
-        except PermissionError:
-            if allow_replace_unmanaged:
-                # Some bind-mounted filesystems disallow unlinking symlinks.
-                # Fall back to an alternate managed directory name.
-                suffix = "__raw"
-                idx = 0
-                while True:
-                    candidate_name = f"{pkg_name}{suffix}" if idx == 0 else f"{pkg_name}{suffix}{idx}"
-                    candidate = extraction_root / candidate_name
-                    if not candidate.exists() and not candidate.is_symlink():
-                        pkg_name = candidate_name
-                        pkg_dir = candidate
-                        break
-                    idx += 1
-            else:
-                raise
-
-    if package_marker_matches(pkg_dir, pptx_path):
-        return package.with_package_dir(pkg_dir.resolve())
-
-    marker = pkg_dir / ".pptx_source.json"
-    if pkg_dir.exists():
-        if marker.exists():
-            shutil.rmtree(pkg_dir)
-        elif allow_replace_unmanaged:
-            shutil.rmtree(pkg_dir)
-        else:
-            raise FileExistsError(
-                f"target package directory already exists and is not managed by converter: {pkg_dir}"
-            )
-
-    pkg_dir.mkdir(parents=True, exist_ok=True)
-    safe_extract_pptx(pptx_path, pkg_dir)
-
-    slides_dir = pkg_dir / "ppt" / "slides"
-    if not slides_dir.exists() or not slides_dir.is_dir():
-        shutil.rmtree(pkg_dir, ignore_errors=True)
-        raise ValueError(f"Not a valid pptx package after extraction: {pptx_path}")
-
-    marker.write_text(
-        json.dumps(
-            {
-                "source_path": str(pptx_path.resolve()),
-                "size": stat.st_size,
-                "mtime_ns": stat.st_mtime_ns,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    return package.with_package_dir(pkg_dir.resolve())
-
-
-# Office가 임시로 만드는 잠금 파일인지 판별한다.
-# "~$"로 시작하는 PPT/PPTX는 실제 입력으로 처리하면 안 되므로 자동 탐색에서 제외한다.
-def is_ignored_presentation_file(path: Path) -> bool:
-    # Skip Office lock/temp files like "~$sample1.pptx".
-    return path.name.startswith("~$")
-
-
-def is_supported_presentation_file(path: Path) -> bool:
-    return path.suffix.lower() in {".pptx", ".ppt"} and not is_ignored_presentation_file(path)
-
-
-# 사용자가 넘긴 입력 문자열을 실제 PPT/PPTX 파일 경로로 해석한다.
-# 현재 작업 디렉터리, 기본 입력 디렉터리, 추출 디렉터리를 차례로 후보에 넣고
-# 확장자가 생략된 경우 ".pptx", ".ppt" 순서로 보완해서 찾는다. 실패 시에는 확인한 후보 목록도 함께 돌려준다.
-def resolve_input_presentation_path(cwd: Path, item: str) -> Tuple[Optional[Path], List[Path]]:
-    search_roots = [Path.cwd(), cwd, default_pptx_input_dir(cwd), default_target_dir(cwd)]
-
-    candidates: List[Path] = []
-    seen: set[str] = set()
-
-    # 같은 경로 후보가 여러 번 들어오지 않도록 중복을 제거하면서 순서를 유지한다.
-    # 상대 경로는 사용자 셸의 현재 디렉터리 기준으로 해석한다.
-    def add_candidate(path: Path) -> None:
-        key_path = path if path.is_absolute() else Path.cwd() / path
-        key = str(key_path.resolve())
-        if key not in seen:
-            seen.add(key)
-            candidates.append(path)
-
-    raw_path = Path(item)
-    add_candidate(raw_path)
-    for root in search_roots:
-        add_candidate(root / item)
-
-    for cand in candidates:
-        if cand.exists() and cand.is_file() and is_supported_presentation_file(cand):
-            return cand.resolve(), candidates
-        if not cand.suffix:
-            for suffix in (".pptx", ".ppt"):
-                cand_with_suffix = cand.with_suffix(suffix)
-                if cand_with_suffix.exists() and cand_with_suffix.is_file() and is_supported_presentation_file(cand_with_suffix):
-                    return cand_with_suffix.resolve(), candidates
-    return None, candidates
-
-
-def normalize_presentation_to_pptx(cwd: Path, path: Path, ppt_converter: str) -> Path:
-    suffix = path.suffix.lower()
-    if suffix == ".pptx":
-        return path
-    if suffix != ".ppt":
-        raise ValueError(f"unsupported presentation input: {path}")
-    result = convert_ppt_to_pptx(
-        path,
-        default_ppt_conversion_cache_dir(cwd),
-        mode=ppt_converter,  # type: ignore[arg-type]
-    )
-    action = "reused" if result.reused_cache else "converted"
-    logger.info("[ppt-convert] %s %s -> %s (%s)", action, path.name, result.pptx_path.name, result.converter)
-    return result.pptx_path
-
-
-# 입력 인자를 실제 추출 대상 패키지 경로 목록으로 준비한다.
-# 각 입력을 PPTX 파일로 해석한 뒤 target_slides 아래로 추출하고,
-# 못 찾은 입력은 어떤 경로들을 확인했는지와 함께 별도로 수집한다.
-def prepare_package_inputs(
-    cwd: Path,
-    raw_inputs: Sequence[str],
-    force_extract: bool = False,
-    ppt_converter: str = "auto",
-) -> Tuple[List[PreparedPackage], List[Dict[str, object]]]:
-    if not raw_inputs:
-        return [], []
-
-    prepared: List[PreparedPackage] = []
-    missing_inputs: List[Dict[str, object]] = []
-    extraction_root = default_target_dir(cwd)
-
-    for item in raw_inputs:
-        picked_file, candidates = resolve_input_presentation_path(cwd, item)
-        if picked_file is None:
-            missing_inputs.append(
-                {
-                    "input": item,
-                    "checked": [
-                        str(path.resolve()) if path.is_absolute() else str((Path.cwd() / path).resolve())
-                        for path in candidates
-                    ],
-                }
-            )
-            continue
-        try:
-            picked_file = normalize_presentation_to_pptx(cwd, picked_file, ppt_converter)
-        except PptConversionError as exc:
-            logger.error("[ppt-convert] failed: %s", exc)
-            raise ValueError("ppt conversion failed") from exc
-        package = PreparedPackage(
-            package_dir=extraction_root / picked_file.stem,
-            source_pptx_path=picked_file,
-        )
-        package = extract_pptx_to_target(
-            package,
-            extraction_root,
-            allow_replace_unmanaged=force_extract,
-        )
-        prepared.append(package)
-    return prepared, missing_inputs
-
-
-# 현재 작업 디렉터리(사용자 셸 기준)의 모든 PPT/PPTX 파일을 자동 수집한다.
-# 잠금 파일은 제외하고, 파일명은 자연 정렬한 뒤 중복 없는 절대경로 문자열 목록으로 반환한다.
-def collect_target_presentation_inputs(cwd: Path) -> List[str]:
-    by_stem: Dict[str, Path] = {}
-    for path in Path.cwd().iterdir():
-        if not path.is_file() or not is_supported_presentation_file(path):
-            continue
-        resolved = path.resolve()
-        key = path.stem.lower()
-        existing = by_stem.get(key)
-        if existing is None or (existing.suffix.lower() == ".ppt" and path.suffix.lower() == ".pptx"):
-            by_stem[key] = resolved
-    files = sorted(by_stem.values(), key=lambda p: natural_key(p.name))
-    return [str(p) for p in files]
-
-
-def stage_surya_pptx_inputs(packages: Sequence[PreparedPackage], stage_dir: Path) -> Path:
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    for package in packages:
-        staged_pptx = stage_dir / f"{package.name}.pptx"
-        if staged_pptx.exists():
-            staged_pptx.unlink()
-        shutil.copy2(package.source_pptx_path, staged_pptx)
-    return stage_dir
 
 
 # slide12.xml 같은 파일명에서 슬라이드 번호를 추출한다.
@@ -429,15 +154,16 @@ def slide_base_name(slide_xml: Path) -> str:
     return slide_xml.name
 
 
-# 슬라이드 XML 옆에 생성된 구조 분석 sidecar JSON 파일을 찾는다.
-# reordered 버전과 원본 버전 모두 고려하며, structure_analysis.json과 reading_order.json 두 이름 체계를 모두 지원한다.
+# reordered와 원본 슬라이드 이름으로 구조 분석 sidecar를 찾는다.
 def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
     # e.g. slide2.reordered.xml -> slide2.structure_analysis.json
     stem = slide_xml.stem
     candidates = []
     if stem.endswith(".reordered"):
-        candidates.append(slide_xml.with_name(f"{stem[:-len('.reordered')]}.structure_analysis.json"))
-        candidates.append(slide_xml.with_name(f"{stem[:-len('.reordered')]}.reading_order.json"))
+        candidates.append(
+            slide_xml.with_name(f"{stem[: -len('.reordered')]}.structure_analysis.json")
+        )
+        candidates.append(slide_xml.with_name(f"{stem[: -len('.reordered')]}.reading_order.json"))
     candidates.append(slide_xml.with_name(f"{stem}.structure_analysis.json"))
     candidates.append(slide_xml.with_name(f"{stem}.reading_order.json"))
     for c in candidates:
@@ -446,8 +172,7 @@ def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
     return None
 
 
-# 구조 분석 단계에서 생성한 heading 힌트를 읽어 shape_id 기준 맵으로 바꾼다.
-# 이후 본문/제목 판별 로직이 XML을 다시 계산하지 않고도 점수, depth, placeholder 정보를 바로 참조할 수 있게 한다.
+# 구조 분석의 heading 힌트를 shape_id 기준 맵으로 읽는다.
 def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     """
     Load heading hints produced by structure analysis stage.
@@ -521,8 +246,7 @@ def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     return out
 
 
-# sidecar JSON 안의 input_xml 정보를 이용해 원본 슬라이드의 rels 파일을 찾는다.
-# reordered 슬라이드처럼 현재 파일 위치만으로는 관계 파일을 바로 찾기 어려운 경우를 보완하는 용도다.
+# sidecar의 input_xml을 이용해 원본 슬라이드 관계 파일을 찾는다.
 def rels_from_sidecar(slide_xml: Path) -> Optional[Path]:
     sidecar = find_sidecar_json(slide_xml)
     if sidecar is None:
@@ -555,8 +279,7 @@ def rels_from_sidecar(slide_xml: Path) -> Optional[Path]:
     return None
 
 
-# 현재 슬라이드 XML 주변의 전형적인 위치들에서 rels 파일을 찾는다.
-# sidecar 정보가 없을 때 같은 패키지 안에서 가장 자연스러운 후보들을 순서대로 확인하는 fallback 역할이다.
+# 현재 슬라이드 주변의 일반적인 위치에서 관계 파일을 찾는다.
 def fallback_rels(slide_xml: Path) -> Optional[Path]:
     base = slide_base_name(slide_xml)
     cands = [
@@ -581,11 +304,7 @@ def source_slide_rels(source_slide_xml: Optional[Path]) -> Optional[Path]:
     return None
 
 
-# slide rels XML을 rId -> target 경로 맵으로 파싱한다.
-# 이미지, 다이어그램, 기타 임베디드 리소스의 실제 파일 위치를 나중에 빠르게 해석하기 위한 전처리 단계다.
-# slide rels XML을 rId -> target 경로 맵으로 파싱한다.
-# 이미지, 다이어그램, 기타 임베디드 리소스의 실제 파일 위치를
-# 나중에 빠르게 해석하기 위한 전처리 단계다.
+# slide 관계 파일을 rId -> target 경로 맵으로 파싱한다.
 def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     if rels_path is None or not rels_path.exists():
         return {}
@@ -599,11 +318,7 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     return out
 
 
-# 슬라이드 하나를 처리할 때 사용할 rels 파일을 우선순위에 따라 결정한다.
-# sidecar 기반 경로를 먼저 시도하고, 실패하면 현재 슬라이드 주변 fallback, 마지막으로 source slide rels까지 본다.
-# 슬라이드 하나를 처리할 때 사용할 rels 파일을 우선순위에 따라 결정한다.
-# sidecar 기반 경로를 먼저 시도하고, 실패하면 현재 슬라이드 주변 fallback,
-# 마지막으로 source slide rels까지 확인한다.
+# 같은 패키지 안에서 슬라이드 관계 파일을 우선순위에 따라 선택한다.
 def choose_rels_in_package(
     slide_xml: Path,
     source_slide_xml: Optional[Path] = None,
@@ -648,7 +363,7 @@ def resolve_image_path(
         pkg_name = None
     if pkg_name:
         target_name = Path(target).name
-        remapped = (default_work_root() / "target_slides" / pkg_name / "ppt" / "media" / target_name)
+        remapped = default_work_root() / "target_slides" / pkg_name / "ppt" / "media" / target_name
         if remapped.exists():
             abs_path = remapped.absolute()
     return str(abs_path), None
@@ -709,7 +424,9 @@ def convert_picture_to_markdown(
             ignore_cache=ignore_cache,
         )
     except Exception as exc:  # noqa: BLE001
-        error_message = f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
+        error_message = (
+            f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
+        )
         return (
             None,
             error_message,
@@ -718,14 +435,24 @@ def convert_picture_to_markdown(
         )
 
     if not isinstance(result, dict):
-        return None, f"image pipeline returned invalid payload: {type(result).__name__}", False, None
+        return (
+            None,
+            f"image pipeline returned invalid payload: {type(result).__name__}",
+            False,
+            None,
+        )
 
     status = str(result.get("status", "")).strip().lower()
     if status == "markdown":
         markdown = str(result.get("markdown", "")).strip()
         if markdown:
             return markdown, None, False, result
-        return None, f"image pipeline rendered empty markdown: {Path(image_path).name}", False, result
+        return (
+            None,
+            f"image pipeline rendered empty markdown: {Path(image_path).name}",
+            False,
+            result,
+        )
     if status == "no_markdown":
         return None, None, False, result
 
@@ -759,7 +486,11 @@ def format_markdown_image(
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai", "openrouter"}
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {
+        "gemini",
+        "openai",
+        "openrouter",
+    }
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -774,8 +505,16 @@ def format_markdown_image(
             copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
             relative_path = relativize_markdown_path(copied_path, output_dir)
             image_tag = render_image_tag(relative_path)
-            return annotate_generated_image_markdown(image_md, image_tag=image_tag), None, unavailable, True, False
-        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+            return (
+                annotate_generated_image_markdown(image_md, image_tag=image_tag),
+                None,
+                unavailable,
+                True,
+                False,
+            )
+        skipped_no_markdown = (
+            isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+        )
         copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
         relative_path = relativize_markdown_path(copied_path, output_dir)
         return render_image_tag(relative_path), image_warn, unavailable, False, skipped_no_markdown
@@ -833,15 +572,23 @@ def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment
         try:
             segments.append(_build_inline_math_segment(container))
         except Exception:
-            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
-            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            fallback = normalize_text(
+                " ".join(node.text or "" for node in container.findall(".//m:t", NS))
+            )
+            segments.append(
+                ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]")
+            )
         return True
     if container_tag == "oMathPara":
         try:
             segments.append(_build_block_math_segment(container))
         except Exception:
-            fallback = normalize_text(" ".join(node.text or "" for node in container.findall(".//m:t", NS)))
-            segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+            fallback = normalize_text(
+                " ".join(node.text or "" for node in container.findall(".//m:t", NS))
+            )
+            segments.append(
+                ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]")
+            )
         return True
 
     appended = False
@@ -852,16 +599,24 @@ def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment
             try:
                 segments.append(_build_inline_math_segment(math_elem))
             except Exception:
-                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
-                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+                fallback = normalize_text(
+                    " ".join(node.text or "" for node in math_elem.findall(".//m:t", NS))
+                )
+                segments.append(
+                    ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]")
+                )
             continue
         if tag == "oMathPara":
             appended = True
             try:
                 segments.append(_build_block_math_segment(math_elem))
             except Exception:
-                fallback = normalize_text(" ".join(node.text or "" for node in math_elem.findall(".//m:t", NS)))
-                segments.append(ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]"))
+                fallback = normalize_text(
+                    " ".join(node.text or "" for node in math_elem.findall(".//m:t", NS))
+                )
+                segments.append(
+                    ParagraphSegment(kind="math_error", text=fallback or "[unsupported-math]")
+                )
             continue
     return appended
 
@@ -933,19 +688,22 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     return False
 
 
-# shape 내부 블록들 중 짧은 일반 텍스트를 주변 리스트 문맥에 맞춰 리스트 항목으로 승격한다.
-# PowerPoint가 시각적으로만 맞춰 둔 문단을 Markdown 리스트 구조로 더 자연스럽게 복원하기 위한 보정이다.
+# 주변 리스트 문맥에 맞는 짧은 일반 텍스트를 리스트 항목으로 승격한다.
 def promote_plain_text_to_list(
     blocks: Sequence[ShapeBlock],
 ) -> List[ShapeBlock]:
     if not any(block.kind in {"list_ul", "list_ol"} for block in blocks):
         return list(blocks)
 
-    text_blocks = [(idx, block.plain_text) for idx, block in enumerate(blocks) if block.kind == "text"]
+    text_blocks = [
+        (idx, block.plain_text) for idx, block in enumerate(blocks) if block.kind == "text"
+    ]
     if len(text_blocks) < 3:
         return list(blocks)
 
-    first_list_kind = next((block.kind for block in blocks if block.kind in {"list_ul", "list_ol"}), "list_ul")
+    first_list_kind = next(
+        (block.kind for block in blocks if block.kind in {"list_ul", "list_ol"}), "list_ul"
+    )
     promoted = list(blocks)
     for idx, text in text_blocks:
         if len(text) > 80 or text.endswith((".", ":")):
@@ -957,7 +715,9 @@ def promote_plain_text_to_list(
 # PowerPoint의 불연속 목록 레벨을 0,1,2... 형태의 연속 깊이로 정규화한다.
 # 원본 lvl 값이 듬성듬성해도 Markdown 렌더링 들여쓰기가 과도하게 깊어지지 않도록 막는다.
 def normalize_list_levels(blocks: Sequence[ShapeBlock]) -> List[ShapeBlock]:
-    levels = sorted({int(block.level or 0) for block in blocks if block.kind in {"list_ul", "list_ol"}})
+    levels = sorted(
+        {int(block.level or 0) for block in blocks if block.kind in {"list_ul", "list_ol"}}
+    )
     if not levels:
         return list(blocks)
     remap = {level: idx for idx, level in enumerate(levels)}
@@ -980,7 +740,9 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
         if not segments:
             continue
         plain_text = paragraph_text(p)
-        if not plain_text and not any(segment.kind in {"math_inline", "math_block"} for segment in segments):
+        if not plain_text and not any(
+            segment.kind in {"math_inline", "math_block"} for segment in segments
+        ):
             continue
         p_pr = p.find("./a:pPr", NS)
         has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
@@ -1089,6 +851,22 @@ def _part_path_from_rels_path(rels_path: Path) -> Optional[str]:
     return rels_part_path.replace("/_rels/", "/").removesuffix(".rels")
 
 
+def _ooxml_part_from_relationship(
+    rels_path: Path,
+    target: str,
+) -> Optional[str]:
+    normalized_target = posixpath.normpath(target.replace("\\", "/"))
+    target_parts = normalized_target.split("/")
+    if "ppt" in target_parts:
+        ppt_index = target_parts.index("ppt")
+        return "/".join(target_parts[ppt_index:])
+
+    source_part = _part_path_from_rels_path(rels_path)
+    if source_part is None:
+        return None
+    return _resolve_ooxml_target(source_part, target)
+
+
 def _smartart_media_markdown(
     markdown: str,
     images: Sequence[Tuple[bytes, str]],
@@ -1136,10 +914,9 @@ def convert_chart_to_markdown(
     if not target:
         return None, f"chart conversion failed: relationship not found: {rid}"
 
-    slide_part_path = _part_path_from_rels_path(rels_path)
-    if not slide_part_path:
+    chart_part_path = _ooxml_part_from_relationship(rels_path, target)
+    if chart_part_path is None:
         return None, f"chart conversion failed: unsupported rels path: {rels_path}"
-    chart_part_path = _resolve_ooxml_target(slide_part_path, target)
 
     try:
         with zipfile.ZipFile(source_pptx_path) as zf:
@@ -1172,17 +949,17 @@ def convert_smartart_to_markdown(
     if diagram_data_xml is None:
         return None, "smartart conversion failed: missing diagram data path"
 
-    slide_part_path = _part_path_from_rels_path(rels_path) if rels_path is not None else None
-    if not slide_part_path:
-        return None, f"smartart conversion failed: unsupported rels path: {rels_path}"
-
     dm_rel_ids = graphic_frame.find("./a:graphic/a:graphicData/dgm:relIds", NS)
     dm_rid = dm_rel_ids.attrib.get(f"{{{NS['r']}}}dm") if dm_rel_ids is not None else None
     target = rels_map.get(dm_rid) if dm_rid else None
     if not target:
         return None, "smartart conversion failed: missing diagram relationship target"
 
-    data_part_path = _resolve_ooxml_target(slide_part_path, target)
+    if rels_path is None:
+        return None, "smartart conversion failed: missing slide rels file"
+    data_part_path = _ooxml_part_from_relationship(rels_path, target)
+    if data_part_path is None:
+        return None, f"smartart conversion failed: unsupported rels path: {rels_path}"
 
     try:
         with zipfile.ZipFile(source_pptx_path) as zf:
@@ -1209,7 +986,9 @@ def convert_smartart_to_markdown(
 
 # 다이어그램 graphicFrame에서 실제 데이터 XML 파일 경로를 해석한다.
 # rels를 따라가 dgm data model 파일을 찾고, 존재하는 실제 파일일 때만 반환한다.
-def diagram_data_path(graphic_frame: ET.Element, rels_path: Optional[Path], rels_map: Dict[str, str]) -> Optional[Path]:
+def diagram_data_path(
+    graphic_frame: ET.Element, rels_path: Optional[Path], rels_map: Dict[str, str]
+) -> Optional[Path]:
     if rels_path is None:
         return None
     rel_ids = graphic_frame.find("./a:graphic/a:graphicData/dgm:relIds", NS)
@@ -1313,7 +1092,11 @@ def overlay_content_text(
         return path, None, False, False, False
 
     normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {"gemini", "openai", "openrouter"}
+    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {
+        "gemini",
+        "openai",
+        "openrouter",
+    }
     if image_vlm_enabled:
         image_md, image_warn, unavailable, result = convert_picture_to_markdown(
             path,
@@ -1325,9 +1108,19 @@ def overlay_content_text(
             ignore_cache=ignore_image_vlm_cache,
         )
         if image_md is not None:
-            link_text = overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media)
-            return annotate_generated_image_markdown(image_md, image_tag=link_text), None, unavailable, True, False
-        skipped_no_markdown = isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+            link_text = overlay_link_text(
+                path, output_dir, media_dir=media_dir, copied_media=copied_media
+            )
+            return (
+                annotate_generated_image_markdown(image_md, image_tag=link_text),
+                None,
+                unavailable,
+                True,
+                False,
+            )
+        skipped_no_markdown = (
+            isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
+        )
         return (
             overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
             image_warn,
@@ -1450,10 +1243,8 @@ def convert_one_slide(
 # 입력 PPTX 목록, 읽기 순서 모드, heading strict 모드, 이미지 VLM 옵션 등
 # 전체 변환 파이프라인을 제어하는 설정을 여기서 받는다.
 def _parse_args() -> argparse.Namespace:
-    # parser 생성 
-    parser = argparse.ArgumentParser(
-        description="Convert extracted PPTX package(s) to markdown."
-    )
+    # parser 생성
+    parser = argparse.ArgumentParser(description="Convert extracted PPTX package(s) to markdown.")
     # 필요한 인자들 추가
     parser.add_argument(
         "inputs",
@@ -1485,16 +1276,19 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--headings",
-        choices=("auto", "surya"),
+        choices=("auto", "strict", "surya"),
         default="auto",
-        help="Heading detection strategy. 'surya' requires --reading-order surya and uses only Surya layout heading labels.",
+        help=(
+            "Heading detection strategy. auto uses placeholder, numbering, font, "
+            "and position signals; strict uses title placeholders only; surya "
+            "requires --reading-order surya."
+        ),
     )
     parser.add_argument(
         "--not-strict",
-        dest="strict",
-        action="store_false",
-        default=True,
-        help="Disable strict heading detection in xml reading-order mode.",
+        dest="legacy_not_strict",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--placeholder-inheritance",
@@ -1522,19 +1316,28 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reuse-surya-cache",
         action="store_true",
-        help="Reuse existing Surya structure_ready outputs instead of re-running the Surya pipeline.",
+        help=(
+            "Reuse existing Surya structure_ready outputs instead of re-running "
+            "the Surya pipeline."
+        ),
     )
     parser.add_argument(
         "--ppt-converter",
         choices=("auto", "powerpoint", "libreoffice"),
         default="auto",
-        help="Converter used for legacy .ppt inputs. auto tries PowerPoint on Windows, then LibreOffice.",
+        help=(
+            "Converter used for legacy .ppt inputs. auto tries PowerPoint on Windows, "
+            "then LibreOffice."
+        ),
     )
     parser.add_argument(
         "--image-vlm-provider",
         choices=("local", "gemini", "openai", "openrouter"),
         default=DEFAULT_IMAGE_VLM_PROVIDER,
-        help="Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API, openai uses the OpenAI Responses API.",
+        help=(
+            "Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API, "
+            "and openai uses the OpenAI Responses API."
+        ),
     )
     parser.add_argument(
         "--image-vlm-model",
@@ -1543,7 +1346,8 @@ def _parse_args() -> argparse.Namespace:
             "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
             "a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini, "
             "an OpenAI model id such as gpt-4.1-mini for --image-vlm-provider openai, "
-            "or an OpenRouter model id such as google/gemini-2.5-flash for --image-vlm-provider openrouter."
+            "or an OpenRouter model id such as google/gemini-2.5-flash for "
+            "--image-vlm-provider openrouter."
         ),
     )
     parser.add_argument(
@@ -1560,13 +1364,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-vlm-api-key-env",
         default=DEFAULT_GEMINI_API_KEY_ENV,
-        help="Environment variable name containing the provider API key when --image-vlm-provider gemini, openai, or openrouter is used.",
+        help=(
+            "Environment variable containing the provider API key when using "
+            "gemini, openai, or openrouter."
+        ),
     )
     parser.add_argument(
         "--ignore-image-vlm-cache",
         "--ignore-vlm-cache",
         action="store_true",
-        help="Ignore in-memory and disk cache for image VLM results and recompute them from scratch.",
+        help=(
+            "Ignore in-memory and disk caches for image VLM results and recompute "
+            "them from scratch."
+        ),
     )
     parser.add_argument(
         "--verbose",
@@ -1575,8 +1385,8 @@ def _parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-# 파싱된 CLI 인자를 내부 설정 모델로 변환한다.
-# 작업 기준 디렉터리, 출력 위치, 읽기 순서 모드, 이미지 VLM 관련 값을 이후 로직이 일관되게 사용할 수 있는 ConverterConfig로 정규화한다.
+
+# CLI 인자를 내부 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
     work_root = (
         Path(args.work_dir).expanduser().resolve()
@@ -1588,12 +1398,16 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         if getattr(args, "output_dir", None)
         else (Path.cwd() / "output").resolve()
     )
-    if args.headings == "surya" and args.reading_order != "surya":
+    heading_mode = str(args.headings)
+    if getattr(args, "legacy_not_strict", False):
+        heading_mode = "auto"
+    if heading_mode == "surya" and args.reading_order != "surya":
         raise ValueError("--headings surya requires --reading-order surya")
     normalized_provider = normalize_provider(args.image_vlm_provider)
     api_key_env = str(args.image_vlm_api_key_env).strip()
     if not api_key_env or (
-        normalized_provider in {"openai", "openrouter"} and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
+        normalized_provider in {"openai", "openrouter"}
+        and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
     ):
         if normalized_provider == "openai":
             api_key_env = DEFAULT_OPENAI_API_KEY_ENV
@@ -1606,8 +1420,8 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         output_dir=output_root / args.reading_order,
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
-        heading_mode=str(args.headings),
-        strict=bool(args.strict),
+        heading_mode=heading_mode,
+        strict=heading_mode == "strict",
         pptx_inheritance=str(args.pptx_inheritance),
         inherited_shapes=str(args.inherited_shapes),
         reuse_surya_cache=bool(args.reuse_surya_cache),
@@ -1641,7 +1455,9 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
 
     if config.inputs:
         unsupported_inputs = [
-            x for x in config.inputs if Path(x).suffix and Path(x).suffix.lower() not in {".pptx", ".ppt"}
+            x
+            for x in config.inputs
+            if Path(x).suffix and Path(x).suffix.lower() not in {".pptx", ".ppt"}
         ]
         if unsupported_inputs:
             logger.error("Only .pptx/.ppt inputs are allowed.")
@@ -1660,7 +1476,7 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
             raise ValueError("missing presentation inputs")
         return prepared_inputs
 
-    auto_presentation_inputs = collect_target_presentation_inputs(config.cwd)
+    auto_presentation_inputs = collect_target_presentation_inputs()
     if not auto_presentation_inputs:
         logger.info("No .pptx/.ppt files found in: %s", Path.cwd().resolve())
         return []
@@ -1699,8 +1515,8 @@ def _append_package_stage_failure(
     manifest.packages.append(pkg_row)
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
-# PPTX를 압축 해제한 패키지 하나를 끝까지 변환하는 핵심 오케스트레이션 함수다.
-# 슬라이드 목록 수집, 읽기 순서 전처리, 슬라이드별 Markdown 변환, 패키지 단위 Markdown 생성과 manifest 누적까지 담당한다.
+
+# 추출된 패키지 하나를 변환하고 결과와 manifest를 누적한다.
 def _convert_package(
     config: ConverterConfig,
     package: PreparedPackage,
@@ -1757,7 +1573,11 @@ def _convert_package(
             return
     else:
         try:
-            structure_output_dir = resolve_surya_structure_dir(surya_structure_root, pkg_name) if surya_structure_root else None
+            structure_output_dir = (
+                resolve_surya_structure_dir(surya_structure_root, pkg_name)
+                if surya_structure_root
+                else None
+            )
             pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
         except Exception as e:  # noqa: BLE001
             _append_package_stage_failure(
@@ -1771,7 +1591,6 @@ def _convert_package(
             return
 
     for i, slide_xml in enumerate(slide_xmls, 1):
-        slide_started_at = time.perf_counter()
         page_no = parse_slide_number(slide_xml.name, i)
         ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
         if config.reading_order == "surya" and structure_output_dir is not None:
@@ -1814,9 +1633,7 @@ def _convert_package(
                 row["surya_source"] = str(structure_output_dir)
             all_chunks.append(merged_md_text.rstrip())
 
-            row.update(
-                {"status": "ok", **stats.to_slide_row_fields()}
-            )
+            row.update({"status": "ok", **stats.to_slide_row_fields()})
             manifest.summary.add_slide(stats)
             logger.info("[%s] [md-convert] Processed: %s", pkg_name, slide_xml.name)
             if stats.warnings:

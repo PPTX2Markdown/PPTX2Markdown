@@ -23,11 +23,26 @@ from .constants import (
     DEFAULT_PROVIDER,
 )
 from .image_preprocess import is_supported_image_suffix, prepared_image_path
+from .provider_base import ImageMarkdownResult, ModelResolution
 from .provider_registry import IMAGE_VLM_PROVIDERS, get_provider, normalize_provider
-from .schemas import ImageMarkdownResult, ModelResolution
-
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "DEFAULT_GEMINI_API_KEY_ENV",
+    "DEFAULT_GEMINI_MODEL",
+    "DEFAULT_MAX_NEW_TOKENS",
+    "DEFAULT_OPENAI_API_KEY_ENV",
+    "DEFAULT_OPENAI_MODEL",
+    "DEFAULT_OPENROUTER_API_KEY_ENV",
+    "DEFAULT_OPENROUTER_MODEL",
+    "DEFAULT_PROMPT",
+    "DEFAULT_PROVIDER",
+    "IMAGE_VLM_PROVIDERS",
+    "extract_markdown_from_image",
+    "normalize_provider",
+    "resolve_model_id",
+]
 
 _RESULT_CACHE: Dict[str, ImageMarkdownResult] = {}
 
@@ -44,7 +59,9 @@ def _disk_cache_dir() -> Path:
 _DISK_CACHE_DIR = _disk_cache_dir()
 
 
-def resolve_model_id(model_spec: Optional[str], *, provider: str = DEFAULT_PROVIDER) -> ModelResolution:
+def resolve_model_id(
+    model_spec: Optional[str], *, provider: str = DEFAULT_PROVIDER
+) -> ModelResolution:
     return get_provider(provider).resolve_model_id(model_spec)
 
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
-import xml.etree.ElementTree as ET
 
 
 def shape_id_of(elem: ET.Element, ns: Dict[str, str]) -> str:
@@ -89,7 +89,9 @@ def collect_table_overlay_pictures(
     rels_path: Optional[Path],
     *,
     ns: Dict[str, str],
-    resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
+    resolve_image_path_fn: Callable[
+        [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
+    ],
 ) -> Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int]:
     table_bboxes: List[Tuple[str, Tuple[int, int, int, int]]] = []
     picture_infos: List[Dict[str, object]] = []
@@ -193,7 +195,9 @@ def compute_table_cell_bounds(
     return col_bounds, row_bounds
 
 
-def find_table_cell_origin(parsed_table: Dict[str, object], row_idx: int, col_idx: int) -> Tuple[int, int]:
+def find_table_cell_origin(
+    parsed_table: Dict[str, object], row_idx: int, col_idx: int
+) -> Tuple[int, int]:
     rows = parsed_table.get("rows")
     if not isinstance(rows, list):
         return row_idx, col_idx
@@ -258,7 +262,9 @@ def collect_table_cell_fill_images(
     rels_path: Optional[Path],
     *,
     ns: Dict[str, str],
-    resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
+    resolve_image_path_fn: Callable[
+        [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
+    ],
 ) -> Tuple[List[Dict[str, object]], List[str], int, int]:
     tbl = graphic_frame.find(".//a:tbl", ns)
     if tbl is None:
@@ -300,7 +306,9 @@ def _table_cell_text(content: str) -> str:
     return "<br>".join(lines)
 
 
-def _append_cell_content(cell: Dict[str, object], content: str, normalize_text_fn: Callable[[str], str]) -> None:
+def _append_cell_content(
+    cell: Dict[str, object], content: str, normalize_text_fn: Callable[[str], str]
+) -> None:
     if not content:
         return
     existing_raw = str(cell.get("text", ""))
@@ -351,8 +359,22 @@ def _inject_table_images(
             if not (isinstance(bbox, tuple) and len(bbox) == 4):
                 continue
             center = bbox_center(bbox)
-            row_idx = next((idx for idx, (top, bottom) in enumerate(row_bounds) if top <= center[1] <= bottom), None)
-            col_idx = next((idx for idx, (left, right) in enumerate(col_bounds) if left <= center[0] <= right), None)
+            row_idx = next(
+                (
+                    idx
+                    for idx, (top, bottom) in enumerate(row_bounds)
+                    if top <= center[1] <= bottom
+                ),
+                None,
+            )
+            col_idx = next(
+                (
+                    idx
+                    for idx, (left, right) in enumerate(col_bounds)
+                    if left <= center[0] <= right
+                ),
+                None,
+            )
         if row_idx is None or col_idx is None:
             continue
         origin_row, origin_col = find_table_cell_origin(parsed_table, row_idx, col_idx)
@@ -406,7 +428,9 @@ def convert_table_to_markdown(
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
     overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
-    resolve_image_path_fn: Callable[[Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]],
+    resolve_image_path_fn: Callable[
+        [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
+    ],
 ) -> Tuple[Optional[str], Optional[str]]:
     tbl = graphic_frame.find(".//a:tbl", ns)
     if tbl is None:

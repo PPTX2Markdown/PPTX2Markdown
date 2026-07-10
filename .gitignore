@@ -12,6 +12,7 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+archives/
 
 # runtime inputs / outputs (never commit)
 output/

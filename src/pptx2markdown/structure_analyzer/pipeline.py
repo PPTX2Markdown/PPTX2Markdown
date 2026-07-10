@@ -1,27 +1,26 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
-import copy
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
-import xml.etree.ElementTree as ET
 
 from .constants import NS, REL_NS, REORDERABLE
 from .extractor import extract_slide_objects_xml
 from .structure import (
     OrderContext,
     SlideObject,
-    compute_heading_depths,
-    build_order_context,
     bucket,
+    build_order_context,
+    compute_heading_depths,
     heading_score,
     heading_threshold,
     order_objects,
     reason,
 )
 from .xml_primitives import local_name, natural_key
-
 
 SCHEMA_VERSION = "1.0"
 
@@ -92,8 +91,6 @@ def reorder_tree_by_indexes(tree: ET.ElementTree, ordered_xml_indexes: Sequence[
 
     children = list(sp_tree)
     reorderables = [child for child in children if local_name(child.tag) in REORDERABLE]
-    if not reorderables:
-        return
 
     idx_to_elem = {i + 1: elem for i, elem in enumerate(reorderables)}
     reordered_elems = [idx_to_elem[i] for i in ordered_xml_indexes if i in idx_to_elem]
@@ -118,7 +115,12 @@ def _qn(prefix: str, name: str) -> str:
     return f"{{{NS[prefix]}}}{name}"
 
 
-def _sub(parent: ET.Element, prefix: str, name: str, attrib: Optional[Dict[str, str]] = None) -> ET.Element:
+def _sub(
+    parent: ET.Element,
+    prefix: str,
+    name: str,
+    attrib: Optional[Dict[str, str]] = None,
+) -> ET.Element:
     return ET.SubElement(parent, _qn(prefix, name), attrib or {})
 
 
@@ -140,7 +142,10 @@ def _read_relationships(rels_path: Path) -> Dict[str, Dict[str, str]]:
 
 def _write_relationships(rels_path: Path, rels: Sequence[Dict[str, str]]) -> None:
     rels_path.parent.mkdir(parents=True, exist_ok=True)
-    root = ET.Element("Relationships", {"xmlns": "http://schemas.openxmlformats.org/package/2006/relationships"})
+    root = ET.Element(
+        "Relationships",
+        {"xmlns": "http://schemas.openxmlformats.org/package/2006/relationships"},
+    )
     for rel in rels:
         ET.SubElement(root, "Relationship", rel)
     tree = ET.ElementTree(root)
@@ -250,8 +255,6 @@ def materialize_tree_by_objects(
 
     children = list(sp_tree)
     reorderables = [child for child in children if local_name(child.tag) in REORDERABLE]
-    if not reorderables:
-        return
 
     idx_to_elem = {i + 1: elem for i, elem in enumerate(reorderables)}
     used_indexes: set[int] = set()
@@ -280,7 +283,12 @@ def materialize_tree_by_objects(
 
     for obj in ordered_objects:
         if obj.inheritance_kind == "materialized":
-            synthetic = _copy_materialized_shape(obj, source_elements, inherited_targets, rel_counter)
+            synthetic = _copy_materialized_shape(
+                obj,
+                source_elements,
+                inherited_targets,
+                rel_counter,
+            )
             if synthetic is not None:
                 ordered_elems.append(synthetic)
             continue
@@ -303,6 +311,8 @@ def materialize_tree_by_objects(
                 inserted = True
             continue
         new_children.append(child)
+    if not inserted:
+        new_children.extend(ordered_elems)
     sp_tree[:] = new_children
 
     rels: List[Dict[str, str]] = []
@@ -320,7 +330,9 @@ def materialize_tree_by_objects(
         rels.append(
             {
                 "Id": rid,
-                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+                "Type": (
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
+                ),
                 "Target": target,
             }
         )
@@ -348,7 +360,9 @@ def gather_input_files(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path
             files.append(selected.resolve())
     else:
         if target_dir.exists() and not target_dir.is_dir():
-            raise NotADirectoryError(f"target_slides path exists but is not a directory: {target_dir}")
+            raise NotADirectoryError(
+                f"target_slides path exists but is not a directory: {target_dir}"
+            )
         target_dir.mkdir(parents=True, exist_ok=True)
         files = sorted(target_dir.glob("*.xml"), key=natural_key)
         files = [f.resolve() for f in files if f.is_file()]
@@ -357,6 +371,73 @@ def gather_input_files(target_dir: Path, raw_inputs: Sequence[str]) -> List[Path
     for file in files:
         unique[str(file)] = file
     return list(unique.values())
+
+
+def _object_counts(objects: Sequence[SlideObject], meta: Dict[str, object]) -> Dict[str, int]:
+    return {
+        "total": len(objects),
+        "text": sum(1 for obj in objects if bool(obj.normalized)),
+        "graphicFrame": sum(1 for obj in objects if obj.tag == "graphicFrame"),
+        "pic": sum(1 for obj in objects if obj.tag == "pic"),
+        "footer": sum(1 for obj in objects if obj.is_footer),
+        "decorative": sum(1 for obj in objects if obj.is_decorative),
+        "layout_coord_used": sum(1 for obj in objects if obj.coord_source == "layout"),
+        "master_coord_used": sum(1 for obj in objects if obj.coord_source == "master"),
+        "materialized": sum(1 for obj in objects if obj.inheritance_kind == "materialized"),
+        "materialized_layout": sum(
+            1
+            for obj in objects
+            if obj.inheritance_kind == "materialized" and obj.source_part == "layout"
+        ),
+        "materialized_master": sum(
+            1
+            for obj in objects
+            if obj.inheritance_kind == "materialized" and obj.source_part == "master"
+        ),
+        "xml_tables": len(meta.get("xml_tables", [])),
+        "xml_images": len(meta.get("xml_images", [])),
+        "groups": int(meta.get("group_count", 0)),
+    }
+
+
+def _analysis_report(
+    *,
+    slide_xml: Path,
+    xml_path: Path,
+    objects: Sequence[SlideObject],
+    ordered: Sequence[SlideObject],
+    context: OrderContext,
+    heading_depths: Dict[str, Optional[int]],
+    raw_heading_depths: Dict[str, Optional[int]],
+    ordered_indexes: Sequence[int],
+    meta: Dict[str, object],
+    mode: str,
+    strict: bool,
+) -> Dict[str, object]:
+    raw_objects = sorted(objects, key=lambda obj: obj.xml_index)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "input_xml": str(slide_xml),
+        "mode": mode,
+        "strict": strict,
+        "pptx_inheritance": meta.get("pptx_inheritance"),
+        "inherited_shapes": meta.get("inherited_shapes"),
+        "layout_xml": meta.get("layout_xml"),
+        "master_xml": meta.get("master_xml"),
+        "confidence": confidence(objects),
+        "counts": _object_counts(objects, meta),
+        "flattened_groups": bool(meta.get("flattened_groups", False)),
+        "xml_tables": meta.get("xml_tables", []),
+        "xml_images": meta.get("xml_images", []),
+        "structure_order": [
+            object_to_dict(obj, context, heading_depths, strict=strict) for obj in ordered
+        ],
+        "raw_xml_order": [
+            object_to_dict(obj, context, raw_heading_depths, strict=strict) for obj in raw_objects
+        ],
+        "ordered_xml_indexes": list(ordered_indexes),
+        "output_structure_xml": str(xml_path),
+    }
 
 
 def write_outputs(
@@ -379,7 +460,8 @@ def write_outputs(
     ordered = order_objects(objects, mode=mode)
 
     ordered_heading_depths = compute_heading_depths(ordered, context, strict=strict)
-    raw_heading_depths = compute_heading_depths(sorted(objects, key=lambda x: x.xml_index), context, strict=strict)
+    raw_objects = sorted(objects, key=lambda obj: obj.xml_index)
+    raw_heading_depths = compute_heading_depths(raw_objects, context, strict=strict)
     ordered_indexes = [obj.xml_index for obj in ordered]
 
     tree = ET.parse(slide_xml)
@@ -399,43 +481,19 @@ def write_outputs(
     json_path = output_dir / f"{stem}.structure_analysis.json"
     xml_path = output_dir / f"{stem}.reordered.xml"
 
-    report: Dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
-        "input_xml": str(slide_xml),
-        "mode": mode,
-        "strict": strict,
-        "pptx_inheritance": meta.get("pptx_inheritance"),
-        "inherited_shapes": meta.get("inherited_shapes"),
-        "layout_xml": meta.get("layout_xml"),
-        "master_xml": meta.get("master_xml"),
-        "confidence": confidence(objects),
-        "counts": {
-            "total": len(objects),
-            "text": sum(1 for obj in objects if bool(obj.normalized)),
-            "graphicFrame": sum(1 for obj in objects if obj.tag == "graphicFrame"),
-            "pic": sum(1 for obj in objects if obj.tag == "pic"),
-            "footer": sum(1 for obj in objects if obj.is_footer),
-            "decorative": sum(1 for obj in objects if obj.is_decorative),
-            "layout_coord_used": sum(1 for obj in objects if obj.coord_source == "layout"),
-            "master_coord_used": sum(1 for obj in objects if obj.coord_source == "master"),
-            "materialized": sum(1 for obj in objects if obj.inheritance_kind == "materialized"),
-            "materialized_layout": sum(1 for obj in objects if obj.inheritance_kind == "materialized" and obj.source_part == "layout"),
-            "materialized_master": sum(1 for obj in objects if obj.inheritance_kind == "materialized" and obj.source_part == "master"),
-            "xml_tables": len(meta.get("xml_tables", [])),
-            "xml_images": len(meta.get("xml_images", [])),
-            "groups": int(meta.get("group_count", 0)),
-        },
-        "flattened_groups": bool(meta.get("flattened_groups", False)),
-        "xml_tables": meta.get("xml_tables", []),
-        "xml_images": meta.get("xml_images", []),
-        "structure_order": [object_to_dict(obj, context, ordered_heading_depths, strict=strict) for obj in ordered],
-        "raw_xml_order": [
-            object_to_dict(obj, context, raw_heading_depths, strict=strict)
-            for obj in sorted(objects, key=lambda x: x.xml_index)
-        ],
-        "ordered_xml_indexes": ordered_indexes,
-        "output_structure_xml": str(xml_path),
-    }
+    report = _analysis_report(
+        slide_xml=slide_xml,
+        xml_path=xml_path,
+        objects=objects,
+        ordered=ordered,
+        context=context,
+        heading_depths=ordered_heading_depths,
+        raw_heading_depths=raw_heading_depths,
+        ordered_indexes=ordered_indexes,
+        meta=meta,
+        mode=mode,
+        strict=strict,
+    )
 
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

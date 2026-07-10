@@ -13,7 +13,12 @@ def normalize_text(text: str) -> str:
 
 def is_numbered_heading_text(text: str) -> bool:
     value = normalize_text(text)
-    return bool(re.match(r"^(?:\d+\.\d+(?:\.\d+)*\.?|\d+\.)\s+", value))
+    return bool(
+        re.match(
+            r"^(?:\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?|\d+\s*\.)\s+",
+            value,
+        )
+    )
 
 
 def strip_leading_heading_markers(text: str) -> str:
@@ -31,19 +36,19 @@ def numbered_suggested_depth(
     raw = strip_leading_heading_markers(text)
     if not raw:
         return None
-    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", raw):
+    if re.match(r"^\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?\s+", raw):
         if last_section_depth is not None:
             return min(last_section_depth + 1, 3)
         return 2 if seen_title else 1
-    if re.match(r"^\d+\.\s+", raw):
+    if re.match(r"^\d+\s*\.\s+", raw):
         return 2
     return None
 
 
 def numbered_heading_kind(text: str) -> Optional[str]:
     value = normalize_text(text)
-    if re.match(r"^\d+\.\d+(?:\.\d+)*\.?\s+", value):
+    if re.match(r"^\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?\s+", value):
         return "dotted-multi"
-    if re.match(r"^\d+\.\s+", value):
+    if re.match(r"^\d+\s*\.\s+", value):
         return "dotted-single"
     return None

@@ -8,14 +8,16 @@ from typing import Any, Dict, Optional
 
 from .constants import QWEN_VL_MODELS
 from .markdown_postprocess import normalize_markdown
-from .schemas import ImageMarkdownResult, ModelResolution
-
+from .provider_base import ImageMarkdownResult, ModelResolution
 
 _MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 
 warnings.filterwarnings(
     "ignore",
-    message=r"Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers\..*",
+    message=(
+        r"Using `TRANSFORMERS_CACHE` is deprecated and will be removed "
+        r"in v5 of Transformers\..*"
+    ),
     category=FutureWarning,
 )
 

@@ -2,11 +2,11 @@
 
 [![PyPI](https://img.shields.io/pypi/v/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
 [![Python](https://img.shields.io/pypi/pyversions/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
 
 PowerPoint(`.pptx` / `.ppt`) 프레젠테이션을 깔끔하고 구조화된 Markdown으로 변환합니다 — RAG 파이프라인과 문서 처리를 위해 설계되었습니다.
 
-[English README](README.md)
+[English README](https://github.com/PPTX2Markdown/PPTX2Markdown#readme)
 
 ## 주요 기능
 
@@ -45,7 +45,7 @@ Windows에서는 PowerPoint가 설치되어 있으면 `.ppt` 변환에 COM 자�
 ## 빠른 시작
 
 ```bash
-# 파일 하나 변환 → ./output/xml/deck/result.md
+# 파일 하나 변환 → ./output/xml/deck/deck.md
 pptx2markdown deck.pptx
 
 # 현재 디렉터리의 모든 .pptx/.ppt 변환
@@ -99,7 +99,7 @@ VLM 결과는 `~/.cache/pptx2markdown/`에 캐시됩니다(`PPTX2MARKDOWN_CACHE_
 | --- | --- | --- |
 | `-o, --output-dir` | `./output` | 변환된 Markdown 출력 위치 |
 | `--work-dir` | `./.pptx2markdown` | 중간 파일(추출, 캐시) 위치 |
-| `--not-strict` | off | 완화된 헤딩 판정 |
+| `--headings` | `auto` | 헤딩 판정 방식 (`auto`/`strict`/`surya`) |
 | `--placeholder-inheritance` | `style` | 레이아웃/마스터 스타일 상속 범위 (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | 레이아웃/마스터 도형 반영 (`none`/`visible`/`all`) |
 | `--ppt-converter` | `auto` | `.ppt` 변환 백엔드 (`powerpoint`/`libreoffice`) |
@@ -114,7 +114,7 @@ output/
 └── xml/                    # 읽기 순서 모드별 폴더
     ├── convert_manifest.json
     └── <deck-name>/
-        ├── result.md
+        ├── <deck-name>.md
         └── media/          # 복사된 이미지 asset
 ```
 
@@ -122,11 +122,11 @@ output/
 
 ## 문서
 
-- [메인 컨버터 내부 구조](docs/main_converter.md)
-- [이미지 VLM 파이프라인](docs/image_pipeline.md)
-- [구조 분석기](docs/structure_analyzer.md)
-- [Surya 파이프라인](docs/surya_pipeline.md)
+- [메인 컨버터 내부 구조](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
+- [이미지 VLM 파이프라인](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/image_pipeline.md)
+- [구조 분석기](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
+- [Surya 파이프라인](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/surya_pipeline.md)
 
 ## 라이선스
 
-[MIT](LICENSE)
+[MIT](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
