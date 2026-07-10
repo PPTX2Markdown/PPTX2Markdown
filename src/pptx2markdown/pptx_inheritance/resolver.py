@@ -20,6 +20,7 @@ from pptx2markdown.structure_analyzer.constants import (
 )
 from pptx2markdown.structure_analyzer.text_rules import is_numbered_heading_text, normalize_text
 from pptx2markdown.structure_analyzer.xml_primitives import (
+    contains_math,
     extract_bbox_emu,
     first_off,
     get_nvpr_paths,
@@ -508,7 +509,7 @@ def is_decorative(tag: str, text: str, elem: Optional[ET.Element] = None, ph_typ
         return True
     if tag == "pic" and ph_type is not None and (elem is None or not _has_embedded_image(elem)):
         return True
-    if not (text or "").strip() and tag not in {"pic", "graphicFrame"}:
+    if not (text or "").strip() and not contains_math(elem) and tag not in {"pic", "graphicFrame"}:
         return True
     return False
 

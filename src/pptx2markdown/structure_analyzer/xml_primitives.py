@@ -92,3 +92,16 @@ def register_xml_namespaces() -> None:
     ET.register_namespace("a", NS["a"])
     ET.register_namespace("p", NS["p"])
     ET.register_namespace("r", NS["r"])
+
+
+# 도형 요소 안에 OMML 수식(oMath/oMathPara)이 포함되어 있는지 검사한다.
+# 일반 텍스트 런(a:t)이 없어도 수식만으로 의미 있는 본문일 수 있으므로
+# decorative(장식) 판정에서 이 결과를 함께 고려해야 한다.
+def contains_math(elem: Optional[ET.Element]) -> bool:
+    if elem is None:
+        return False
+    for node in elem.iter():
+        tag = node.tag
+        if isinstance(tag, str) and tag.rsplit("}", 1)[-1] in {"oMath", "oMathPara"}:
+            return True
+    return False

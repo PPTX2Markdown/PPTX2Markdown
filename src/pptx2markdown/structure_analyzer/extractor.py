@@ -20,6 +20,7 @@ from .constants import (
 from .structure import SlideObject
 from .text_rules import is_numbered_heading_text, normalize_text
 from .xml_primitives import (
+    contains_math,
     first_off,
     get_nvpr_paths,
     local_name,
@@ -153,11 +154,11 @@ def looks_heading(text: str, ph_type: Optional[str], strict: bool = False) -> bo
     return False
 
 
-def is_decorative(tag: str, text: str) -> bool:
+def is_decorative(tag: str, text: str, elem: Optional[ET.Element] = None) -> bool:
     normalized = normalize_text(text)
     if tag == "cxnSp":
         return True
-    if not normalized and tag not in {"pic", "graphicFrame"}:
+    if not normalized and not contains_math(elem) and tag not in {"pic", "graphicFrame"}:
         return True
     return False
 
@@ -439,7 +440,7 @@ def extract_slide_objects_xml(
         font_pt = extract_font_pt(child)
         list_kind = None
         list_level = None
-        is_decorative_value = is_decorative(tag, text)
+        is_decorative_value = is_decorative(tag, text, child)
         is_heading_value = looks_heading(text, ph_type, strict=strict)
         source_part = "slide"
         inheritance_kind = "placeholder" if coord_source in {"layout", "master"} else "direct"
