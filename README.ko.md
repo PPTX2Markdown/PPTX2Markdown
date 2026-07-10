@@ -53,6 +53,9 @@ pptx2markdown
 
 # 출력 디렉터리 지정
 pptx2markdown deck.pptx -o converted/
+
+# Markdown 대신 표준 중간표현 JSON 출력
+pptx2markdown deck.pptx --output-format json
 ```
 
 Python에서:
@@ -97,8 +100,9 @@ VLM 결과는 `~/.cache/pptx2markdown/`에 캐시됩니다(`PPTX2MARKDOWN_CACHE_
 
 | 플래그 | 기본값 | 설명 |
 | --- | --- | --- |
-| `-o, --output-dir` | `./output` | 변환된 Markdown 출력 위치 |
+| `-o, --output-dir` | `./output` | 변환 결과 출력 위치 |
 | `--work-dir` | `./.pptx2markdown` | 중간 파일(추출, 캐시) 위치 |
+| `--output-format` | `markdown` | 최종 출력 형식 (`markdown`/`json`) |
 | `--headings` | `auto` | 헤딩 판정 방식 (`auto`/`strict`/`surya`) |
 | `--placeholder-inheritance` | `style` | 레이아웃/마스터 스타일 상속 범위 (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | 레이아웃/마스터 도형 반영 (`none`/`visible`/`all`) |
@@ -114,11 +118,14 @@ output/
 └── xml/                    # 읽기 순서 모드별 폴더
     ├── convert_manifest.json
     └── <deck-name>/
-        ├── <deck-name>.md
+        ├── <deck-name>.md     # 또는 <deck-name>.json
         └── media/          # 복사된 이미지 asset
 ```
 
 `convert_manifest.json`에는 슬라이드별 상태, 경고, 블록 통계가 기록됩니다.
+JSON 출력은 Markdown 렌더러가 사용하는 것과 동일한 `PresentationDocument`
+중간표현입니다. 각 슬라이드는 읽기 순서대로 정렬된 블록을 가지며 블록에는
+`kind`, `content`, `shape_id`, 선택적 `heading_level` 필드가 들어갑니다.
 
 ## 문서
 

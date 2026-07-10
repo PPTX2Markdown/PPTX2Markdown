@@ -1,6 +1,7 @@
 # main_converter
 
-`main_converter/run_pptx_to_markdown.py`는 PPTX를 Markdown으로 변환하는 메인 진입점입니다.
+`main_converter/run_pptx_to_markdown.py`는 PPTX를 공통 중간표현으로 변환한 뒤
+Markdown 또는 JSON으로 출력하는 메인 진입점입니다.
 
 ## 현재 입력 정책
 
@@ -18,7 +19,8 @@
 
 출력 루트: `output/<reading-order>/`
 
-- 패키지 결과: `output/<reading-order>/<package>/result.md`
+- 패키지 결과: `output/<reading-order>/<package>/<package>.md`
+- JSON 옵션 결과: `output/<reading-order>/<package>/<package>.json`
 - 매니페스트: `output/<reading-order>/convert_manifest.json`
 - 이미지 복사본: `output/<reading-order>/<package>/media/*`
 
@@ -41,6 +43,16 @@ python run_pptx_to_markdown.py
 ```bash
 python main_converter/run_pptx_to_markdown.py sample3.pptx sample4.pptx
 ```
+
+JSON 중간표현을 최종 출력으로 저장:
+
+```bash
+pptx2markdown sample3.pptx --output-format json
+```
+
+슬라이드 변환기는 `PresentationDocument` 안에 `SlideDocument`와 순서가 보장된
+`ContentBlock`을 생성합니다. Markdown 출력은 이 중간표현만 해석하므로 JSON과
+Markdown 출력 경로가 별도의 파싱 로직을 갖지 않습니다.
 
 # Reading Order 모드
 
@@ -75,7 +87,7 @@ python main_converter/run_pptx_to_markdown.py --reading-order surya sample3.pptx
 ## 주요 옵션
 
 - `--reading-order {xml|surya|xycut}`
-- 기본값은 `strict` heading 판정
-- `--not-strict` (xml 모드 전용)
+- `--output-format {markdown|json}`
+- `--headings {auto|strict|surya}` (`auto`가 기본값)
 - `--reuse-surya-cache`
-- `--image-table-pipeline`
+- `--image-vlm-provider {local|gemini|openai|openrouter}`

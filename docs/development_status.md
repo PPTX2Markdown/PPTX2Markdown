@@ -9,9 +9,8 @@ continue without reconstructing the history from chat logs. Read this file and
 ## Repository State
 
 - Active branch: `dev`
-- Current committed HEAD when this document was created: `65cafa7`
-- The worktree contains intentional, uncommitted changes. Do not reset or
-  discard them.
+- Baseline commit before the geometry-only XYCut and JSON IR work: `4919d68`.
+- Check `git status --short` before editing and preserve any listed changes.
 - `pptx_samples/`, `output/`, and `.pptx2markdown/` are local QA inputs and
   generated artifacts. They are not release source files.
 - The version immediately before the PyPI restructure is commit `f6fc8c4`.
@@ -43,7 +42,7 @@ continue without reconstructing the history from chat logs. Read this file and
 - Simplified structure-analysis reporting and inheritance resolver formatting.
 - Preserved existing pipeline behavior with sample smoke tests.
 
-### XYCut regression recovery
+### Geometry-only XYCut
 
 Git history showed the following sequence:
 
@@ -52,14 +51,33 @@ Git history showed the following sequence:
 - `36b4e3a`: exposed the removed, pre-inheritance implementation again during
   the PyPI package restructure.
 
-The recovered implementation now:
+Numbering and comparison-heading overrides added during regression recovery
+were not part of the original XYCut algorithm and have been removed. XYCut now:
 
-- honors an explicit contiguous numbering sequence when every object in the
-  region supplies one;
-- keeps comparison-column headings with the body below each heading;
-- retains the prior Y-then-X XYCut behavior as the fallback.
+- uses only shape bounding boxes;
+- applies Y projection cuts followed by recursive X projection cuts;
+- does not use text, numbering, heading, placeholder, footer, or decorative
+  classifications to change the order;
+- does not synthesize missing width or height from text content;
+- appends objects without usable coordinates by XML index because no geometric
+  cut can be calculated for them.
+
+The legacy XML ordering mode remains separate and unchanged.
 
 Regression coverage is in `tests/test_xycut_reading_order.py`.
+
+### JSON intermediate representation
+
+- Every slide is parsed into ordered `ContentBlock` objects inside a
+  `PresentationDocument` before final output is selected.
+- Markdown is rendered only from that document; slide handlers no longer build
+  the final Markdown file directly.
+- `--output-format json` and `pptx2markdown.convert(..., output_format="json")`
+  write the same document as `<deck-name>.json` instead of Markdown.
+- The JSON schema records `schema_version`, source, reading-order mode, pages,
+  block kinds, content, shape IDs, and heading levels.
+- Tests validate JSON round trips and confirm that rendering a JSON output
+  reproduces the Markdown-mode output.
 
 ### Content regression fixes
 
@@ -114,26 +132,29 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 
 ## Latest Verification Baseline
 
-The following checks passed after completing work items 1 through 4:
+The following checks passed after the geometry-only XYCut and JSON intermediate
+representation changes:
 
 - `python -m compileall -q src/pptx2markdown tests`
-- `PYTHONPATH=src python -m unittest discover -v`: 13 tests passed
+- `PYTHONPATH=src python -m unittest discover -v`: 16 tests passed
 - `ruff check src tests`
 - `ruff format --check src tests`
 - all 12 local sample decks: 128 slides converted, 0 slide failures
 - 50 math blocks, 35 charts, 15 SmartArt objects, and 39 tables converted
 - 25 meaningful images resolved and 0 images unresolved after inherited
   decoration filtering
-- wheel and sdist built successfully from the current worktree
-- `twine check` passed for both artifacts
-- the wheel-installed CLI converted all 17 slides and charts in `chart.pptx`
-- the table pipeline directly processed 15 slides and rendered 15 tables from
-  `table_demo.pptx` with 0 errors after dead-code removal
+- CLI help exposes `--output-format {markdown,json}`.
+- JSON output for `reading_order_test.pptx` converted 4 slides with 0 failures.
+- Re-rendering that JSON produced the same content as Markdown mode.
 
-The XYCut recovery intentionally changed these pages relative to the broken
-pre-fix output:
+Wheel/sdist and Twine checks passed for commit `4919d68`. They could not be
+rerun after this work item because the active virtual environment does not have
+`build`, Hatchling, or Twine installed, and network access is unavailable.
 
-- `reading_order_test.pptx`: slides 3 and 4
+Pure geometric XYCut produces row-first order on these semantic layouts:
+
+- `reading_order_test.pptx`: slide 3 orders the two-column numbered blocks by
+  geometry, not by their number text
 - `문제점 목록 발표.pptx`: slide 15
 
 ## Known Issues
@@ -159,8 +180,10 @@ or mixed-responsibility functions only where the result is easier to read.
 
 - `src/pptx2markdown/main_converter/run_pptx_to_markdown.py`: conversion
   orchestration, relationship resolution, chart and SmartArt adapters.
-- `src/pptx2markdown/main_converter/slide_converter.py`: slide object rendering
-  into Markdown.
+- `src/pptx2markdown/main_converter/slide_converter.py`: slide XML parsing into
+  the common intermediate document.
+- `src/pptx2markdown/main_converter/converter_models.py`: intermediate models
+  and Markdown renderer.
 - `src/pptx2markdown/structure_analyzer/structure.py`: reading order and heading
   depth rules.
 - `src/pptx2markdown/structure_analyzer/pipeline.py`: structure sidecars and
@@ -169,6 +192,7 @@ or mixed-responsibility functions only where the result is easier to read.
   slide/layout/master object resolution.
 - `tests/test_xycut_reading_order.py`: current regression tests.
 - `tests/test_content_regressions.py`: focused content-loss regression tests.
+- `tests/test_intermediate_document.py`: JSON round-trip and renderer contract.
 - `tests/test_sample_regressions.py`: local end-to-end sample contracts.
 
 ## New Context Startup

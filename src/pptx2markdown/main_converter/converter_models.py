@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -59,6 +59,66 @@ class ShapeBlock:
         return bool(non_empty) and all(
             segment.kind in {"math_inline", "math_block"} for segment in non_empty
         )
+
+
+class ContentBlock(BaseModel):
+    """A rendered content unit in presentation reading order."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[
+        "text",
+        "heading",
+        "list",
+        "math",
+        "image",
+        "chart",
+        "smartart",
+        "table",
+        "unsupported",
+        "unmatched",
+    ]
+    content: str
+    shape_id: Optional[str] = None
+    heading_level: Optional[int] = Field(default=None, ge=1, le=6)
+
+
+class SlideDocument(BaseModel):
+    """JSON-serializable intermediate representation for one slide."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: int
+    blocks: List[ContentBlock] = Field(default_factory=list)
+
+
+class PresentationDocument(BaseModel):
+    """Canonical intermediate representation shared by all output formats."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "1.0"
+    source: str
+    reading_order: str
+    slides: List[SlideDocument] = Field(default_factory=list)
+
+
+def render_slide_markdown(slide: SlideDocument) -> str:
+    parts = [f"[Page_{slide.page}]"]
+    for block in slide.blocks:
+        content = block.content.strip()
+        if not content:
+            continue
+        if block.kind == "heading" and block.heading_level is not None:
+            content = f"{'#' * block.heading_level} {content}"
+        parts.append(content)
+    return "\n\n".join(parts).rstrip() + "\n"
+
+
+def render_presentation_markdown(document: PresentationDocument) -> str:
+    rendered_slides = [render_slide_markdown(slide).rstrip() for slide in document.slides]
+    merged = "\n\n".join(rendered_slides).strip()
+    return f"{merged}\n" if merged else ""
 
 
 class SlideStats(BaseModel):
@@ -171,6 +231,13 @@ class PreparedPackage(BaseModel):
     def output_markdown_path(self, output_dir: Path) -> Path:
         return output_dir / self.name / self.output_markdown_name
 
+    @property
+    def output_json_name(self) -> str:
+        return f"{self.source_stem}.json"
+
+    def output_json_path(self, output_dir: Path) -> Path:
+        return output_dir / self.name / self.output_json_name
+
     def with_package_dir(self, package_dir: Path) -> "PreparedPackage":
         return self.model_copy(update={"package_dir": package_dir})
 
@@ -183,6 +250,7 @@ class ConverterConfig(BaseModel):
     output_dir: Path
     inputs: List[str] = Field(default_factory=list)
     reading_order: str = "xml"
+    output_format: str = "markdown"
     heading_mode: str = "auto"
     strict: bool = False
     pptx_inheritance: str = "style"

@@ -20,6 +20,7 @@ def convert(
     *,
     output_dir: Optional[PathLike] = None,
     work_dir: Optional[PathLike] = None,
+    output_format: str = "markdown",
     reading_order: str = "xml",
     headings: str = "auto",
     strict_headings: Optional[bool] = None,
@@ -35,15 +36,16 @@ def convert(
     ignore_image_vlm_cache: bool = False,
     verbose: bool = False,
 ) -> int:
-    """Convert PPTX/PPT file(s) to markdown.
+    """Convert PPTX/PPT file(s) to Markdown or JSON.
 
     Args:
         inputs: A path or list of paths to ``.pptx``/``.ppt`` files. If omitted,
             every presentation in the current directory is processed.
-        output_dir: Where converted markdown is written
+        output_dir: Where converted output is written
             (default: ``./output``).
         work_dir: Where intermediate artifacts and caches live
             (default: ``./.pptx2markdown``).
+        output_format: ``"markdown"`` (default) or ``"json"``.
         reading_order: ``"xml"`` (default), ``"xycut"``, or ``"surya"``
             (requires the ``pptx2markdown[surya]`` extra).
         image_vlm_provider: Enable image-to-markdown via a VLM:
@@ -82,6 +84,7 @@ def convert(
         inputs=input_list,
         output_dir=str(output_dir) if output_dir else None,
         work_dir=str(work_dir) if work_dir else None,
+        output_format=output_format,
         reading_order=reading_order,
         headings=heading_mode,
         legacy_not_strict=False,

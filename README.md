@@ -53,6 +53,9 @@ pptx2markdown
 
 # Choose the output directory
 pptx2markdown deck.pptx -o converted/
+
+# Write the canonical intermediate representation instead of Markdown
+pptx2markdown deck.pptx --output-format json
 ```
 
 Or from Python:
@@ -97,8 +100,9 @@ VLM results are cached in `~/.cache/pptx2markdown/` (override with `PPTX2MARKDOW
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-o, --output-dir` | `./output` | Where converted Markdown is written |
+| `-o, --output-dir` | `./output` | Where converted output is written |
 | `--work-dir` | `./.pptx2markdown` | Intermediate files (extraction, caches) |
+| `--output-format` | `markdown` | Final output (`markdown`/`json`) |
 | `--headings` | `auto` | Heading detection (`auto`/`strict`/`surya`) |
 | `--placeholder-inheritance` | `style` | How much layout/master style to inherit (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | Materialize layout/master shapes (`none`/`visible`/`all`) |
@@ -114,11 +118,14 @@ output/
 └── xml/                    # one folder per reading-order mode
     ├── convert_manifest.json
     └── <deck-name>/
-        ├── <deck-name>.md
+        ├── <deck-name>.md     # or <deck-name>.json
         └── media/          # copied image assets
 ```
 
 `convert_manifest.json` records per-slide status, warnings, and block statistics.
+JSON output uses the same `PresentationDocument` intermediate representation that
+the Markdown renderer consumes. Slides contain ordered blocks with `kind`,
+`content`, `shape_id`, and optional `heading_level` fields.
 
 ## Documentation
 

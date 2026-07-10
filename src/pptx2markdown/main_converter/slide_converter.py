@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .converter_models import ShapeBlock, SlideStats
+from .converter_models import ContentBlock, ShapeBlock, SlideDocument, SlideStats
 from .heading_rules import (
     HeadingPolicy,
 )
@@ -112,7 +112,6 @@ class SlideConversionDeps:
         ],
         Tuple[Optional[str], Optional[str]],
     ]
-    normalize_single_heading_to_h1: Callable[[List[str]], List[str]]
 
 
 @dataclass
@@ -369,19 +368,29 @@ def _table_overlay_shape_entries(items: Sequence[FlattenedShape]) -> List[Dict[s
 
 
 def _append_rendered_text_block(
-    lines: List[str], rendered: str, deps: SlideConversionDeps
+    blocks: List[ContentBlock],
+    rendered: str,
+    *,
+    shape_id: str,
+    kind: str,
+    heading_level: Optional[int],
+    deps: SlideConversionDeps,
 ) -> None:
-    if rendered.startswith("#"):
-        lines.append(rendered)
-        lines.append("")
-        return
-    rendered_lines = deps.split_triangle_bullets(rendered)
-    if rendered_lines:
-        lines.extend(rendered_lines)
-        lines.append("")
-        return
-    lines.append(rendered)
-    lines.append("")
+    if kind != "heading":
+        has_triangle_bullet = "▶" in rendered
+        rendered_lines = deps.split_triangle_bullets(rendered)
+        if rendered_lines:
+            rendered = "\n".join(rendered_lines)
+        if has_triangle_bullet:
+            kind = "list"
+    blocks.append(
+        ContentBlock(
+            kind=kind,
+            content=rendered,
+            shape_id=shape_id or None,
+            heading_level=heading_level,
+        )
+    )
 
 
 def _apply_effective_list_properties(
@@ -420,7 +429,7 @@ def _apply_effective_list_properties(
 
 
 def _append_unmatched_marker(
-    lines: List[str],
+    blocks: List[ContentBlock],
     child: ET.Element,
     context: SlideConversionContext,
     deps: SlideConversionDeps,
@@ -428,14 +437,13 @@ def _append_unmatched_marker(
     sid = deps.shape_id_of(child)
     hint = context.heading_hints.get(sid, {})
     if hint.get("reading_order_source") == "xml_append":
-        lines.append(UNMATCHED_MARKER)
-        lines.append("")
+        blocks.append(ContentBlock(kind="unmatched", content=UNMATCHED_MARKER, shape_id=sid))
 
 
 def _handle_text_shape_block(
     child: ET.Element,
     *,
-    lines: List[str],
+    blocks: List[ContentBlock],
     heading_policy: HeadingPolicy,
     strict_headings: bool,
     state: SlideRenderState,
@@ -582,6 +590,8 @@ def _handle_text_shape_block(
                 strong_heading_signal = True
 
     rendered = text
+    block_kind = "math" if has_math_shape else "text"
+    heading_level: Optional[int] = None
     if context.heading_mode != "surya" and not strict_headings and not strong_heading_signal:
         if has_list_semantics:
             is_candidate = False
@@ -604,14 +614,25 @@ def _handle_text_shape_block(
             heading_text = hr_clean_heading_text_for_render(heading_source)
         key = deps.normalize_text(heading_text)
         if key not in state.used_headings:
-            rendered = f"{'#' * depth} {heading_text}"
+            rendered = heading_text
+            block_kind = "heading"
+            heading_level = depth
             state.used_headings.add(key)
         else:
             stats.skipped_blocks += 1
             return
 
-    _append_unmatched_marker(lines, child, context, deps)
-    _append_rendered_text_block(lines, rendered, deps)
+    _append_unmatched_marker(blocks, child, context, deps)
+    if has_list_semantics and block_kind == "text":
+        block_kind = "list"
+    _append_rendered_text_block(
+        blocks,
+        rendered,
+        shape_id=sid,
+        kind=block_kind,
+        heading_level=heading_level,
+        deps=deps,
+    )
     stats.text_blocks += 1
     state.text_block_index += 1
 
@@ -619,7 +640,7 @@ def _handle_text_shape_block(
 def _handle_picture_block(
     child: ET.Element,
     *,
-    lines: List[str],
+    blocks: List[ContentBlock],
     state: SlideRenderState,
     stats: SlideStats,
     context: SlideConversionContext,
@@ -660,29 +681,36 @@ def _handle_picture_block(
         else:
             stats.warnings.append(image_warn)
 
-    _append_unmatched_marker(lines, child, context, deps)
-    lines.append(rendered_image)
-    lines.append("")
+    _append_unmatched_marker(blocks, child, context, deps)
+    blocks.append(ContentBlock(kind="image", content=rendered_image, shape_id=sid or None))
     stats.image_blocks += 1
 
 
-def _append_unsupported_graphic_frame(lines: List[str], stats: SlideStats) -> None:
-    lines.append("[unsupported: graphicFrame(non-table)]")
-    lines.append("")
+def _append_unsupported_graphic_frame(
+    blocks: List[ContentBlock], stats: SlideStats, shape_id: str
+) -> None:
+    blocks.append(
+        ContentBlock(
+            kind="unsupported",
+            content="[unsupported: graphicFrame(non-table)]",
+            shape_id=shape_id or None,
+        )
+    )
     stats.unsupported_blocks += 1
 
 
 def _handle_graphic_frame_block(
     child: ET.Element,
     *,
-    lines: List[str],
+    blocks: List[ContentBlock],
     state: SlideRenderState,
     stats: SlideStats,
     context: SlideConversionContext,
     assets: SlideRenderAssets,
     deps: SlideConversionDeps,
 ) -> None:
-    _append_unmatched_marker(lines, child, context, deps)
+    shape_id = deps.shape_id_of(child)
+    _append_unmatched_marker(blocks, child, context, deps)
     gf_kind = deps.graphic_frame_kind(child)
     if gf_kind == "chart":
         chart_md, chart_err = deps.convert_chart_to_markdown(
@@ -692,11 +720,12 @@ def _handle_graphic_frame_block(
             context.source_pptx_path,
         )
         if chart_md is not None:
-            lines.append(chart_md.strip())
-            lines.append("")
+            blocks.append(
+                ContentBlock(kind="chart", content=chart_md.strip(), shape_id=shape_id or None)
+            )
             stats.chart_blocks += 1
             return
-        _append_unsupported_graphic_frame(lines, stats)
+        _append_unsupported_graphic_frame(blocks, stats, shape_id)
         if chart_err:
             stats.warnings.append(chart_err)
         return
@@ -711,17 +740,18 @@ def _handle_graphic_frame_block(
             assets.media_dir,
         )
         if smartart_md:
-            lines.append(smartart_md)
-            lines.append("")
+            blocks.append(
+                ContentBlock(kind="smartart", content=smartart_md, shape_id=shape_id or None)
+            )
             stats.smartart_blocks += 1
         else:
-            _append_unsupported_graphic_frame(lines, stats)
+            _append_unsupported_graphic_frame(blocks, stats, shape_id)
             stats.warnings.append(smartart_err or "smartart conversion failed")
         return
 
     table_md, err = deps.convert_table_to_markdown(
         child,
-        overlays=context.table_overlay_map.get(deps.shape_id_of(child), []),
+        overlays=context.table_overlay_map.get(shape_id, []),
         output_dir=assets.output_dir,
         media_dir=assets.media_dir,
         copied_media=assets.copied_media,
@@ -735,12 +765,13 @@ def _handle_graphic_frame_block(
         ignore_image_vlm_cache=assets.ignore_image_vlm_cache,
     )
     if table_md is not None:
-        lines.append(table_md.strip())
-        lines.append("")
+        blocks.append(
+            ContentBlock(kind="table", content=table_md.strip(), shape_id=shape_id or None)
+        )
         stats.table_blocks += 1
         return
 
-    _append_unsupported_graphic_frame(lines, stats)
+    _append_unsupported_graphic_frame(blocks, stats, shape_id)
     if err:
         normalized_err = str(err).lower()
         if (
@@ -761,7 +792,7 @@ def convert_one_slide(
     assets: SlideRenderAssets,
     strict_headings: bool = False,
     deps: SlideConversionDeps,
-) -> Tuple[str, SlideStats]:
+) -> Tuple[SlideDocument, SlideStats]:
     heading_policy = HeadingPolicy(strict=strict_headings)
 
     root = ET.parse(context.slide_xml).getroot()
@@ -789,7 +820,7 @@ def convert_one_slide(
         context.rels_path,
     )
 
-    lines: List[str] = [f"[Page_{context.page_no}]", ""]
+    blocks: List[ContentBlock] = []
     state = SlideRenderState()
 
     stats = SlideStats(
@@ -819,7 +850,7 @@ def convert_one_slide(
         if tag == "sp":
             _handle_text_shape_block(
                 child,
-                lines=lines,
+                blocks=blocks,
                 heading_policy=heading_policy,
                 strict_headings=strict_headings,
                 state=state,
@@ -832,7 +863,7 @@ def convert_one_slide(
         if tag == "pic":
             _handle_picture_block(
                 child,
-                lines=lines,
+                blocks=blocks,
                 state=state,
                 stats=stats,
                 context=context,
@@ -844,7 +875,7 @@ def convert_one_slide(
         if tag == "graphicFrame":
             _handle_graphic_frame_block(
                 child,
-                lines=lines,
+                blocks=blocks,
                 state=state,
                 stats=stats,
                 context=context,
@@ -853,6 +884,9 @@ def convert_one_slide(
             )
             continue
 
-    lines = deps.normalize_single_heading_to_h1(lines)
-    md_text = "\n".join(lines).rstrip() + "\n"
-    return md_text, stats
+    heading_blocks = [block for block in blocks if block.kind == "heading"]
+    if len(heading_blocks) == 1 and heading_blocks[0].heading_level != 1:
+        only_heading = heading_blocks[0]
+        blocks[blocks.index(only_heading)] = only_heading.model_copy(update={"heading_level": 1})
+
+    return SlideDocument(page=context.page_no, blocks=blocks), stats

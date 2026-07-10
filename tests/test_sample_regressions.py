@@ -6,6 +6,10 @@ import unittest
 from pathlib import Path
 
 import pptx2markdown
+from pptx2markdown.main_converter.converter_models import (
+    PresentationDocument,
+    render_presentation_markdown,
+)
 
 SAMPLE_NAMES = (
     "Heading_Test.pptx",
@@ -44,6 +48,19 @@ class SampleRegressionTests(unittest.TestCase):
             raise AssertionError(f"sample conversion failed with exit code {exit_code}")
         cls.mode_dir = cls.output_dir / "xycut"
 
+        cls.json_output_dir = temp_root / "json-output"
+        json_exit_code = pptx2markdown.convert(
+            cls.samples_dir / "reading_order_test.pptx",
+            output_dir=cls.json_output_dir,
+            work_dir=temp_root / "json-work",
+            output_format="json",
+            reading_order="xycut",
+            headings="auto",
+        )
+        if json_exit_code != 0:
+            raise AssertionError(f"JSON conversion failed with exit code {json_exit_code}")
+        cls.json_mode_dir = cls.json_output_dir / "xycut"
+
     @classmethod
     def tearDownClass(cls) -> None:
         if hasattr(cls, "temp_dir"):
@@ -75,14 +92,14 @@ class SampleRegressionTests(unittest.TestCase):
         self.assertEqual(summary["table_blocks"], 23)
         self.assertEqual(summary["unresolved_images"], 0)
 
-    def test_xycut_preserves_numbered_and_comparison_order(self) -> None:
+    def test_xycut_uses_geometric_order_only(self) -> None:
         reading_order = self._page(self._markdown("reading_order_test"), 3)
         expected = (
             "1. Main converter",
-            "2. Xml mode",
-            "3. Surya mode",
             "4. Sturucture_analyzer",
+            "2. Xml mode",
             "5. Surya_pipeline",
+            "3. Surya mode",
             "6. table_pipeline",
         )
         positions = [reading_order.index(text) for text in expected]
@@ -91,11 +108,28 @@ class SampleRegressionTests(unittest.TestCase):
         comparison = self._page(self._markdown("문제점 목록 발표"), 15)
         positions = [
             comparison.index("AS – IS"),
-            comparison.index("PDF → 이미지"),
             comparison.index("TO-BE"),
+            comparison.index("PDF → 이미지"),
             comparison.index("원본 파일"),
         ]
         self.assertEqual(positions, sorted(positions))
+
+    def test_json_output_is_the_markdown_intermediate_representation(self) -> None:
+        json_path = self.json_mode_dir / "reading_order_test" / "reading_order_test.json"
+        markdown_path = json_path.with_suffix(".md")
+        document = json.loads(json_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(markdown_path.exists())
+        self.assertEqual(document["schema_version"], "1.0")
+        self.assertEqual(document["reading_order"], "xycut")
+        self.assertEqual(len(document["slides"]), 4)
+        self.assertTrue(document["slides"][2]["blocks"])
+        self.assertIn("kind", document["slides"][2]["blocks"][0])
+        self.assertIn("content", document["slides"][2]["blocks"][0])
+        self.assertEqual(
+            render_presentation_markdown(PresentationDocument.model_validate(document)),
+            self._markdown("reading_order_test"),
+        )
 
     def test_chart_and_master_content_are_preserved_without_stripe_image(self) -> None:
         markdown = self._markdown("sample1")

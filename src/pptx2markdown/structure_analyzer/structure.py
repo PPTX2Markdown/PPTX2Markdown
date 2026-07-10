@@ -217,6 +217,8 @@ def _sort_top_left(objects: Sequence[SlideObject]) -> List[SlideObject]:
 
 
 def _has_reliable_position(obj: SlideObject) -> bool:
+    if obj.bbox is None:
+        return False
     left = object_left(obj)
     top = object_top(obj)
     right = object_right(obj)
@@ -300,94 +302,14 @@ def _objects_starting_in_segment(
     return [obj for obj in objects if start <= _axis_interval(obj, axis)[0] < end]
 
 
-def _explicit_sequence_order(
-    objects: Sequence[SlideObject],
-) -> Optional[List[SlideObject]]:
-    """Use an explicit contiguous numbering sequence as reading-order evidence."""
-    if len(objects) < 3:
-        return None
-
-    numbered: List[Tuple[int, SlideObject]] = []
-    for obj in objects:
-        match = re.match(r"^\s*(\d+)\s*[.)]\s+", obj.text or "")
-        if match is None:
-            return None
-        numbered.append((int(match.group(1)), obj))
-
-    numbers = [number for number, _ in numbered]
-    first = min(numbers)
-    if first not in {0, 1}:
-        return None
-    if sorted(numbers) != list(range(first, first + len(numbers))):
-        return None
-
-    return [obj for _, obj in sorted(numbered, key=lambda item: item[0])]
-
-
-def _overlaps_on_axis(first: SlideObject, second: SlideObject, axis: str) -> bool:
-    first_start, first_end = _axis_interval(first, axis)
-    second_start, second_end = _axis_interval(second, axis)
-    return min(first_end, second_end) > max(first_start, second_start)
-
-
-def _column_chunks(
-    objects: Sequence[SlideObject],
-    segments: Sequence[Tuple[int, int]],
-) -> List[List[SlideObject]]:
-    x_sorted = _sort_for_axis(objects, "x")
-    return [_objects_starting_in_segment(x_sorted, "x", segment) for segment in segments]
-
-
-def _has_column_headers(
-    objects: Sequence[SlideObject],
-    x_segments: Sequence[Tuple[int, int]],
-) -> bool:
-    """Detect comparison columns whose heading belongs with the body below it."""
-    if len(x_segments) != 2:
-        return False
-
-    columns = _column_chunks(objects, x_segments)
-    if any(len(column) < 2 for column in columns):
-        return False
-
-    ordered_columns = [_sort_top_left(column) for column in columns]
-    headers = [column[0] for column in ordered_columns]
-    if not any(header.is_heading or header.is_title_placeholder for header in headers):
-        return False
-    if any(not header.normalized or len(header.normalized) > 80 for header in headers):
-        return False
-    if not _overlaps_on_axis(headers[0], headers[1], "y"):
-        return False
-
-    for column in ordered_columns:
-        header = column[0]
-        body_top = min(object_top(obj) for obj in column[1:])
-        if object_bottom(header) > body_top:
-            return False
-    return True
-
-
 def _recursive_xycut(objects: Sequence[SlideObject], *, min_gap: int) -> List[SlideObject]:
     """recursive bbox 기반 XY cut으로 객체를 정렬한다.
 
-    명시적인 번호 순서와 비교형 열 구조를 먼저 보존한다.
-    그 외 레이아웃은 기존 방식대로 Y projection으로 나누고
-    각 Y chunk를 X projection으로 나눈다.
+    Y projection으로 나눈 뒤 각 Y chunk를 X projection으로 나눈다.
+    텍스트나 heading 같은 의미 정보는 사용하지 않는다.
     """
     if len(objects) <= 1:
         return list(objects)
-
-    explicit_order = _explicit_sequence_order(objects)
-    if explicit_order is not None:
-        return explicit_order
-
-    x_sorted = _sort_for_axis(objects, "x")
-    x_segments = _projection_segments(x_sorted, "x", min_gap=min_gap)
-    if _has_column_headers(objects, x_segments):
-        ordered_columns: List[SlideObject] = []
-        for column in _column_chunks(objects, x_segments):
-            ordered_columns.extend(_recursive_xycut(column, min_gap=min_gap))
-        return ordered_columns
 
     y_sorted = _sort_for_axis(objects, "y")
     y_segments = _projection_segments(y_sorted, "y", min_gap=min_gap)
@@ -509,35 +431,11 @@ def _order_objects_legacy(objects: Sequence[SlideObject]) -> List[SlideObject]:
 
 
 def _order_objects_xycut(objects: Sequence[SlideObject]) -> List[SlideObject]:
-    """읽기 대상 body 객체에 XY cut을 적용하고 PPTX용 tail 객체를 뒤에 붙인다."""
-    context = build_order_context(objects)
-    tail = [o for o in objects if bucket(o, context) >= 4]
-    main = [o for o in objects if bucket(o, context) < 4]
-    positioned = [o for o in main if _has_reliable_position(o)]
-    unpositioned = [o for o in main if not _has_reliable_position(o)]
-    if len(positioned) < 2:
-        return _order_objects_legacy(objects)
-
-    ordered_main = _recursive_xycut(positioned, min_gap=XYCUT_MIN_GAP_EMU)
-    ordered_unknown = sorted(
-        unpositioned,
-        key=lambda o: (
-            bucket(o, context),
-            reading_top(o, context),
-            object_left(o),
-            o.xml_index,
-        ),
-    )
-    ordered_tail = sorted(
-        tail,
-        key=lambda o: (
-            bucket(o, context),
-            reading_top(o, context),
-            object_left(o),
-            o.xml_index,
-        ),
-    )
-    return ordered_main + ordered_unknown + ordered_tail
+    """Order positioned objects only by XYCut geometry."""
+    positioned = [obj for obj in objects if _has_reliable_position(obj)]
+    unpositioned = [obj for obj in objects if not _has_reliable_position(obj)]
+    ordered = _recursive_xycut(positioned, min_gap=XYCUT_MIN_GAP_EMU)
+    return ordered + sorted(unpositioned, key=lambda obj: obj.xml_index)
 
 
 def order_objects(objects: Sequence[SlideObject], mode: str) -> List[SlideObject]:

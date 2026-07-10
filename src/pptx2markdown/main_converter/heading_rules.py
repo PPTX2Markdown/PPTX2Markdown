@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -78,16 +78,3 @@ def is_body_like_long_sentence(text: str) -> bool:
     if not raw:
         return False
     return len(raw) >= 30
-
-
-def normalize_single_heading_to_h1(lines: List[str]) -> List[str]:
-    heading_lines = [i for i, line in enumerate(lines) if re.match(r"^#{1,6}\s+", line)]
-    if len(heading_lines) != 1:
-        return lines
-    idx = heading_lines[0]
-    m = re.match(r"^(#{2,6})\s+(.*)$", lines[idx])
-    if not m:
-        return lines
-    out = list(lines)
-    out[idx] = f"# {m.group(2)}"
-    return out

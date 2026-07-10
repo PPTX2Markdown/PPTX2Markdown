@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert PPTX/PPT presentation(s) to markdown.
+Convert PPTX/PPT presentation(s) to Markdown or JSON.
 
 Usage:
   pptx2markdown [file.pptx ...]
@@ -60,10 +60,12 @@ from .converter_models import (
     ConverterConfig,
     ParagraphSegment,
     PreparedPackage,
+    PresentationDocument,
     ShapeBlock,
+    SlideDocument,
     SlideStats,
+    render_presentation_markdown,
 )
-from .heading_rules import normalize_single_heading_to_h1
 from .package_inputs import (
     collect_target_presentation_inputs,
     default_target_dir,
@@ -1217,7 +1219,6 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         graphic_frame_kind=graphic_frame_kind,
         convert_chart_to_markdown=convert_chart_to_markdown,
         convert_smartart_to_markdown=convert_smartart_to_markdown,
-        normalize_single_heading_to_h1=normalize_single_heading_to_h1,
     )
 
 
@@ -1229,7 +1230,7 @@ def convert_one_slide(
     assets: SlideRenderAssets,
     strict_headings: bool = False,
     heading_mode: str = "auto",
-) -> Tuple[str, SlideStats]:
+) -> Tuple[SlideDocument, SlideStats]:
     context.heading_mode = heading_mode
     return convert_one_slide_core(
         context=context,
@@ -1244,7 +1245,7 @@ def convert_one_slide(
 # 전체 변환 파이프라인을 제어하는 설정을 여기서 받는다.
 def _parse_args() -> argparse.Namespace:
     # parser 생성
-    parser = argparse.ArgumentParser(description="Convert extracted PPTX package(s) to markdown.")
+    parser = argparse.ArgumentParser(description="Convert PPTX/PPT files to Markdown or JSON.")
     # 필요한 인자들 추가
     parser.add_argument(
         "inputs",
@@ -1258,7 +1259,13 @@ def _parse_args() -> argparse.Namespace:
         "-o",
         "--output-dir",
         default=None,
-        help="Directory for converted markdown output. Default: ./output",
+        help="Directory for converted output. Default: ./output",
+    )
+    parser.add_argument(
+        "--output-format",
+        choices=("markdown", "json"),
+        default="markdown",
+        help="Final output format. Default: markdown.",
     )
     parser.add_argument(
         "--work-dir",
@@ -1403,6 +1410,9 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         heading_mode = "auto"
     if heading_mode == "surya" and args.reading_order != "surya":
         raise ValueError("--headings surya requires --reading-order surya")
+    output_format = str(getattr(args, "output_format", "markdown"))
+    if output_format not in {"markdown", "json"}:
+        raise ValueError("output_format must be 'markdown' or 'json'")
     normalized_provider = normalize_provider(args.image_vlm_provider)
     api_key_env = str(args.image_vlm_api_key_env).strip()
     if not api_key_env or (
@@ -1420,6 +1430,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         output_dir=output_root / args.reading_order,
         inputs=list(args.inputs),
         reading_order=str(args.reading_order),
+        output_format=output_format,
         heading_mode=heading_mode,
         strict=heading_mode == "strict",
         pptx_inheritance=str(args.pptx_inheritance),
@@ -1531,7 +1542,11 @@ def _convert_package(
         key=lambda p: natural_key(p.name),
     )
     pkg_out = config.output_dir / pkg_name
-    output_md_path = package.output_markdown_path(config.output_dir)
+    output_path = (
+        package.output_json_path(config.output_dir)
+        if config.output_format == "json"
+        else package.output_markdown_path(config.output_dir)
+    )
     media_dir = pkg_out / "media"
     copied_media: Dict[str, Path] = {}
     pkg_out.mkdir(parents=True, exist_ok=True)
@@ -1540,13 +1555,15 @@ def _convert_package(
         "package": str(pkg),
         "name": pkg_name,
         "slides": [],
-        "result_md": str(output_md_path),
+        "result": str(output_path),
+        "output_format": config.output_format,
         "pipeline_mode": config.reading_order,
         "image_vlm_provider": config.image_vlm_provider,
         "image_vlm_model": config.image_vlm_model,
     }
+    pkg_row[f"result_{'md' if config.output_format == 'markdown' else 'json'}"] = str(output_path)
 
-    all_chunks: List[str] = []
+    slides: List[SlideDocument] = []
     ro_map: Dict[str, Path] = {}
     structure_output_dir: Optional[Path] = None
     if config.reading_order != "surya":
@@ -1623,7 +1640,7 @@ def _convert_package(
                 image_vlm_api_key_env=config.image_vlm_api_key_env,
                 ignore_image_vlm_cache=config.ignore_image_vlm_cache,
             )
-            merged_md_text, stats = convert_one_slide(
+            slide_document, stats = convert_one_slide(
                 context=context,
                 assets=assets,
                 strict_headings=config.strict,
@@ -1631,11 +1648,11 @@ def _convert_package(
             )
             if config.reading_order == "surya":
                 row["surya_source"] = str(structure_output_dir)
-            all_chunks.append(merged_md_text.rstrip())
+            slides.append(slide_document)
 
             row.update({"status": "ok", **stats.to_slide_row_fields()})
             manifest.summary.add_slide(stats)
-            logger.info("[%s] [md-convert] Processed: %s", pkg_name, slide_xml.name)
+            logger.info("[%s] [convert] Processed: %s", pkg_name, slide_xml.name)
             if stats.warnings:
                 seen_warnings: set[str] = set()
                 for warning in stats.warnings:
@@ -1656,10 +1673,17 @@ def _convert_package(
             logger.error("[%s] Failed: %s -> %s", pkg_name, slide_xml.name, e)
         pkg_row["slides"].append(row)
 
-    merged = "\n\n".join(all_chunks).strip()
-    if merged:
-        merged += "\n"
-    output_md_path.write_text(merged, encoding="utf-8")
+    document = PresentationDocument(
+        source=str(package.source_pptx_path),
+        reading_order=config.reading_order,
+        slides=slides,
+    )
+    if config.output_format == "json":
+        output_text = json.dumps(document.model_dump(mode="json"), ensure_ascii=False, indent=2)
+        output_text += "\n"
+    else:
+        output_text = render_presentation_markdown(document)
+    output_path.write_text(output_text, encoding="utf-8")
     manifest.summary.processed_packages += 1
     manifest.packages.append(pkg_row)
 
