@@ -14,7 +14,8 @@ from .text_rules import (
 
 EMU_PER_INCH = 914400
 SCREEN_DPI = 96
-XYCUT_MIN_GAP_EMU = EMU_PER_INCH // SCREEN_DPI
+XYCUT_MAX_OVERLAP_EMU = EMU_PER_INCH // SCREEN_DPI
+XYCUT_VERTICAL_FLOW_GAP_RATIO = 0.5
 
 
 @dataclass
@@ -264,89 +265,79 @@ def _sort_for_axis(objects: Sequence[SlideObject], axis: str) -> List[SlideObjec
     raise ValueError(f"unsupported xycut axis: {axis}")
 
 
-def _projection_segments(
+def _projection_chunks(
     objects: Sequence[SlideObject],
     axis: str,
     *,
-    min_gap: int,
-) -> List[Tuple[int, int]]:
-    """bbox projection을 점유 구간 단위로 분리한다.
-
-    Sanster/PaddleX 구현은 dense 1D projection 배열을 만든 뒤 projection > 0인
-    run을 분리한다. PPTX는 EMU 좌표를 쓰므로 dense 배열을 만들면 너무 커진다.
-    min_value == 0 조건에서는 bbox interval을 병합해도 같은 split 결과를 낼 수 있다.
-    """
-    intervals = sorted(_axis_interval(obj, axis) for obj in objects)
-    if not intervals:
+    max_overlap: int,
+) -> List[List[SlideObject]]:
+    """Split objects at projection gaps without building a dense EMU array."""
+    axis_sorted = _sort_for_axis(objects, axis)
+    if not axis_sorted:
         return []
 
-    segments: List[Tuple[int, int]] = []
-    segment_start, segment_end = intervals[0]
-    for start, end in intervals[1:]:
-        if start - segment_end >= min_gap:
-            segments.append((segment_start, segment_end))
-            segment_start, segment_end = start, end
-        else:
-            segment_end = max(segment_end, end)
-    segments.append((segment_start, segment_end))
-    return segments
+    chunks: List[List[SlideObject]] = []
+    current_chunk = [axis_sorted[0]]
+    _, chunk_end = _axis_interval(axis_sorted[0], axis)
+
+    for obj in axis_sorted[1:]:
+        start, end = _axis_interval(obj, axis)
+        if start - chunk_end >= -max_overlap:
+            chunks.append(current_chunk)
+            current_chunk = [obj]
+            chunk_end = end
+            continue
+        current_chunk.append(obj)
+        chunk_end = max(chunk_end, end)
+
+    chunks.append(current_chunk)
+    return chunks if len(chunks) > 1 else []
 
 
-def _objects_starting_in_segment(
-    objects: Sequence[SlideObject],
-    axis: str,
-    segment: Tuple[int, int],
-) -> List[SlideObject]:
-    """축 시작 좌표가 projection segment 안에 들어가는 객체를 반환한다."""
-    start, end = segment
-    return [obj for obj in objects if start <= _axis_interval(obj, axis)[0] < end]
+def _is_tight_vertical_sequence(y_chunks: Sequence[Sequence[SlideObject]]) -> bool:
+    """Return true when geometry forms one closely spaced top-to-bottom stream."""
+    if len(y_chunks) <= 1 or any(len(chunk) != 1 for chunk in y_chunks):
+        return False
+
+    ordered = [chunk[0] for chunk in y_chunks]
+    gaps = [
+        max(0, object_top(current) - object_bottom(previous))
+        for previous, current in zip(ordered, ordered[1:])
+    ]
+    heights = [object_height(obj) for obj in ordered]
+    return statistics.median(gaps) <= (statistics.median(heights) * XYCUT_VERTICAL_FLOW_GAP_RATIO)
 
 
-def _recursive_xycut(objects: Sequence[SlideObject], *, min_gap: int) -> List[SlideObject]:
+def _recursive_xycut(objects: Sequence[SlideObject], *, max_overlap: int) -> List[SlideObject]:
     """recursive bbox 기반 XY cut으로 객체를 정렬한다.
 
-    Y projection으로 나눈 뒤 각 Y chunk를 X projection으로 나눈다.
-    텍스트나 heading 같은 의미 정보는 사용하지 않는다.
+    촘촘한 단일 Y 흐름은 위에서 아래로 유지한다. 그 외에는 현재 영역을
+    관통하는 X축 공백으로 열을 먼저 나누고, X축 절단이 불가능하면 Y축의
+    첫 공백으로 위/아래를 나눈다. 의미 정보는 사용하지 않는다.
     """
     if len(objects) <= 1:
         return list(objects)
 
-    y_sorted = _sort_for_axis(objects, "y")
-    y_segments = _projection_segments(y_sorted, "y", min_gap=min_gap)
-    if not y_segments:
-        return _sort_top_left(objects)
+    x_chunks = _projection_chunks(objects, "x", max_overlap=max_overlap)
+    y_chunks = _projection_chunks(objects, "y", max_overlap=max_overlap)
 
-    ordered: List[SlideObject] = []
-    for y_segment in y_segments:
-        y_chunk = _objects_starting_in_segment(y_sorted, "y", y_segment)
-        if not y_chunk:
-            continue
+    if x_chunks and _is_tight_vertical_sequence(y_chunks):
+        return [obj for chunk in y_chunks for obj in chunk]
 
-        chunk_x_sorted = _sort_for_axis(y_chunk, "x")
-        chunk_x_segments = _projection_segments(
-            chunk_x_sorted,
-            "x",
-            min_gap=min_gap,
+    if x_chunks:
+        return [
+            obj for chunk in x_chunks for obj in _recursive_xycut(chunk, max_overlap=max_overlap)
+        ]
+
+    if y_chunks:
+        top_chunk = y_chunks[0]
+        remaining = [obj for chunk in y_chunks[1:] for obj in chunk]
+        return _recursive_xycut(top_chunk, max_overlap=max_overlap) + _recursive_xycut(
+            remaining,
+            max_overlap=max_overlap,
         )
-        if not chunk_x_segments or len(chunk_x_segments) == 1:
-            ordered.extend(chunk_x_sorted)
-            continue
 
-        for x_segment in chunk_x_segments:
-            x_chunk = _objects_starting_in_segment(
-                chunk_x_sorted,
-                "x",
-                x_segment,
-            )
-            if not x_chunk:
-                continue
-            ordered.extend(_recursive_xycut(x_chunk, min_gap=min_gap))
-
-    seen = {id(obj) for obj in ordered}
-    missing = [obj for obj in objects if id(obj) not in seen]
-    if missing:
-        ordered.extend(_sort_top_left(missing))
-    return ordered
+    return _sort_top_left(objects)
 
 
 def _order_objects_legacy(objects: Sequence[SlideObject]) -> List[SlideObject]:
@@ -434,7 +425,7 @@ def _order_objects_xycut(objects: Sequence[SlideObject]) -> List[SlideObject]:
     """Order positioned objects only by XYCut geometry."""
     positioned = [obj for obj in objects if _has_reliable_position(obj)]
     unpositioned = [obj for obj in objects if not _has_reliable_position(obj)]
-    ordered = _recursive_xycut(positioned, min_gap=XYCUT_MIN_GAP_EMU)
+    ordered = _recursive_xycut(positioned, max_overlap=XYCUT_MAX_OVERLAP_EMU)
     return ordered + sorted(unpositioned, key=lambda obj: obj.xml_index)
 
 

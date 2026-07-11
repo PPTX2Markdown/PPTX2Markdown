@@ -55,7 +55,13 @@ Numbering and comparison-heading overrides added during regression recovery
 were not part of the original XYCut algorithm and have been removed. XYCut now:
 
 - uses only shape bounding boxes;
-- applies Y projection cuts followed by recursive X projection cuts;
+- calculates X and Y projection chunks for every recursive region;
+- preserves a tightly spaced single-object Y stream when its median gap is at
+  most half the median object height;
+- otherwise prioritizes a full-region X cut and recursively reads each column;
+- uses the first Y gap to expose lower-region columns when no X cut exists;
+- treats bbox overlap within one screen pixel as a shared visual boundary to
+  account for PPTX coordinate rounding;
 - does not use text, numbering, heading, placeholder, footer, or decorative
   classifications to change the order;
 - does not synthesize missing width or height from text content;
@@ -106,7 +112,7 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 - `tests/test_content_regressions.py` covers relationship normalization,
   master-only materialization, inherited stripe filtering, and numbered
   heading syntax.
-- `tests/test_sample_regressions.py` converts eight local sample decks and
+- `tests/test_sample_regressions.py` converts nine local sample decks and
   checks reading order, chart, math, table, SmartArt, inheritance, and heading
   contracts. It skips explicitly when ignored local sample files are absent.
 - Ruff enforces import ordering, unused-code checks, selected PEP 8 errors, a
@@ -136,7 +142,7 @@ The following checks passed after the geometry-only XYCut and JSON intermediate
 representation changes:
 
 - `python -m compileall -q src/pptx2markdown tests`
-- `PYTHONPATH=src python -m unittest discover -v`: 16 tests passed
+- `PYTHONPATH=src python -m unittest discover -v`: 21 tests passed
 - `ruff check src tests`
 - `ruff format --check src tests`
 - all 12 local sample decks: 128 slides converted, 0 slide failures
@@ -151,11 +157,14 @@ Wheel/sdist and Twine checks passed for commit `4919d68`. They could not be
 rerun after this work item because the active virtual environment does not have
 `build`, Hatchling, or Twine installed, and network access is unavailable.
 
-Pure geometric XYCut produces row-first order on these semantic layouts:
+Pure geometric XYCut now restores the expected order without inspecting text:
 
-- `reading_order_test.pptx`: slide 3 orders the two-column numbered blocks by
-  geometry, not by their number text
-- `문제점 목록 발표.pptx`: slide 15
+- `reading_order_test.pptx`: slide 2 keeps its tight vertical stream; slides 3
+  and 4 read the left column before the right column.
+- `문제점 목록 발표.pptx`: slide 15 keeps each comparison heading with the body
+  below it by splitting the two geometric columns.
+- `xy_cut.pptx`: touching column boundaries are separated within the coordinate
+  tolerance and sections remain ordered from 1 through 7.
 
 ## Known Issues
 

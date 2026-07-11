@@ -19,6 +19,7 @@ SAMPLE_NAMES = (
     "sample1.pptx",
     "smartArt.pptx",
     "table_demo.pptx",
+    "xy_cut.pptx",
     "문제점 목록 발표.pptx",
 )
 
@@ -83,8 +84,8 @@ class SampleRegressionTests(unittest.TestCase):
         )
         summary = manifest["summary"]
 
-        self.assertEqual(summary["processed_packages"], 8)
-        self.assertEqual(summary["processed_slides"], 69)
+        self.assertEqual(summary["processed_packages"], 9)
+        self.assertEqual(summary["processed_slides"], 70)
         self.assertEqual(summary["failed"], 0)
         self.assertEqual(summary["math_blocks"], 50)
         self.assertEqual(summary["chart_blocks"], 1)
@@ -93,25 +94,44 @@ class SampleRegressionTests(unittest.TestCase):
         self.assertEqual(summary["unresolved_images"], 0)
 
     def test_xycut_uses_geometric_order_only(self) -> None:
-        reading_order = self._page(self._markdown("reading_order_test"), 3)
-        expected = (
+        markdown = self._markdown("reading_order_test")
+        page_two = self._page(markdown, 2)
+        page_two_expected = (
             "1. Main converter",
-            "4. Sturucture_analyzer",
-            "2. Xml mode",
-            "5. Surya_pipeline",
-            "3. Surya mode",
+            "2. Sturucture_analyzer",
+            "3. Xml mode",
+            "4. Surya_pipeline",
+            "5. Surya mode",
             "6. table_pipeline",
         )
-        positions = [reading_order.index(text) for text in expected]
+        positions = [page_two.index(text) for text in page_two_expected]
         self.assertEqual(positions, sorted(positions))
+
+        expected = (
+            "1. Main converter",
+            "2. Xml mode",
+            "3. Surya mode",
+            "4. Sturucture_analyzer",
+            "5. Surya_pipeline",
+            "6. table_pipeline",
+        )
+        for page_number in (3, 4):
+            reading_order = self._page(markdown, page_number)
+            positions = [reading_order.index(text) for text in expected]
+            self.assertEqual(positions, sorted(positions))
 
         comparison = self._page(self._markdown("문제점 목록 발표"), 15)
         positions = [
             comparison.index("AS – IS"),
-            comparison.index("TO-BE"),
             comparison.index("PDF → 이미지"),
+            comparison.index("TO-BE"),
             comparison.index("원본 파일"),
         ]
+        self.assertEqual(positions, sorted(positions))
+
+        xycut_demo = self._page(self._markdown("xy_cut"), 1)
+        numbered_sections = [f"{number}." for number in range(1, 8)]
+        positions = [xycut_demo.index(section) for section in numbered_sections]
         self.assertEqual(positions, sorted(positions))
 
     def test_json_output_is_the_markdown_intermediate_representation(self) -> None:
