@@ -271,6 +271,10 @@ def prepare_package_inputs(
     extraction_root = default_target_dir(cwd)
 
     for item in raw_inputs:
+        raw_path = Path(item)
+        if raw_path.suffix.lower() in {".pptx", ".ppt"} and is_ignored_presentation_file(raw_path):
+            continue
+
         picked_file, candidates = resolve_input_presentation_path(cwd, item)
         if picked_file is None:
             missing_inputs.append(_missing_input_row(item, candidates))
@@ -324,14 +328,3 @@ def collect_target_presentation_inputs() -> List[str]:
 
     files = sorted(by_stem.values(), key=lambda path: natural_key(path.name))
     return [str(path) for path in files]
-
-
-def stage_surya_pptx_inputs(packages: Sequence[PreparedPackage], stage_dir: Path) -> Path:
-    """Copy package sources into a temporary directory for the Surya pipeline."""
-    stage_dir.mkdir(parents=True, exist_ok=True)
-    for package in packages:
-        staged_pptx = stage_dir / f"{package.name}.pptx"
-        if staged_pptx.exists():
-            staged_pptx.unlink()
-        shutil.copy2(package.source_pptx_path, staged_pptx)
-    return stage_dir

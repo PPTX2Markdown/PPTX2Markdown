@@ -74,18 +74,16 @@ python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/targ
 
 ## XY-cut 순서
 
-`--mode xycut`은 텍스트, 번호, heading, placeholder 종류를 순서 결정에 사용하지
-않습니다. 각 재귀 영역에서 X/Y bbox projection을 계산하고, 촘촘한 세로 흐름이
-아니면 전역 X 공백으로 열을 먼저 분리합니다. X 분리가 없으면 첫 Y 공백으로
-위/아래를 나눈 뒤 하위 영역을 다시 분석합니다.
+구조 분석기는 항상 XY-cut을 사용하며 텍스트, 번호, heading, placeholder 종류를
+순서 결정에 사용하지 않습니다. 각 재귀 영역에서 X/Y bbox projection을 계산하고,
+촘촘한 세로 흐름이 아니면 전역 X 공백으로 열을 먼저 분리합니다. X 분리가 없으면
+첫 Y 공백으로 위/아래를 나눈 뒤 하위 영역을 다시 분석합니다.
 
 ## 주요 옵션 요약
 
-- `--mode xml|xycut`: 읽기 순서 분석 모드
 - `--output-dir <path>`: 결과(JSON/XML/manifest) 저장 디렉터리
 - `--strict`: XML 기반 strict heading 규칙 적용
 - `--placeholder-inheritance none|geometry|style`: placeholder 상속 반영 깊이 지정
-  - legacy alias: `--pptx-inheritance`, `placeholder=geometry`, `semantic=style`
 - `--inherited-shapes none|visible|all`: layout/master-only shape materialization 범위 지정
   - legacy alias: `semantic=visible`
 

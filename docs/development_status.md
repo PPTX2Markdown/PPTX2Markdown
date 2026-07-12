@@ -1,6 +1,6 @@
 # Development Status and Handoff
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 This document records the current development state so a new work context can
 continue without reconstructing the history from chat logs. Read this file and
@@ -36,9 +36,8 @@ continue without reconstructing the history from chat logs. Read this file and
   `main_converter/package_inputs.py`.
 - Kept the table pipeline around one executable entry point and small
   parse/render APIs.
-- Consolidated image provider protocol, result types, and shared adapter
-  helpers in `image_pipeline/provider_base.py`.
-- Split Surya runner argument, path, preparation, and cleanup responsibilities.
+- Removed the image VLM provider layer; images are copied and linked from
+  native PPTX media parts without model or API calls.
 - Simplified structure-analysis reporting and inheritance resolver formatting.
 - Preserved existing pipeline behavior with sample smoke tests.
 
@@ -68,9 +67,24 @@ were not part of the original XYCut algorithm and have been removed. XYCut now:
 - appends objects without usable coordinates by XML index because no geometric
   cut can be calculated for them.
 
-The legacy XML ordering mode remains separate and unchanged.
+XYCut is now the only reading-order strategy. The public `--reading-order`
+option, legacy semantic row clustering, and Surya pipeline have been removed.
+Raw XML indexes remain available for diagnostics, deterministic tie-breaking,
+and missing-bbox fallback.
 
-Regression coverage is in `tests/test_xycut_reading_order.py`.
+Regression coverage is in `tests/test_xycut_reading_order.py` and the real PPTX
+fixture `tests/fixtures/xycut_tolerance_cases.pptx`. The fixture covers small
+X/Y alignment jitter, one- and two-pixel boundary overlap, a quarter-pixel
+positive gap, and unequal textbox heights.
+
+### Static image handling
+
+- Removed `image_pipeline`, all local/remote VLM providers, caches, prompts,
+  API-key handling, and public `--image-vlm-*` options.
+- Removed the `local-vlm`/`all` extras and their Torch, Transformers, Pillow,
+  and dotenv dependency paths.
+- Ordinary pictures, table overlays, and table-cell fill images remain
+  supported through deterministic media extraction and asset links.
 
 ### JSON intermediate representation
 
@@ -80,8 +94,8 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
   the final Markdown file directly.
 - `--output-format json` and `pptx2markdown.convert(..., output_format="json")`
   write the same document as `<deck-name>.json` instead of Markdown.
-- The JSON schema records `schema_version`, source, reading-order mode, pages,
-  block kinds, content, shape IDs, and heading levels.
+- The JSON schema records `schema_version`, source, pages, block kinds,
+  content, shape IDs, and heading levels.
 - Tests validate JSON round trips and confirm that rendering a JSON output
   reproduces the Markdown-mode output.
 
@@ -102,9 +116,8 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 - `--headings auto` is the default and uses placeholder, numbering, font-size,
   and position evidence.
 - `--headings strict` emits headings only for title/subtitle placeholders.
-- `--headings surya` remains available with `--reading-order surya`.
-- The old `--not-strict` option remains as a hidden compatibility alias for
-  automatic detection.
+- The old `--not-strict` compatibility alias has been removed; the project has
+  no released compatibility surface to preserve yet.
 - Numbered headings tolerate spaces around periods, such as `3 . Heading`.
 
 ### Regression and quality gates
@@ -115,6 +128,10 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 - `tests/test_sample_regressions.py` converts nine local sample decks and
   checks reading order, chart, math, table, SmartArt, inheritance, and heading
   contracts. It skips explicitly when ignored local sample files are absent.
+- `tests/test_package_inputs.py` verifies that Office `~$` lock files are
+  silently skipped without hiding genuinely missing inputs.
+- `tests/test_xycut_pptx_fixture.py` extracts and analyzes a checked-in PPTX to
+  validate both XYCut order and exact EMU threshold boundaries.
 - Ruff enforces import ordering, unused-code checks, selected PEP 8 errors, a
   99-character line length, and formatting for `src` and `tests`.
 - `.github/workflows/quality.yml` runs lint, format, tests, build, and Twine
@@ -122,8 +139,8 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 
 ### Dead-code and module consolidation
 
-- Merged the two-type `image_pipeline/schemas.py` and provider-only
-  `provider_helpers.py` into `provider_base.py`.
+- Removed the complete image-to-Markdown model pipeline after the project
+  adopted static parsing only.
 - Removed the duplicate table extraction module. `table_pipeline/run.py` is the
   only table pipeline executable and owns extraction.
 - Removed dormant file/batch CLIs and unused HTML/CSV rendering from the table
@@ -138,18 +155,19 @@ Regression coverage is in `tests/test_xycut_reading_order.py`.
 
 ## Latest Verification Baseline
 
-The following checks passed after the geometry-only XYCut and JSON intermediate
-representation changes:
+The following checks passed after the geometry-only XYCut, static image, and
+JSON intermediate representation changes:
 
 - `python -m compileall -q src/pptx2markdown tests`
-- `PYTHONPATH=src python -m unittest discover -v`: 21 tests passed
+- `PYTHONPATH=src python -m unittest discover -v`: 27 tests passed
 - `ruff check src tests`
 - `ruff format --check src tests`
 - all 12 local sample decks: 128 slides converted, 0 slide failures
 - 50 math blocks, 35 charts, 15 SmartArt objects, and 39 tables converted
 - 25 meaningful images resolved and 0 images unresolved after inherited
   decoration filtering
-- CLI help exposes `--output-format {markdown,json}`.
+- CLI help exposes `--output-format {markdown,json}` with no reading-order,
+  VLM, or legacy compatibility options.
 - JSON output for `reading_order_test.pptx` converted 4 slides with 0 failures.
 - Re-rendering that JSON produced the same content as Markdown mode.
 
@@ -171,8 +189,6 @@ Pure geometric XYCut now restores the expected order without inspecting text:
 1. Diagram connectors are not represented semantically.
 2. Sample-based tests depend on ignored local `pptx_samples/` files and skip in
    a clean checkout. The always-on unit tests still cover the fixed algorithms.
-3. The optional Surya and local-VLM dependency paths were not executed in this
-   offline verification run.
 
 ## Completed Work Sequence
 
@@ -193,6 +209,8 @@ or mixed-responsibility functions only where the result is easier to read.
   the common intermediate document.
 - `src/pptx2markdown/main_converter/converter_models.py`: intermediate models
   and Markdown renderer.
+- `src/pptx2markdown/main_converter/structure_analysis_pipeline.py`: invokes
+  the deterministic structure-analysis stage.
 - `src/pptx2markdown/structure_analyzer/structure.py`: reading order and heading
   depth rules.
 - `src/pptx2markdown/structure_analyzer/pipeline.py`: structure sidecars and
@@ -200,6 +218,7 @@ or mixed-responsibility functions only where the result is easier to read.
 - `src/pptx2markdown/pptx_inheritance/resolver.py`: effective
   slide/layout/master object resolution.
 - `tests/test_xycut_reading_order.py`: current regression tests.
+- `tests/test_xycut_pptx_fixture.py`: actual PPTX coordinate-tolerance tests.
 - `tests/test_content_regressions.py`: focused content-loss regression tests.
 - `tests/test_intermediate_document.py`: JSON round-trip and renderer contract.
 - `tests/test_sample_regressions.py`: local end-to-end sample contracts.

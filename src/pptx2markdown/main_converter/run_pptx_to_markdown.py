@@ -8,7 +8,7 @@ Usage:
 Rules:
   - If no positional args are provided, all .pptx/.ppt files in the current
     directory are processed.
-  - Output is written to ./output/<reading-order>/<name>/<name>.md by default
+  - Output is written to ./output/<name>/<name>.md by default
     (override with --output-dir).
   - Intermediate files (extracted packages, caches) live in ./.pptx2markdown
     by default (override with --work-dir).
@@ -22,7 +22,6 @@ import logging
 import os
 import posixpath
 import re
-import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from itertools import count
@@ -33,26 +32,6 @@ from chart2md import ZipContext, convert_chart
 from omml2latex import convert_omml
 from smartart2md import ZipContext as SmartArtZipContext
 from smartart2md import convert_smartart
-
-from pptx2markdown.image_pipeline.service import (
-    DEFAULT_GEMINI_API_KEY_ENV,
-    DEFAULT_GEMINI_MODEL,
-    DEFAULT_OPENAI_API_KEY_ENV,
-    DEFAULT_OPENAI_MODEL,
-    DEFAULT_OPENROUTER_API_KEY_ENV,
-    DEFAULT_OPENROUTER_MODEL,
-    extract_markdown_from_image,
-    normalize_provider,
-)
-from pptx2markdown.image_pipeline.service import (
-    DEFAULT_MAX_NEW_TOKENS as DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-)
-from pptx2markdown.image_pipeline.service import (
-    DEFAULT_PROMPT as DEFAULT_IMAGE_VLM_PROMPT,
-)
-from pptx2markdown.image_pipeline.service import (
-    DEFAULT_PROVIDER as DEFAULT_IMAGE_VLM_PROVIDER,
-)
 
 from .asset_utils import copy_media_asset
 from .converter_models import (
@@ -71,12 +50,6 @@ from .package_inputs import (
     default_target_dir,
     natural_key,
     prepare_package_inputs,
-    stage_surya_pptx_inputs,
-)
-from .reading_order_pipeline import (
-    prepare_surya_structure_root,
-    resolve_surya_structure_dir,
-    run_structure_analysis_stage,
 )
 from .slide_converter import (
     SlideConversionContext,
@@ -86,6 +59,7 @@ from .slide_converter import (
 from .slide_converter import (
     convert_one_slide as convert_one_slide_core,
 )
+from .structure_analysis_pipeline import run_structure_analysis_stage
 from .table_overlay import (
     collect_table_overlay_pictures as collect_table_overlay_pictures_core,
 )
@@ -165,9 +139,7 @@ def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
         candidates.append(
             slide_xml.with_name(f"{stem[: -len('.reordered')]}.structure_analysis.json")
         )
-        candidates.append(slide_xml.with_name(f"{stem[: -len('.reordered')]}.reading_order.json"))
     candidates.append(slide_xml.with_name(f"{stem}.structure_analysis.json"))
-    candidates.append(slide_xml.with_name(f"{stem}.reading_order.json"))
     for c in candidates:
         if c.exists() and c.is_file():
             return c
@@ -190,8 +162,6 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
         return {}
     rows = payload.get("structure_order")
     if not isinstance(rows, list):
-        rows = payload.get("reading_order")
-    if not isinstance(rows, list):
         return {}
     out: Dict[str, Dict[str, object]] = {}
     for order_index, row in enumerate(rows):
@@ -205,11 +175,7 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "xml_index": row.get("xml_index"),
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
             "heading_score": float(row.get("heading_score", 0.0)),
-            "heading_depth_hint": row.get("heading_depth_hint", row.get("heading_depth")),
-            "surya_heading_depth_hint": row.get("surya_heading_depth_hint"),
-            "heading_source": row.get("heading_source"),
-            "heading_sources": row.get("heading_sources"),
-            "reading_order_source": row.get("reading_order_source"),
+            "heading_depth_hint": row.get("heading_depth_hint"),
             "font_pt": row.get("font_pt"),
             "ph_type": row.get("ph_type"),
             "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
@@ -226,8 +192,6 @@ def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     except Exception:
         return {}
     rows = payload.get("structure_order")
-    if not isinstance(rows, list):
-        rows = payload.get("reading_order")
     if not isinstance(rows, list):
         return {}
 
@@ -295,17 +259,6 @@ def fallback_rels(slide_xml: Path) -> Optional[Path]:
     return None
 
 
-# 원본 슬라이드 XML이 따로 주어진 경우 그 파일의 rels 경로를 계산한다.
-# Surya처럼 reordered XML과 source XML이 분리되는 모드에서 마지막 보조 수단으로 사용된다.
-def source_slide_rels(source_slide_xml: Optional[Path]) -> Optional[Path]:
-    if source_slide_xml is None or not source_slide_xml.exists():
-        return None
-    rels = source_slide_xml.parent / "_rels" / f"{source_slide_xml.name}.rels"
-    if rels.exists() and rels.is_file():
-        return rels
-    return None
-
-
 # slide 관계 파일을 rId -> target 경로 맵으로 파싱한다.
 def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     if rels_path is None or not rels_path.exists():
@@ -321,10 +274,7 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
 
 
 # 같은 패키지 안에서 슬라이드 관계 파일을 우선순위에 따라 선택한다.
-def choose_rels_in_package(
-    slide_xml: Path,
-    source_slide_xml: Optional[Path] = None,
-) -> Optional[Path]:
+def choose_rels_in_package(slide_xml: Path) -> Optional[Path]:
     # Strictly stay inside same ppt package to avoid cross-package mismatches.
     fallback = fallback_rels(slide_xml)
     if fallback:
@@ -332,7 +282,7 @@ def choose_rels_in_package(
     sidecar = rels_from_sidecar(slide_xml)
     if sidecar:
         return sidecar
-    return source_slide_rels(source_slide_xml)
+    return None
 
 
 # r:embed 값과 rels 정보를 이용해 실제 이미지 파일 경로를 결정한다.
@@ -382,148 +332,25 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
-# 단일 이미지 파일을 VLM에 보내 Markdown 설명으로 바꾼다.
-# provider/model 설정을 정리하고, 파이프라인 예외를 사용자 경고 메시지와
-# "사용 불가" 여부로 정규화해 반환한다.
-def convert_picture_to_markdown(
-    image_path: str,
-    *,
-    provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    model_spec: Optional[str] = None,
-    prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    gemini_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
-    ignore_cache: bool = False,
-) -> Tuple[Optional[str], Optional[str], bool, Optional[Dict[str, object]]]:
-    # 의존성 미설치나 API 키 누락처럼 설정 문제로 파이프라인이 아예 못 도는 경우를 분류한다.
-    def is_pipeline_unavailable(message: str) -> bool:
-        normalized = str(message or "").strip().lower()
-        return (
-            "api key not found" in normalized
-            or "modulenotfounderror" in normalized
-            or "importerror" in normalized
-        )
-
-    normalized_provider = normalize_provider(provider)
-    effective_model = model_spec
-    if normalized_provider == "gemini" and not effective_model:
-        effective_model = DEFAULT_GEMINI_MODEL
-    if normalized_provider == "openai" and not effective_model:
-        effective_model = DEFAULT_OPENAI_MODEL
-    if normalized_provider == "openrouter" and not effective_model:
-        effective_model = DEFAULT_OPENROUTER_MODEL
-    if not effective_model:
-        return None, None, False, None
-
-    try:
-        result = extract_markdown_from_image(
-            Path(image_path),
-            provider=normalized_provider,
-            model_spec=effective_model,
-            prompt=prompt,
-            max_new_tokens=max(1, int(max_new_tokens)),
-            gemini_api_key_env=gemini_api_key_env,
-            ignore_cache=ignore_cache,
-        )
-    except Exception as exc:  # noqa: BLE001
-        error_message = (
-            f"image pipeline failed on {Path(image_path).name}: {type(exc).__name__}: {exc}"
-        )
-        return (
-            None,
-            error_message,
-            is_pipeline_unavailable(error_message),
-            None,
-        )
-
-    if not isinstance(result, dict):
-        return (
-            None,
-            f"image pipeline returned invalid payload: {type(result).__name__}",
-            False,
-            None,
-        )
-
-    status = str(result.get("status", "")).strip().lower()
-    if status == "markdown":
-        markdown = str(result.get("markdown", "")).strip()
-        if markdown:
-            return markdown, None, False, result
-        return (
-            None,
-            f"image pipeline rendered empty markdown: {Path(image_path).name}",
-            False,
-            result,
-        )
-    if status == "no_markdown":
-        return None, None, False, result
-
-    error = str(result.get("error", "")).strip() or "unknown image pipeline error"
-    return None, f"{Path(image_path).name}: {error}", is_pipeline_unavailable(error), result
-
-
 # 이미지 경로를 커스텀 이미지 태그 문자열로 렌더링한다.
 # downstream 파서가 기대하는 [img(src="...")] 포맷으로 통일한다.
 def render_image_tag(path: str) -> str:
     return f'[img(src="{path}")]'
 
 
-# 이미지 경로를 커스텀 이미지 태그로 렌더링한다.
-# 필요하면 media 디렉터리로 복사하고, 이미지 VLM이 켜져 있으면
-# 단순 링크 대신 생성된 Markdown 설명을 우선 사용한다.
+# 이미지를 media 디렉터리로 복사하고 정적 Markdown 태그로 렌더링한다.
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],
-    alt_text: str = "image",
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
-    ignore_image_vlm_cache: bool = False,
-) -> Tuple[str, Optional[str], bool, bool, bool]:
+) -> str:
     if path.startswith("[unresolved-image"):
-        return path, None, False, False, False
-
-    normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {
-        "gemini",
-        "openai",
-        "openrouter",
-    }
-    if image_vlm_enabled:
-        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
-            path,
-            provider=normalized_provider,
-            model_spec=image_vlm_model,
-            prompt=image_vlm_prompt,
-            max_new_tokens=image_vlm_max_new_tokens,
-            gemini_api_key_env=image_vlm_api_key_env,
-            ignore_cache=ignore_image_vlm_cache,
-        )
-        if image_md is not None:
-            copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
-            relative_path = relativize_markdown_path(copied_path, output_dir)
-            image_tag = render_image_tag(relative_path)
-            return (
-                annotate_generated_image_markdown(image_md, image_tag=image_tag),
-                None,
-                unavailable,
-                True,
-                False,
-            )
-        skipped_no_markdown = (
-            isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
-        )
-        copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
-        relative_path = relativize_markdown_path(copied_path, output_dir)
-        return render_image_tag(relative_path), image_warn, unavailable, False, skipped_no_markdown
+        return path
 
     copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
     relative_path = relativize_markdown_path(copied_path, output_dir)
-    return render_image_tag(relative_path), None, False, False, False
+    return render_image_tag(relative_path)
 
 
 def _sanitize_inline_latex(latex: str) -> str:
@@ -1069,74 +896,18 @@ def overlay_link_text(
     return render_image_tag(path)
 
 
-# 이미지 VLM이 생성한 Markdown 앞에 원본 이미지 링크를 덧붙인다.
-def annotate_generated_image_markdown(markdown: str, image_tag: Optional[str] = None) -> str:
-    body = markdown.strip()
-    parts = [part for part in [image_tag, body] if part]
-    return "\n\n".join(parts)
-
-
-# 테이블 오버레이 이미지 하나를 최종 텍스트로 변환한다.
-# VLM 설명을 우선 시도하고, 실패하거나 비활성화된 경우에는 파일 링크로 대체한다.
+# 테이블 오버레이 이미지를 정적 asset 링크로 변환한다.
 def overlay_content_text(
     path: str,
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
-    ignore_image_vlm_cache: bool = False,
-) -> Tuple[str, Optional[str], bool, bool, bool]:
-    if path.startswith("[unresolved-image"):
-        return path, None, False, False, False
-
-    normalized_provider = normalize_provider(image_vlm_provider)
-    image_vlm_enabled = bool(image_vlm_model) or normalized_provider in {
-        "gemini",
-        "openai",
-        "openrouter",
-    }
-    if image_vlm_enabled:
-        image_md, image_warn, unavailable, result = convert_picture_to_markdown(
-            path,
-            provider=normalized_provider,
-            model_spec=image_vlm_model,
-            prompt=image_vlm_prompt,
-            max_new_tokens=image_vlm_max_new_tokens,
-            gemini_api_key_env=image_vlm_api_key_env,
-            ignore_cache=ignore_image_vlm_cache,
-        )
-        if image_md is not None:
-            link_text = overlay_link_text(
-                path, output_dir, media_dir=media_dir, copied_media=copied_media
-            )
-            return (
-                annotate_generated_image_markdown(image_md, image_tag=link_text),
-                None,
-                unavailable,
-                True,
-                False,
-            )
-        skipped_no_markdown = (
-            isinstance(result, dict) and str(result.get("status", "")) == "no_markdown"
-        )
-        return (
-            overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
-            image_warn,
-            unavailable,
-            False,
-            skipped_no_markdown,
-        )
-
-    return (
-        overlay_link_text(path, output_dir, media_dir=media_dir, copied_media=copied_media),
-        None,
-        False,
-        False,
-        False,
+) -> str:
+    return overlay_link_text(
+        path,
+        output_dir,
+        media_dir=media_dir,
+        copied_media=copied_media,
     )
 
 
@@ -1170,12 +941,6 @@ def convert_table_to_markdown(
     copied_media: Optional[Dict[str, Path]] = None,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
-    image_vlm_provider: str = DEFAULT_IMAGE_VLM_PROVIDER,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = DEFAULT_IMAGE_VLM_PROMPT,
-    image_vlm_max_new_tokens: int = DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-    image_vlm_api_key_env: str = DEFAULT_GEMINI_API_KEY_ENV,
-    ignore_image_vlm_cache: bool = False,
 ) -> Tuple[Optional[str], Optional[str]]:
     return convert_table_to_markdown_core(
         graphic_frame,
@@ -1185,12 +950,6 @@ def convert_table_to_markdown(
         copied_media=copied_media,
         rels_path=rels_path,
         rels_map=rels_map,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        ignore_image_vlm_cache=ignore_image_vlm_cache,
         ns=NS,
         normalize_text_fn=normalize_text,
         overlay_content_text_fn=overlay_content_text,
@@ -1241,7 +1000,7 @@ def convert_one_slide(
 
 
 # CLI 인자를 정의하고 파싱한다.
-# 입력 PPTX 목록, 읽기 순서 모드, heading strict 모드, 이미지 VLM 옵션 등
+# 입력 PPTX 목록과 heading/placeholder 정책 등
 # 전체 변환 파이프라인을 제어하는 설정을 여기서 받는다.
 def _parse_args() -> argparse.Namespace:
     # parser 생성
@@ -1272,60 +1031,37 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Directory for intermediate files (extracted packages, caches, "
-            "reading-order artifacts). Default: ./.pptx2markdown"
+            "structure-analysis artifacts). Default: ./.pptx2markdown"
         ),
-    )
-    parser.add_argument(
-        "--reading-order",
-        choices=("xml", "surya", "xycut"),
-        default="xml",
-        help="Reading-order strategy. Default uses legacy XML-only ordering.",
     )
     parser.add_argument(
         "--headings",
-        choices=("auto", "strict", "surya"),
+        choices=("auto", "strict"),
         default="auto",
         help=(
             "Heading detection strategy. auto uses placeholder, numbering, font, "
-            "and position signals; strict uses title placeholders only; surya "
-            "requires --reading-order surya."
+            "and position signals; strict uses title placeholders only."
         ),
     )
     parser.add_argument(
-        "--not-strict",
-        dest="legacy_not_strict",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
         "--placeholder-inheritance",
-        "--pptx-inheritance",
         dest="pptx_inheritance",
-        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        choices=("none", "geometry", "style"),
         default="style",
         help=(
             "Placeholder inheritance depth for markdown extraction. "
             "none uses slide XML only; geometry inherits placeholder type/bbox; "
-            "style also inherits text style signals such as font size and list semantics. "
-            "Legacy values placeholder=geometry and semantic=style are accepted."
+            "style also inherits text style signals such as font size and list semantics."
         ),
     )
     parser.add_argument(
         "--inherited-shapes",
-        choices=("none", "visible", "all", "semantic"),
+        choices=("none", "visible", "all"),
         default="visible",
         help=(
             "Materialize layout/master-only shapes into effective structure properties. "
             "visible keeps slideshow-visible text/images while filtering placeholder prompts; "
-            "all keeps every shape. Legacy semantic=visible is accepted."
-        ),
-    )
-    parser.add_argument(
-        "--reuse-surya-cache",
-        action="store_true",
-        help=(
-            "Reuse existing Surya structure_ready outputs instead of re-running "
-            "the Surya pipeline."
+            "all keeps every shape."
         ),
     )
     parser.add_argument(
@@ -1335,54 +1071,6 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Converter used for legacy .ppt inputs. auto tries PowerPoint on Windows, "
             "then LibreOffice."
-        ),
-    )
-    parser.add_argument(
-        "--image-vlm-provider",
-        choices=("local", "gemini", "openai", "openrouter"),
-        default=DEFAULT_IMAGE_VLM_PROVIDER,
-        help=(
-            "Image VLM backend. local uses Qwen2.5-VL, gemini uses the Gemini API, "
-            "and openai uses the OpenAI Responses API."
-        ),
-    )
-    parser.add_argument(
-        "--image-vlm-model",
-        help=(
-            "Image VLM model identifier. "
-            "Use 3b/7b (or a Hugging Face model id) for --image-vlm-provider local, "
-            "a Gemini model id such as gemini-2.5-flash for --image-vlm-provider gemini, "
-            "an OpenAI model id such as gpt-4.1-mini for --image-vlm-provider openai, "
-            "or an OpenRouter model id such as google/gemini-2.5-flash for "
-            "--image-vlm-provider openrouter."
-        ),
-    )
-    parser.add_argument(
-        "--image-vlm-prompt",
-        default=DEFAULT_IMAGE_VLM_PROMPT,
-        help="Prompt passed to the image VLM when image conversion is enabled.",
-    )
-    parser.add_argument(
-        "--image-vlm-max-new-tokens",
-        type=int,
-        default=DEFAULT_IMAGE_VLM_MAX_NEW_TOKENS,
-        help="Maximum number of tokens to generate per image when image conversion is enabled.",
-    )
-    parser.add_argument(
-        "--image-vlm-api-key-env",
-        default=DEFAULT_GEMINI_API_KEY_ENV,
-        help=(
-            "Environment variable containing the provider API key when using "
-            "gemini, openai, or openrouter."
-        ),
-    )
-    parser.add_argument(
-        "--ignore-image-vlm-cache",
-        "--ignore-vlm-cache",
-        action="store_true",
-        help=(
-            "Ignore in-memory and disk caches for image VLM results and recompute "
-            "them from scratch."
         ),
     )
     parser.add_argument(
@@ -1406,43 +1094,27 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         else (Path.cwd() / "output").resolve()
     )
     heading_mode = str(args.headings)
-    if getattr(args, "legacy_not_strict", False):
-        heading_mode = "auto"
-    if heading_mode == "surya" and args.reading_order != "surya":
-        raise ValueError("--headings surya requires --reading-order surya")
+    if heading_mode not in {"auto", "strict"}:
+        raise ValueError("headings must be 'auto' or 'strict'")
     output_format = str(getattr(args, "output_format", "markdown"))
     if output_format not in {"markdown", "json"}:
         raise ValueError("output_format must be 'markdown' or 'json'")
-    normalized_provider = normalize_provider(args.image_vlm_provider)
-    api_key_env = str(args.image_vlm_api_key_env).strip()
-    if not api_key_env or (
-        normalized_provider in {"openai", "openrouter"}
-        and api_key_env == DEFAULT_GEMINI_API_KEY_ENV
-    ):
-        if normalized_provider == "openai":
-            api_key_env = DEFAULT_OPENAI_API_KEY_ENV
-        elif normalized_provider == "openrouter":
-            api_key_env = DEFAULT_OPENROUTER_API_KEY_ENV
-        else:
-            api_key_env = DEFAULT_GEMINI_API_KEY_ENV
+    pptx_inheritance = str(args.pptx_inheritance)
+    if pptx_inheritance not in {"none", "geometry", "style"}:
+        raise ValueError("placeholder_inheritance must be 'none', 'geometry', or 'style'")
+    inherited_shapes = str(args.inherited_shapes)
+    if inherited_shapes not in {"none", "visible", "all"}:
+        raise ValueError("inherited_shapes must be 'none', 'visible', or 'all'")
     return ConverterConfig(
         cwd=work_root,
-        output_dir=output_root / args.reading_order,
+        output_dir=output_root,
         inputs=list(args.inputs),
-        reading_order=str(args.reading_order),
         output_format=output_format,
         heading_mode=heading_mode,
         strict=heading_mode == "strict",
-        pptx_inheritance=str(args.pptx_inheritance),
-        inherited_shapes=str(args.inherited_shapes),
-        reuse_surya_cache=bool(args.reuse_surya_cache),
+        pptx_inheritance=pptx_inheritance,
+        inherited_shapes=inherited_shapes,
         ppt_converter=str(args.ppt_converter),
-        image_vlm_provider=normalized_provider,
-        image_vlm_model=(str(args.image_vlm_model).strip() if args.image_vlm_model else None),
-        image_vlm_prompt=str(args.image_vlm_prompt),
-        image_vlm_max_new_tokens=max(1, int(args.image_vlm_max_new_tokens)),
-        image_vlm_api_key_env=api_key_env,
-        ignore_image_vlm_cache=bool(args.ignore_image_vlm_cache),
     )
 
 
@@ -1531,7 +1203,6 @@ def _append_package_stage_failure(
 def _convert_package(
     config: ConverterConfig,
     package: PreparedPackage,
-    surya_structure_root: Optional[Path],
     manifest: ConversionManifest,
 ) -> None:
     pkg = package.package_dir
@@ -1557,61 +1228,34 @@ def _convert_package(
         "slides": [],
         "result": str(output_path),
         "output_format": config.output_format,
-        "pipeline_mode": config.reading_order,
-        "image_vlm_provider": config.image_vlm_provider,
-        "image_vlm_model": config.image_vlm_model,
     }
     pkg_row[f"result_{'md' if config.output_format == 'markdown' else 'json'}"] = str(output_path)
 
     slides: List[SlideDocument] = []
-    ro_map: Dict[str, Path] = {}
-    structure_output_dir: Optional[Path] = None
-    if config.reading_order != "surya":
-        try:
-            ro_map, ro_output = run_structure_analysis_stage(
-                work_root=config.cwd,
-                package_name=pkg_name,
-                slide_xmls=slide_xmls,
-                strict=config.strict,
-                mode=config.reading_order,
-                pptx_inheritance=config.pptx_inheritance,
-                inherited_shapes=config.inherited_shapes,
-            )
-            pkg_row["structure_analysis_output_dir"] = str(ro_output)
-        except Exception as e:  # noqa: BLE001
-            _append_package_stage_failure(
-                pkg_row=pkg_row,
-                slide_xmls=slide_xmls,
-                error_message=f"structure_analysis stage failed: {e}",
-                manifest=manifest,
-                package_name=pkg_name,
-                stage_label="structure_analysis",
-            )
-            return
-    else:
-        try:
-            structure_output_dir = (
-                resolve_surya_structure_dir(surya_structure_root, pkg_name)
-                if surya_structure_root
-                else None
-            )
-            pkg_row["structure_analysis_output_dir"] = str(structure_output_dir)
-        except Exception as e:  # noqa: BLE001
-            _append_package_stage_failure(
-                pkg_row=pkg_row,
-                slide_xmls=slide_xmls,
-                error_message=f"surya structure-ready stage failed: {e}",
-                manifest=manifest,
-                package_name=pkg_name,
-                stage_label="surya structure-ready",
-            )
-            return
+    try:
+        ro_map, ro_output = run_structure_analysis_stage(
+            work_root=config.cwd,
+            package_name=pkg_name,
+            slide_xmls=slide_xmls,
+            strict=config.strict,
+            pptx_inheritance=config.pptx_inheritance,
+            inherited_shapes=config.inherited_shapes,
+        )
+        pkg_row["structure_analysis_output_dir"] = str(ro_output)
+    except Exception as e:  # noqa: BLE001
+        _append_package_stage_failure(
+            pkg_row=pkg_row,
+            slide_xmls=slide_xmls,
+            error_message=f"structure_analysis stage failed: {e}",
+            manifest=manifest,
+            package_name=pkg_name,
+            stage_label="structure_analysis",
+        )
+        return
 
     for i, slide_xml in enumerate(slide_xmls, 1):
         page_no = parse_slide_number(slide_xml.name, i)
         ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
-        if config.reading_order == "surya" and structure_output_dir is not None:
-            ordered_slide_xml = structure_output_dir / f"{slide_xml.stem}.reordered.xml"
         row: Dict[str, object] = {
             "page": page_no,
             "source_xml": str(slide_xml),
@@ -1626,19 +1270,12 @@ def _convert_package(
                 slide_xml=ordered_slide_xml,
                 page_no=page_no,
                 ns=NS,
-                source_slide_xml=(slide_xml if config.reading_order == "surya" else None),
                 source_pptx_path=package.source_pptx_path,
             )
             assets = SlideRenderAssets(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
-                image_vlm_provider=config.image_vlm_provider,
-                image_vlm_model=config.image_vlm_model,
-                image_vlm_prompt=config.image_vlm_prompt,
-                image_vlm_max_new_tokens=config.image_vlm_max_new_tokens,
-                image_vlm_api_key_env=config.image_vlm_api_key_env,
-                ignore_image_vlm_cache=config.ignore_image_vlm_cache,
             )
             slide_document, stats = convert_one_slide(
                 context=context,
@@ -1646,8 +1283,6 @@ def _convert_package(
                 strict_headings=config.strict,
                 heading_mode=config.heading_mode,
             )
-            if config.reading_order == "surya":
-                row["surya_source"] = str(structure_output_dir)
             slides.append(slide_document)
 
             row.update({"status": "ok", **stats.to_slide_row_fields()})
@@ -1675,7 +1310,6 @@ def _convert_package(
 
     document = PresentationDocument(
         source=str(package.source_pptx_path),
-        reading_order=config.reading_order,
         slides=slides,
     )
     if config.output_format == "json":
@@ -1689,7 +1323,7 @@ def _convert_package(
 
 
 # 전체 변환 파이프라인의 CLI 엔트리포인트다.
-# 인자 파싱, 입력 준비, 패키지 선택, Surya 준비, manifest 저장,
+# 인자 파싱, 입력 준비, 패키지 선택, manifest 저장,
 # 최종 요약 로그 출력까지 전체 흐름을 조율한다.
 def main() -> int:
     args = _parse_args()
@@ -1719,33 +1353,11 @@ def run(config: ConverterConfig) -> int:
         logger.info("- %s", default_target_dir(config.cwd).resolve())
         return 0
 
-    surya_structure_root: Optional[Path] = None
-    if config.reading_order == "surya":
-        if config.reuse_surya_cache:
-            surya_structure_root = prepare_surya_structure_root(
-                work_root=config.cwd,
-                force=False,
-                reuse_existing_output=True,
-                targets=[pkg.name for pkg in packages],
-                target_slides_dir=default_target_dir(config.cwd).resolve(),
-            )
-        else:
-            with tempfile.TemporaryDirectory(prefix="pptx2md-surya-pptx-") as stage_dir_name:
-                stage_dir = stage_surya_pptx_inputs(packages, Path(stage_dir_name))
-                surya_structure_root = prepare_surya_structure_root(
-                    work_root=config.cwd,
-                    force=True,
-                    reuse_existing_output=False,
-                    targets=[pkg.name for pkg in packages],
-                    target_pptx_dir=stage_dir.resolve(),
-                    target_slides_dir=default_target_dir(config.cwd).resolve(),
-                )
-
     manifest = ConversionManifest()
 
     # 각 패키지에 대하여 일괄적으로 메인 컨버터 로직인 _convert_package를 수행한다.
     for pkg in packages:
-        _convert_package(config, pkg, surya_structure_root, manifest)
+        _convert_package(config, pkg, manifest)
 
     manifest.mark_finished()
     manifest_path = config.output_dir / "convert_manifest.json"

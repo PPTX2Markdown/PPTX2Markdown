@@ -76,7 +76,6 @@ class ContentBlock(BaseModel):
         "smartart",
         "table",
         "unsupported",
-        "unmatched",
     ]
     content: str
     shape_id: Optional[str] = None
@@ -99,7 +98,6 @@ class PresentationDocument(BaseModel):
 
     schema_version: str = "1.0"
     source: str
-    reading_order: str
     slides: List[SlideDocument] = Field(default_factory=list)
 
 
@@ -249,17 +247,9 @@ class ConverterConfig(BaseModel):
     cwd: Path
     output_dir: Path
     inputs: List[str] = Field(default_factory=list)
-    reading_order: str = "xml"
     output_format: str = "markdown"
     heading_mode: str = "auto"
     strict: bool = False
     pptx_inheritance: str = "style"
     inherited_shapes: str = "visible"
-    reuse_surya_cache: bool = False
-    image_vlm_provider: str = "local"
-    image_vlm_model: Optional[str] = None
-    image_vlm_prompt: str = ""
-    image_vlm_max_new_tokens: int = 1024
-    image_vlm_api_key_env: str = "GEMINI_API_KEY"
-    ignore_image_vlm_cache: bool = False
     ppt_converter: str = "auto"

@@ -223,19 +223,13 @@ def inject_table_overlay_links(
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
-    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
+    overlay_content_text_fn: Callable[..., str],
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
-    image_vlm_provider: str,
-    image_vlm_model: Optional[str],
-    image_vlm_prompt: str,
-    image_vlm_max_new_tokens: int,
-    image_vlm_api_key_env: str,
-    ignore_image_vlm_cache: bool,
-) -> Tuple[Dict[str, object], List[str], bool]:
+) -> Tuple[Dict[str, object], List[str]]:
     if not overlays:
-        return parsed_table, [], False
+        return parsed_table, []
 
     return _inject_table_images(
         parsed_table,
@@ -247,12 +241,6 @@ def inject_table_overlay_links(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
 
 
@@ -324,28 +312,21 @@ def _inject_table_images(
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
-    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
+    overlay_content_text_fn: Callable[..., str],
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
-    image_vlm_provider: str,
-    image_vlm_model: Optional[str],
-    image_vlm_prompt: str,
-    image_vlm_max_new_tokens: int,
-    image_vlm_api_key_env: str,
-    ignore_image_vlm_cache: bool,
-) -> Tuple[Dict[str, object], List[str], bool]:
+) -> Tuple[Dict[str, object], List[str]]:
     bounds = compute_table_cell_bounds(graphic_frame, ns)
     if bounds is None:
-        return parsed_table, [], False
+        return parsed_table, []
     col_bounds, row_bounds = bounds
 
     rows = parsed_table.get("rows")
     if not isinstance(rows, list):
-        return parsed_table, [], False
+        return parsed_table, []
 
     warnings: List[str] = []
-    unavailable_reported = False
 
     for image_entry in image_entries:
         path = str(image_entry.get("path", ""))
@@ -387,27 +368,14 @@ def _inject_table_images(
         if not isinstance(cell, dict):
             continue
 
-        rendered, warn, unavailable, _, _ = overlay_content_text_fn(
+        rendered = overlay_content_text_fn(
             path,
             output_dir,
             media_dir=media_dir,
             copied_media=copied_media,
-            image_vlm_provider=image_vlm_provider,
-            image_vlm_model=image_vlm_model,
-            image_vlm_prompt=image_vlm_prompt,
-            image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-            image_vlm_api_key_env=image_vlm_api_key_env,
-            ignore_image_vlm_cache=ignore_image_vlm_cache,
         )
         _append_cell_content(cell, _table_cell_text(rendered), normalize_text_fn)
-        if warn:
-            if unavailable:
-                if not unavailable_reported:
-                    warnings.append(warn)
-                    unavailable_reported = True
-            else:
-                warnings.append(warn)
-    return parsed_table, warnings, unavailable_reported
+    return parsed_table, warnings
 
 
 def convert_table_to_markdown(
@@ -418,16 +386,10 @@ def convert_table_to_markdown(
     copied_media: Optional[Dict[str, Path]] = None,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
-    image_vlm_provider: str = "local",
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: str = "",
-    image_vlm_max_new_tokens: int = 1024,
-    image_vlm_api_key_env: str = "GEMINI_API_KEY",
-    ignore_image_vlm_cache: bool = False,
     *,
     ns: Dict[str, str],
     normalize_text_fn: Callable[[str], str],
-    overlay_content_text_fn: Callable[..., Tuple[str, Optional[str], bool, bool, bool]],
+    overlay_content_text_fn: Callable[..., str],
     resolve_image_path_fn: Callable[
         [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
     ],
@@ -440,7 +402,7 @@ def convert_table_to_markdown(
     from pptx2markdown.table_pipeline import render as table_render  # type: ignore
 
     parsed = table_parse.parse_table_element(tbl, source="<slide_table>")
-    parsed, overlay_warnings, overlay_unavailable = inject_table_overlay_links(
+    parsed, overlay_warnings = inject_table_overlay_links(
         parsed,
         graphic_frame,
         overlays or [],
@@ -450,12 +412,6 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
     cell_fill_items, cell_fill_warnings, _, _ = collect_table_cell_fill_images(
         graphic_frame,
@@ -464,7 +420,7 @@ def convert_table_to_markdown(
         ns=ns,
         resolve_image_path_fn=resolve_image_path_fn,
     )
-    parsed, cell_image_warnings, cell_image_unavailable = _inject_table_images(
+    parsed, cell_image_warnings = _inject_table_images(
         parsed,
         graphic_frame,
         image_entries=cell_fill_items,
@@ -474,12 +430,6 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        image_vlm_provider=image_vlm_provider,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt,
-        image_vlm_max_new_tokens=image_vlm_max_new_tokens,
-        image_vlm_api_key_env=image_vlm_api_key_env,
-        ignore_image_vlm_cache=ignore_image_vlm_cache,
     )
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,
@@ -488,7 +438,5 @@ def convert_table_to_markdown(
     )
     warnings = list(cell_fill_warnings) + list(overlay_warnings) + list(cell_image_warnings)
     if warnings:
-        if overlay_unavailable or cell_image_unavailable:
-            return md, warnings[0]
         return md, "; ".join(warnings)
     return md, None

@@ -31,26 +31,22 @@ from pptx2markdown.structure_analyzer.xml_primitives import (
 PLACEHOLDER_DEFAULT_TYPE = "obj"
 PLACEHOLDER_DEFAULT_IDX = "0"
 PLACEHOLDER_SPECIAL_IDX = str(0xFFFFFFFF)
-PPTX_INHERITANCE_MODES = {"none", "geometry", "style", "placeholder", "semantic"}
-INHERITED_SHAPE_MODES = {"none", "visible", "all", "semantic"}
-PPTX_INHERITANCE_ALIASES = {"placeholder": "geometry", "semantic": "style"}
-INHERITED_SHAPE_ALIASES = {"semantic": "visible"}
+PPTX_INHERITANCE_MODES = {"none", "geometry", "style"}
+INHERITED_SHAPE_MODES = {"none", "visible", "all"}
 MASTER_TITLE_TYPES = {"title", "ctrTitle", "subTitle"}
 MASTER_BODY_TYPES = {"body"}
 
 
 def normalize_pptx_inheritance_mode(value: str) -> str:
     mode = (value or "style").strip()
-    mode = PPTX_INHERITANCE_ALIASES.get(mode, mode)
-    if mode not in {"none", "geometry", "style"}:
+    if mode not in PPTX_INHERITANCE_MODES:
         raise ValueError(f"invalid placeholder inheritance mode: {value}")
     return mode
 
 
 def normalize_inherited_shapes_mode(value: str) -> str:
     mode = (value or "visible").strip()
-    mode = INHERITED_SHAPE_ALIASES.get(mode, mode)
-    if mode not in {"none", "visible", "all"}:
+    if mode not in INHERITED_SHAPE_MODES:
         raise ValueError(f"invalid inherited shapes mode: {value}")
     return mode
 

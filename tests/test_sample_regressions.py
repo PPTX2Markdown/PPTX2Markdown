@@ -42,12 +42,11 @@ class SampleRegressionTests(unittest.TestCase):
             [cls.samples_dir / name for name in SAMPLE_NAMES],
             output_dir=cls.output_dir,
             work_dir=temp_root / "work",
-            reading_order="xycut",
             headings="auto",
         )
         if exit_code != 0:
             raise AssertionError(f"sample conversion failed with exit code {exit_code}")
-        cls.mode_dir = cls.output_dir / "xycut"
+        cls.mode_dir = cls.output_dir
 
         cls.json_output_dir = temp_root / "json-output"
         json_exit_code = pptx2markdown.convert(
@@ -55,12 +54,11 @@ class SampleRegressionTests(unittest.TestCase):
             output_dir=cls.json_output_dir,
             work_dir=temp_root / "json-work",
             output_format="json",
-            reading_order="xycut",
             headings="auto",
         )
         if json_exit_code != 0:
             raise AssertionError(f"JSON conversion failed with exit code {json_exit_code}")
-        cls.json_mode_dir = cls.json_output_dir / "xycut"
+        cls.json_mode_dir = cls.json_output_dir
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -116,8 +114,8 @@ class SampleRegressionTests(unittest.TestCase):
             "6. table_pipeline",
         )
         for page_number in (3, 4):
-            reading_order = self._page(markdown, page_number)
-            positions = [reading_order.index(text) for text in expected]
+            page_content = self._page(markdown, page_number)
+            positions = [page_content.index(text) for text in expected]
             self.assertEqual(positions, sorted(positions))
 
         comparison = self._page(self._markdown("문제점 목록 발표"), 15)
@@ -141,7 +139,7 @@ class SampleRegressionTests(unittest.TestCase):
 
         self.assertFalse(markdown_path.exists())
         self.assertEqual(document["schema_version"], "1.0")
-        self.assertEqual(document["reading_order"], "xycut")
+        self.assertNotIn("reading_order", document)
         self.assertEqual(len(document["slides"]), 4)
         self.assertTrue(document["slides"][2]["blocks"])
         self.assertIn("kind", document["slides"][2]["blocks"][0])

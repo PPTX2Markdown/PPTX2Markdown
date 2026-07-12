@@ -12,13 +12,11 @@ from .extractor import extract_slide_objects_xml
 from .structure import (
     OrderContext,
     SlideObject,
-    bucket,
     build_order_context,
     compute_heading_depths,
     heading_score,
     heading_threshold,
     order_objects,
-    reason,
 )
 from .xml_primitives import local_name, natural_key
 
@@ -42,7 +40,7 @@ def object_to_dict(
     context: OrderContext,
     heading_depths: Optional[Dict[str, Optional[int]]] = None,
     strict: bool = False,
-    mode: str = "xml",
+    raw_order: bool = False,
 ) -> Dict[str, object]:
     if heading_depths is None:
         depth = compute_heading_depths([obj], context, strict=strict).get(obj.shape_id)
@@ -51,19 +49,14 @@ def object_to_dict(
 
     score = heading_score(obj, strict=strict)
     is_candidate = depth is not None and score >= heading_threshold(strict=strict)
-    if mode == "raw":
-        ordering_bucket = None
+    if raw_order:
         ordering_reason = "Original XML order (diagnostic only)"
-    elif mode == "xycut":
-        ordering_bucket = None
+    else:
         ordering_reason = (
             "XYCut bounding-box projection"
             if obj.bbox is not None
             else "Missing bounding box; appended by XML index"
         )
-    else:
-        ordering_bucket = bucket(obj, context)
-        ordering_reason = reason(obj, context)
     return {
         "shape_id": obj.shape_id,
         "xml_index": obj.xml_index,
@@ -92,7 +85,6 @@ def object_to_dict(
         "bbox": list(obj.bbox) if obj.bbox is not None else None,
         "group_path": list(obj.group_path),
         "z_path": list(obj.z_path),
-        "bucket": ordering_bucket,
         "reason": ordering_reason,
     }
 
@@ -425,14 +417,13 @@ def _analysis_report(
     raw_heading_depths: Dict[str, Optional[int]],
     ordered_indexes: Sequence[int],
     meta: Dict[str, object],
-    mode: str,
     strict: bool,
 ) -> Dict[str, object]:
     raw_objects = sorted(objects, key=lambda obj: obj.xml_index)
     return {
         "schema_version": SCHEMA_VERSION,
         "input_xml": str(slide_xml),
-        "mode": mode,
+        "ordering_strategy": "xycut",
         "strict": strict,
         "pptx_inheritance": meta.get("pptx_inheritance"),
         "inherited_shapes": meta.get("inherited_shapes"),
@@ -444,11 +435,10 @@ def _analysis_report(
         "xml_tables": meta.get("xml_tables", []),
         "xml_images": meta.get("xml_images", []),
         "structure_order": [
-            object_to_dict(obj, context, heading_depths, strict=strict, mode=mode)
-            for obj in ordered
+            object_to_dict(obj, context, heading_depths, strict=strict) for obj in ordered
         ],
         "raw_xml_order": [
-            object_to_dict(obj, context, raw_heading_depths, strict=strict, mode="raw")
+            object_to_dict(obj, context, raw_heading_depths, strict=strict, raw_order=True)
             for obj in raw_objects
         ],
         "ordered_xml_indexes": list(ordered_indexes),
@@ -459,7 +449,6 @@ def _analysis_report(
 def write_outputs(
     slide_xml: Path,
     output_dir: Path,
-    mode: str,
     strict: bool = False,
     pptx_inheritance: str = "style",
     inherited_shapes: str = "visible",
@@ -470,10 +459,9 @@ def write_outputs(
         pptx_inheritance=pptx_inheritance,
         inherited_shapes=inherited_shapes,
     )
-    meta["mode"] = mode
     meta["strict"] = strict
     context = build_order_context(objects)
-    ordered = order_objects(objects, mode=mode)
+    ordered = order_objects(objects)
 
     ordered_heading_depths = compute_heading_depths(ordered, context, strict=strict)
     raw_objects = sorted(objects, key=lambda obj: obj.xml_index)
@@ -507,7 +495,6 @@ def write_outputs(
         raw_heading_depths=raw_heading_depths,
         ordered_indexes=ordered_indexes,
         meta=meta,
-        mode=mode,
         strict=strict,
     )
 

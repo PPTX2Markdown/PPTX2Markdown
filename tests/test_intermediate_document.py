@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import inspect
 import unittest
 
+import pptx2markdown
 from pptx2markdown.main_converter.converter_models import (
     ContentBlock,
     PresentationDocument,
@@ -11,10 +13,26 @@ from pptx2markdown.main_converter.converter_models import (
 
 
 class IntermediateDocumentTests(unittest.TestCase):
+    def test_public_convert_api_exposes_static_pipeline_only(self) -> None:
+        parameters = inspect.signature(pptx2markdown.convert).parameters
+
+        self.assertNotIn("reading_order", parameters)
+        self.assertNotIn("reuse_surya_cache", parameters)
+        self.assertNotIn("strict_headings", parameters)
+        self.assertNotIn("image_vlm_provider", parameters)
+        self.assertNotIn("image_vlm_model", parameters)
+        self.assertNotIn("ignore_image_vlm_cache", parameters)
+
+        with self.assertRaisesRegex(ValueError, "headings must be"):
+            pptx2markdown.convert([], headings="surya")
+        with self.assertRaisesRegex(ValueError, "placeholder_inheritance must be"):
+            pptx2markdown.convert([], placeholder_inheritance="semantic")
+        with self.assertRaisesRegex(ValueError, "inherited_shapes must be"):
+            pptx2markdown.convert([], inherited_shapes="semantic")
+
     def test_json_round_trip_preserves_markdown_rendering(self) -> None:
         document = PresentationDocument(
             source="deck.pptx",
-            reading_order="xycut",
             slides=[
                 SlideDocument(
                     page=1,

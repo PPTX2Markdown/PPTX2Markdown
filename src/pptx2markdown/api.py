@@ -21,19 +21,10 @@ def convert(
     output_dir: Optional[PathLike] = None,
     work_dir: Optional[PathLike] = None,
     output_format: str = "markdown",
-    reading_order: str = "xml",
     headings: str = "auto",
-    strict_headings: Optional[bool] = None,
     placeholder_inheritance: str = "style",
     inherited_shapes: str = "visible",
-    reuse_surya_cache: bool = False,
     ppt_converter: str = "auto",
-    image_vlm_provider: Optional[str] = None,
-    image_vlm_model: Optional[str] = None,
-    image_vlm_prompt: Optional[str] = None,
-    image_vlm_max_new_tokens: Optional[int] = None,
-    image_vlm_api_key_env: Optional[str] = None,
-    ignore_image_vlm_cache: bool = False,
     verbose: bool = False,
 ) -> int:
     """Convert PPTX/PPT file(s) to Markdown or JSON.
@@ -46,21 +37,9 @@ def convert(
         work_dir: Where intermediate artifacts and caches live
             (default: ``./.pptx2markdown``).
         output_format: ``"markdown"`` (default) or ``"json"``.
-        reading_order: ``"xml"`` (default), ``"xycut"``, or ``"surya"``
-            (requires the ``pptx2markdown[surya]`` extra).
-        image_vlm_provider: Enable image-to-markdown via a VLM:
-            ``"gemini"``, ``"openai"``, ``"openrouter"``, or ``"local"``
-            (requires the ``pptx2markdown[local-vlm]`` extra).
-
     Returns:
         Process-style exit code: ``0`` on success, ``1`` if any slide failed.
     """
-    from pptx2markdown.image_pipeline.service import (
-        DEFAULT_GEMINI_API_KEY_ENV,
-        DEFAULT_MAX_NEW_TOKENS,
-        DEFAULT_PROMPT,
-        DEFAULT_PROVIDER,
-    )
     from pptx2markdown.main_converter.run_pptx_to_markdown import (
         _build_config,
         _configure_logging,
@@ -74,34 +53,15 @@ def convert(
     else:
         input_list = [str(p) for p in inputs]
 
-    heading_mode = headings
-    if strict_headings is not None:
-        if headings == "surya" and strict_headings:
-            raise ValueError("strict_headings=True cannot be combined with headings='surya'")
-        heading_mode = "strict" if strict_headings else headings
-
     args = argparse.Namespace(
         inputs=input_list,
         output_dir=str(output_dir) if output_dir else None,
         work_dir=str(work_dir) if work_dir else None,
         output_format=output_format,
-        reading_order=reading_order,
-        headings=heading_mode,
-        legacy_not_strict=False,
+        headings=headings,
         pptx_inheritance=placeholder_inheritance,
         inherited_shapes=inherited_shapes,
-        reuse_surya_cache=bool(reuse_surya_cache),
         ppt_converter=ppt_converter,
-        image_vlm_provider=image_vlm_provider or DEFAULT_PROVIDER,
-        image_vlm_model=image_vlm_model,
-        image_vlm_prompt=image_vlm_prompt if image_vlm_prompt is not None else DEFAULT_PROMPT,
-        image_vlm_max_new_tokens=(
-            image_vlm_max_new_tokens
-            if image_vlm_max_new_tokens is not None
-            else DEFAULT_MAX_NEW_TOKENS
-        ),
-        image_vlm_api_key_env=image_vlm_api_key_env or DEFAULT_GEMINI_API_KEY_ENV,
-        ignore_image_vlm_cache=bool(ignore_image_vlm_cache),
         verbose=bool(verbose),
     )
     _configure_logging(verbose=bool(verbose))

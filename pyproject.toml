@@ -29,22 +29,8 @@ dependencies = [
     "smartart2md>=0.1.1",
     "omml2latex>=0.1.0",
     "pydantic>=2.10.0,<3",
-    "python-dotenv>=1.0.1,<2",
-    "pillow>=10.0",
     "pywin32>=306; platform_system == 'Windows'",
 ]
-
-[project.optional-dependencies]
-# Surya layout-based reading order (--reading-order surya). Pulls in torch.
-surya = ["surya-ocr>=0.17.1"]
-# Local Qwen2.5-VL image-to-markdown (--image-vlm-provider local). Pulls in torch.
-local-vlm = [
-    "torch>=2.4",
-    "torchvision>=0.19",
-    "transformers>=4.45,<5",
-    "accelerate>=1.0,<2",
-]
-all = ["pptx2markdown[surya,local-vlm]"]
 
 [project.scripts]
 pptx2markdown = "pptx2markdown.main_converter.run_pptx_to_markdown:main"

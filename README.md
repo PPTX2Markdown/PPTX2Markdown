@@ -14,8 +14,8 @@ Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markd
 - **Tables** — native PPTX tables rendered as Markdown tables
 - **Charts & SmartArt** — converted to Markdown via [chart2md](https://pypi.org/project/chart2md/) and [smartart2md](https://pypi.org/project/smartart2md/)
 - **Formulas** — OMML equations converted to LaTeX via [omml2latex](https://pypi.org/project/omml2latex/)
-- **Images** — copied as assets, or described in Markdown by a vision-language model (Gemini / OpenAI / OpenRouter / local Qwen2.5-VL)
-- **Reading order** — XML order by default, with optional XY-cut or [Surya](https://github.com/VikParuchuri/surya) layout-based reordering
+- **Images** — copied from the PPTX package as local assets and linked deterministically
+- **Reading order** — deterministic recursive XY-cut on native shape geometry
 
 ## Installation
 
@@ -23,15 +23,7 @@ Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markd
 pip install pptx2markdown
 ```
 
-Optional extras (each pulls in PyTorch — multi-GB install):
-
-```bash
-pip install "pptx2markdown[surya]"      # --reading-order surya
-pip install "pptx2markdown[local-vlm]"  # --image-vlm-provider local (Qwen2.5-VL)
-pip install "pptx2markdown[all]"        # everything
-```
-
-**LibreOffice** (optional) is used to convert legacy `.ppt` inputs and EMF/WMF images, and to render PDFs for Surya mode:
+**LibreOffice** (optional) is used to convert legacy `.ppt` inputs and EMF/WMF images:
 
 ```bash
 # macOS
@@ -45,7 +37,7 @@ On Windows, PowerPoint COM automation is used for `.ppt` conversion when availab
 ## Quick start
 
 ```bash
-# Convert one file → ./output/xml/deck/deck.md
+# Convert one file → ./output/deck/deck.md
 pptx2markdown deck.pptx
 
 # Convert every .pptx/.ppt in the current directory
@@ -70,31 +62,9 @@ pptx2markdown.convert("deck.pptx", output_dir="converted")
 
 ### Reading order
 
-```bash
-pptx2markdown deck.pptx --reading-order xml    # default: slide XML order
-pptx2markdown deck.pptx --reading-order xycut  # recursive XY-cut on shape geometry
-pptx2markdown deck.pptx --reading-order surya  # Surya layout model (requires [surya] extra)
-```
-
-### Image description with a VLM
-
-By default images are linked as assets. Pass `--image-vlm-provider` to describe document-like images (tables, diagrams, screenshots) as Markdown instead:
-
-```bash
-# Gemini — put GEMINI_API_KEY in .env or the environment
-pptx2markdown deck.pptx --image-vlm-provider gemini
-
-# OpenAI (default model: gpt-4.1-mini) — needs OPENAI_API_KEY
-pptx2markdown deck.pptx --image-vlm-provider openai
-
-# OpenRouter (default model: google/gemini-2.5-flash) — needs OPENROUTER_API_KEY
-pptx2markdown deck.pptx --image-vlm-provider openrouter
-
-# Local Qwen2.5-VL — requires [local-vlm] extra, GPU recommended
-pptx2markdown deck.pptx --image-vlm-provider local --image-vlm-model 3b
-```
-
-VLM results are cached in `~/.cache/pptx2markdown/` (override with `PPTX2MARKDOWN_CACHE_DIR`); pass `--ignore-image-vlm-cache` to recompute.
+Reading order is always determined by recursive XY-cut on shape bounding boxes.
+The algorithm uses top-left ordering when no further geometric cut is possible
+and the original XML index only as a deterministic tie-breaker or missing-bbox fallback.
 
 ### Other flags
 
@@ -103,7 +73,7 @@ VLM results are cached in `~/.cache/pptx2markdown/` (override with `PPTX2MARKDOW
 | `-o, --output-dir` | `./output` | Where converted output is written |
 | `--work-dir` | `./.pptx2markdown` | Intermediate files (extraction, caches) |
 | `--output-format` | `markdown` | Final output (`markdown`/`json`) |
-| `--headings` | `auto` | Heading detection (`auto`/`strict`/`surya`) |
+| `--headings` | `auto` | Heading detection (`auto`/`strict`) |
 | `--placeholder-inheritance` | `style` | How much layout/master style to inherit (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | Materialize layout/master shapes (`none`/`visible`/`all`) |
 | `--ppt-converter` | `auto` | `.ppt` conversion backend (`powerpoint`/`libreoffice`) |
@@ -115,11 +85,10 @@ Run `pptx2markdown --help` for the full list.
 
 ```
 output/
-└── xml/                    # one folder per reading-order mode
-    ├── convert_manifest.json
-    └── <deck-name>/
-        ├── <deck-name>.md     # or <deck-name>.json
-        └── media/          # copied image assets
+├── convert_manifest.json
+└── <deck-name>/
+    ├── <deck-name>.md     # or <deck-name>.json
+    └── media/             # copied image assets
 ```
 
 `convert_manifest.json` records per-slide status, warnings, and block statistics.
@@ -130,9 +99,7 @@ the Markdown renderer consumes. Slides contain ordered blocks with `kind`,
 ## Documentation
 
 - [Converter internals](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
-- [Image VLM pipeline](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/image_pipeline.md)
 - [Structure analyzer](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
-- [Surya pipeline](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/surya_pipeline.md)
 
 ## License
 

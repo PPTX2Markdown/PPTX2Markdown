@@ -42,7 +42,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("1. Main converter", (100_000, 100_000, 300_000, 140_000), 6),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual(
             [obj.text for obj in ordered],
@@ -64,7 +64,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Right column body", (550_000, 300_000, 950_000, 700_000), 4),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual(
             [obj.text for obj in ordered],
@@ -79,7 +79,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Top left", (100_000, 100_000, 300_000, 150_000), 4),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual(
             [obj.text for obj in ordered],
@@ -94,7 +94,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Fourth", (600_000, 430_000, 900_000, 530_000), 4),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual([obj.text for obj in ordered], ["First", "Second", "Third", "Fourth"])
 
@@ -107,7 +107,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Right lower", (600_000, 500_000, 900_000, 600_000), 5),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual(
             [obj.text for obj in ordered],
@@ -121,7 +121,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Middle", (100_000, 300_000, 400_000, 400_000), 3),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual([obj.text for obj in ordered], ["Top", "Middle", "Bottom"])
 
@@ -144,8 +144,8 @@ class XycutReadingOrderTests(unittest.TestCase):
         semantic[1].is_footer = True
         semantic[2].is_decorative = True
 
-        semantic_order = [obj.shape_id for obj in order_objects(semantic, mode="xycut")]
-        generic_order = [obj.shape_id for obj in order_objects(generic, mode="xycut")]
+        semantic_order = [obj.shape_id for obj in order_objects(semantic)]
+        generic_order = [obj.shape_id for obj in order_objects(generic)]
 
         self.assertEqual(semantic_order, generic_order)
 
@@ -156,7 +156,7 @@ class XycutReadingOrderTests(unittest.TestCase):
             make_object("Right tall", (500_000, 100_000, 900_000, 400_000), 3),
         ]
 
-        ordered = order_objects(objects, mode="xycut")
+        ordered = order_objects(objects)
 
         self.assertEqual(
             [obj.text for obj in ordered],
@@ -168,7 +168,7 @@ class XycutReadingOrderTests(unittest.TestCase):
         missing_bbox = make_object("A very long numbered 1. semantic label", (0, 0, 1, 1), 1)
         missing_bbox.bbox = None
 
-        ordered = order_objects([missing_bbox, positioned], mode="xycut")
+        ordered = order_objects([missing_bbox, positioned])
 
         self.assertEqual([obj.text for obj in ordered], ["Positioned", missing_bbox.text])
 

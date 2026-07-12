@@ -17,12 +17,12 @@ Markdown 또는 JSON으로 출력하는 메인 진입점입니다.
 
 ## 출력
 
-출력 루트: `output/<reading-order>/`
+출력 루트: `output/`
 
-- 패키지 결과: `output/<reading-order>/<package>/<package>.md`
-- JSON 옵션 결과: `output/<reading-order>/<package>/<package>.json`
-- 매니페스트: `output/<reading-order>/convert_manifest.json`
-- 이미지 복사본: `output/<reading-order>/<package>/media/*`
+- 패키지 결과: `output/<package>/<package>.md`
+- JSON 옵션 결과: `output/<package>/<package>.json`
+- 매니페스트: `output/convert_manifest.json`
+- 이미지 복사본: `output/<package>/media/*`
 
 ## 기본 실행 예시
 
@@ -54,40 +54,16 @@ pptx2markdown sample3.pptx --output-format json
 `ContentBlock`을 생성합니다. Markdown 출력은 이 중간표현만 해석하므로 JSON과
 Markdown 출력 경로가 별도의 파싱 로직을 갖지 않습니다.
 
-# Reading Order 모드
+# Reading Order
 
-XML 모드(기본):
-
-```bash
-python main_converter/run_pptx_to_markdown.py --reading-order xml
-```
-
-Surya 모드:
-
-```bash
-python main_converter/run_pptx_to_markdown.py --reading-order surya
-```
-
-Surya 모드에서 특정 입력:
-
-```bash
-python main_converter/run_pptx_to_markdown.py --reading-order surya sample3.pptx sample4.pptx
-```
-
-## Surya 연동 동작
-
-`--reading-order surya` 실행 시 `main_converter`가 내부적으로:
-
-1. `target_slides`를 Surya 슬라이드 루트로 사용 (`target_pptx`는 `.pptx` 입력 소스로 사용)
-2. `surya_pipeline/run_surya_pipeline.py` 호출
-3. `output/structure_ready/<package>/slideN.reordered.xml`를 읽어 변환
-
-기본적으로 Surya 파이프라인은 `.venv/bin/python`을 우선 사용합니다(존재 시).
+모든 입력은 shape bbox 기반 재귀 XY-cut으로 정렬합니다. 별도의 읽기 순서 옵션은
+없습니다. 구조 분석기는 column cut을 우선하고, 기하학적 분할이 불가능할 때
+top-left 및 XML index fallback을 사용합니다.
 
 ## 주요 옵션
 
-- `--reading-order {xml|surya|xycut}`
 - `--output-format {markdown|json}`
-- `--headings {auto|strict|surya}` (`auto`가 기본값)
-- `--reuse-surya-cache`
-- `--image-vlm-provider {local|gemini|openai|openrouter}`
+- `--headings {auto|strict}` (`auto`가 기본값)
+
+이미지는 PPTX 패키지의 media part를 그대로 복사하고 정적 asset 링크로
+렌더링합니다. OCR/VLM/API 호출 경로는 없습니다.

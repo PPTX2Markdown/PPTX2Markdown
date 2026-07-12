@@ -14,8 +14,8 @@ PowerPoint(`.pptx` / `.ppt`) 프레젠테이션을 깔끔하고 구조화된 Mar
 - **테이블** — 네이티브 PPTX 테이블을 Markdown 테이블로 렌더링
 - **차트 & SmartArt** — [chart2md](https://pypi.org/project/chart2md/)와 [smartart2md](https://pypi.org/project/smartart2md/)로 Markdown 변환
 - **수식** — OMML 수식을 [omml2latex](https://pypi.org/project/omml2latex/)로 LaTeX 변환
-- **이미지** — asset으로 복사하거나, VLM(Gemini / OpenAI / OpenRouter / 로컬 Qwen2.5-VL)으로 Markdown 설명 생성
-- **읽기 순서** — 기본은 XML 순서, 선택적으로 XY-cut 또는 [Surya](https://github.com/VikParuchuri/surya) 레이아웃 기반 재정렬
+- **이미지** — PPTX 패키지에서 로컬 asset으로 복사하고 결정론적 링크 생성
+- **읽기 순서** — 네이티브 도형 좌표를 이용한 결정론적 재귀 XY-cut
 
 ## 설치
 
@@ -23,15 +23,7 @@ PowerPoint(`.pptx` / `.ppt`) 프레젠테이션을 깔끔하고 구조화된 Mar
 pip install pptx2markdown
 ```
 
-선택 extras (각각 PyTorch를 포함하므로 수 GB 설치):
-
-```bash
-pip install "pptx2markdown[surya]"      # --reading-order surya
-pip install "pptx2markdown[local-vlm]"  # --image-vlm-provider local (Qwen2.5-VL)
-pip install "pptx2markdown[all]"        # 전부
-```
-
-**LibreOffice**(선택)는 구형 `.ppt` 입력과 EMF/WMF 이미지 변환, Surya 모드의 PDF 렌더링에 사용됩니다:
+**LibreOffice**(선택)는 구형 `.ppt` 입력과 EMF/WMF 이미지 변환에 사용됩니다:
 
 ```bash
 # macOS
@@ -45,7 +37,7 @@ Windows에서는 PowerPoint가 설치되어 있으면 `.ppt` 변환에 COM 자�
 ## 빠른 시작
 
 ```bash
-# 파일 하나 변환 → ./output/xml/deck/deck.md
+# 파일 하나 변환 → ./output/deck/deck.md
 pptx2markdown deck.pptx
 
 # 현재 디렉터리의 모든 .pptx/.ppt 변환
@@ -70,31 +62,9 @@ pptx2markdown.convert("deck.pptx", output_dir="converted")
 
 ### 읽기 순서
 
-```bash
-pptx2markdown deck.pptx --reading-order xml    # 기본: 슬라이드 XML 순서
-pptx2markdown deck.pptx --reading-order xycut  # 도형 좌표 기반 재귀 XY-cut
-pptx2markdown deck.pptx --reading-order surya  # Surya 레이아웃 모델 ([surya] extra 필요)
-```
-
-### VLM 이미지 설명
-
-기본적으로 이미지는 asset 링크로 처리됩니다. `--image-vlm-provider`를 지정하면 문서성 이미지(테이블, 다이어그램, 스크린샷)를 Markdown 설명으로 변환합니다:
-
-```bash
-# Gemini — GEMINI_API_KEY를 .env 또는 환경변수에 설정
-pptx2markdown deck.pptx --image-vlm-provider gemini
-
-# OpenAI (기본 모델: gpt-4.1-mini) — OPENAI_API_KEY 필요
-pptx2markdown deck.pptx --image-vlm-provider openai
-
-# OpenRouter (기본 모델: google/gemini-2.5-flash) — OPENROUTER_API_KEY 필요
-pptx2markdown deck.pptx --image-vlm-provider openrouter
-
-# 로컬 Qwen2.5-VL — [local-vlm] extra 필요, GPU 권장
-pptx2markdown deck.pptx --image-vlm-provider local --image-vlm-model 3b
-```
-
-VLM 결과는 `~/.cache/pptx2markdown/`에 캐시됩니다(`PPTX2MARKDOWN_CACHE_DIR`로 변경 가능). 캐시를 무시하려면 `--ignore-image-vlm-cache`를 사용하세요.
+읽기 순서는 항상 도형 bbox 기반 재귀 XY-cut으로 결정합니다. 더 이상 기하학적으로
+분할할 수 없으면 top-left 순서를 사용하며, 원본 XML index는 좌표가 같을 때의
+결정론적 tie-break와 bbox 누락 객체의 fallback으로만 사용합니다.
 
 ### 기타 플래그
 
@@ -103,7 +73,7 @@ VLM 결과는 `~/.cache/pptx2markdown/`에 캐시됩니다(`PPTX2MARKDOWN_CACHE_
 | `-o, --output-dir` | `./output` | 변환 결과 출력 위치 |
 | `--work-dir` | `./.pptx2markdown` | 중간 파일(추출, 캐시) 위치 |
 | `--output-format` | `markdown` | 최종 출력 형식 (`markdown`/`json`) |
-| `--headings` | `auto` | 헤딩 판정 방식 (`auto`/`strict`/`surya`) |
+| `--headings` | `auto` | 헤딩 판정 방식 (`auto`/`strict`) |
 | `--placeholder-inheritance` | `style` | 레이아웃/마스터 스타일 상속 범위 (`none`/`geometry`/`style`) |
 | `--inherited-shapes` | `visible` | 레이아웃/마스터 도형 반영 (`none`/`visible`/`all`) |
 | `--ppt-converter` | `auto` | `.ppt` 변환 백엔드 (`powerpoint`/`libreoffice`) |
@@ -115,11 +85,10 @@ VLM 결과는 `~/.cache/pptx2markdown/`에 캐시됩니다(`PPTX2MARKDOWN_CACHE_
 
 ```
 output/
-└── xml/                    # 읽기 순서 모드별 폴더
-    ├── convert_manifest.json
-    └── <deck-name>/
-        ├── <deck-name>.md     # 또는 <deck-name>.json
-        └── media/          # 복사된 이미지 asset
+├── convert_manifest.json
+└── <deck-name>/
+    ├── <deck-name>.md     # 또는 <deck-name>.json
+    └── media/             # 복사된 이미지 asset
 ```
 
 `convert_manifest.json`에는 슬라이드별 상태, 경고, 블록 통계가 기록됩니다.
@@ -130,9 +99,7 @@ JSON 출력은 Markdown 렌더러가 사용하는 것과 동일한 `Presentation
 ## 문서
 
 - [메인 컨버터 내부 구조](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
-- [이미지 VLM 파이프라인](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/image_pipeline.md)
 - [구조 분석기](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
-- [Surya 파이프라인](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/surya_pipeline.md)
 
 ## 라이선스
 

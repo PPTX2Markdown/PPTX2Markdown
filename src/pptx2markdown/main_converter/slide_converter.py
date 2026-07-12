@@ -26,7 +26,6 @@ from .heading_rules import (
     strict_heading_depth_from_placeholder as hr_strict_heading_depth_from_placeholder,
 )
 
-UNMATCHED_MARKER = "[unmatched]"
 _DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
 _LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
 _LARGE_INT = 10**18
@@ -72,13 +71,12 @@ class FlattenedShape:
 class SlideRenderState:
     used_headings: set[str] = field(default_factory=set)
     text_block_index: int = 0
-    image_pipeline_unavailable_reported: bool = False
 
 
 @dataclass
 class SlideConversionDeps:
     local_name: Callable[[str], str]
-    choose_rels_in_package: Callable[[Path, Optional[Path]], Optional[Path]]
+    choose_rels_in_package: Callable[[Path], Optional[Path]]
     build_rels_map: Callable[[Optional[Path]], Dict[str, str]]
     load_heading_hints: Callable[[Path], Dict[str, Dict[str, object]]]
     load_effective_properties: Callable[[Path], Dict[str, Dict[str, object]]]
@@ -94,7 +92,7 @@ class SlideConversionDeps:
     resolve_image_path: Callable[
         [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
     ]
-    format_markdown_image: Callable[..., Tuple[str, Optional[str], bool, bool, bool]]
+    format_markdown_image: Callable[..., str]
     convert_table_to_markdown: Callable[..., Tuple[Optional[str], Optional[str]]]
     graphic_frame_kind: Callable[[ET.Element], Optional[str]]
     convert_chart_to_markdown: Callable[
@@ -119,12 +117,6 @@ class SlideRenderAssets:
     output_dir: Optional[Path] = None
     media_dir: Optional[Path] = None
     copied_media: Optional[Dict[str, Path]] = None
-    image_vlm_provider: str = "local"
-    image_vlm_model: Optional[str] = None
-    image_vlm_prompt: str = ""
-    image_vlm_max_new_tokens: int = 1024
-    image_vlm_api_key_env: str = "GEMINI_API_KEY"
-    ignore_image_vlm_cache: bool = False
 
 
 @dataclass
@@ -132,7 +124,6 @@ class SlideConversionContext:
     slide_xml: Path
     page_no: int
     ns: Dict[str, str]
-    source_slide_xml: Optional[Path] = None
     source_pptx_path: Optional[Path] = None
     heading_mode: str = "auto"
     rels_path: Optional[Path] = None
@@ -428,18 +419,6 @@ def _apply_effective_list_properties(
     return converted if changed else blocks
 
 
-def _append_unmatched_marker(
-    blocks: List[ContentBlock],
-    child: ET.Element,
-    context: SlideConversionContext,
-    deps: SlideConversionDeps,
-) -> None:
-    sid = deps.shape_id_of(child)
-    hint = context.heading_hints.get(sid, {})
-    if hint.get("reading_order_source") == "xml_append":
-        blocks.append(ContentBlock(kind="unmatched", content=UNMATCHED_MARKER, shape_id=sid))
-
-
 def _handle_text_shape_block(
     child: ET.Element,
     *,
@@ -487,15 +466,6 @@ def _handle_text_shape_block(
     depth = hint.get("heading_depth_hint")
     score = float(hint.get("heading_score", 0.0))
     is_candidate = bool(hint.get("is_heading_candidate", False))
-    heading_source = str(hint.get("heading_source") or "")
-    raw_heading_sources = hint.get("heading_sources")
-    if isinstance(raw_heading_sources, list):
-        heading_sources = {str(source) for source in raw_heading_sources}
-    elif heading_source:
-        heading_sources = {heading_source}
-    else:
-        heading_sources = set()
-    reading_order_source = str(hint.get("reading_order_source") or "")
     raw_font_pt = hint.get("font_pt")
     try:
         font_pt = float(raw_font_pt) if raw_font_pt is not None else None
@@ -504,44 +474,21 @@ def _handle_text_shape_block(
 
     rendered_text = re.sub(r"\s+", " ", (text or "").strip())
 
-    strong_heading_signal = False
-    if context.heading_mode == "surya":
-        depth = hint.get("surya_heading_depth_hint")
-        is_candidate = (
-            "surya_label" in heading_sources
-            and reading_order_source in {"surya_match", "surya_region"}
-            and isinstance(depth, int)
-            and 1 <= depth <= 6
-        )
-        if not is_candidate:
-            depth = None
-            score = 0.0
-        else:
-            score = max(score, heading_policy.threshold)
-        if has_math_shape:
-            is_candidate = False
-            depth = None
-            score = 0.0
-    elif (
+    strong_heading_signal = (
         not strict_headings
         and is_candidate
         and isinstance(depth, int)
         and 1 <= depth <= 6
         and score >= heading_policy.threshold
-    ):
-        strong_heading_signal = True
+    )
 
-    if context.heading_mode == "surya":
-        pass
-    elif strict_headings:
+    if strict_headings:
         strict_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
         strict_depth = hr_strict_heading_depth_from_placeholder(strict_ph_type)
         if strict_depth is not None:
             is_candidate = True
             depth = strict_depth
             score = 1.0
-        elif heading_source == "surya_label" and isinstance(depth, int) and 1 <= depth <= 6:
-            is_candidate = score >= heading_policy.threshold
         else:
             is_candidate = False
             depth = None
@@ -592,7 +539,7 @@ def _handle_text_shape_block(
     rendered = text
     block_kind = "math" if has_math_shape else "text"
     heading_level: Optional[int] = None
-    if context.heading_mode != "surya" and not strict_headings and not strong_heading_signal:
+    if not strict_headings and not strong_heading_signal:
         if has_list_semantics:
             is_candidate = False
         if hr_looks_like_multi_numbered_items(plain_text):
@@ -622,7 +569,6 @@ def _handle_text_shape_block(
             stats.skipped_blocks += 1
             return
 
-    _append_unmatched_marker(blocks, child, context, deps)
     if has_list_semantics and block_kind == "text":
         block_kind = "list"
     _append_rendered_text_block(
@@ -661,27 +607,13 @@ def _handle_picture_block(
     else:
         stats.resolved_images += 1
 
-    rendered_image, image_warn, unavailable, _, _ = deps.format_markdown_image(
+    rendered_image = deps.format_markdown_image(
         img_path,
         output_dir=assets.output_dir,
         media_dir=assets.media_dir,
         copied_media=assets.copied_media,
-        image_vlm_provider=assets.image_vlm_provider,
-        image_vlm_model=assets.image_vlm_model,
-        image_vlm_prompt=assets.image_vlm_prompt,
-        image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
-        image_vlm_api_key_env=assets.image_vlm_api_key_env,
-        ignore_image_vlm_cache=assets.ignore_image_vlm_cache,
     )
-    if image_warn:
-        if unavailable:
-            if not state.image_pipeline_unavailable_reported:
-                stats.warnings.append(image_warn)
-                state.image_pipeline_unavailable_reported = True
-        else:
-            stats.warnings.append(image_warn)
 
-    _append_unmatched_marker(blocks, child, context, deps)
     blocks.append(ContentBlock(kind="image", content=rendered_image, shape_id=sid or None))
     stats.image_blocks += 1
 
@@ -710,7 +642,6 @@ def _handle_graphic_frame_block(
     deps: SlideConversionDeps,
 ) -> None:
     shape_id = deps.shape_id_of(child)
-    _append_unmatched_marker(blocks, child, context, deps)
     gf_kind = deps.graphic_frame_kind(child)
     if gf_kind == "chart":
         chart_md, chart_err = deps.convert_chart_to_markdown(
@@ -757,12 +688,6 @@ def _handle_graphic_frame_block(
         copied_media=assets.copied_media,
         rels_path=context.rels_path,
         rels_map=context.rels_map,
-        image_vlm_provider=assets.image_vlm_provider,
-        image_vlm_model=assets.image_vlm_model,
-        image_vlm_prompt=assets.image_vlm_prompt,
-        image_vlm_max_new_tokens=assets.image_vlm_max_new_tokens,
-        image_vlm_api_key_env=assets.image_vlm_api_key_env,
-        ignore_image_vlm_cache=assets.ignore_image_vlm_cache,
     )
     if table_md is not None:
         blocks.append(
@@ -773,17 +698,7 @@ def _handle_graphic_frame_block(
 
     _append_unsupported_graphic_frame(blocks, stats, shape_id)
     if err:
-        normalized_err = str(err).lower()
-        if (
-            "api key not found" in normalized_err
-            or "modulenotfounderror" in normalized_err
-            or "importerror" in normalized_err
-        ):
-            if not state.image_pipeline_unavailable_reported:
-                stats.warnings.append(err)
-                state.image_pipeline_unavailable_reported = True
-        else:
-            stats.warnings.append(err)
+        stats.warnings.append(err)
 
 
 def convert_one_slide(
@@ -800,9 +715,7 @@ def convert_one_slide(
     if sp_tree is None:
         raise ValueError("missing p:cSld/p:spTree")
 
-    context.rels_path = deps.choose_rels_in_package(
-        context.slide_xml, source_slide_xml=context.source_slide_xml
-    )
+    context.rels_path = deps.choose_rels_in_package(context.slide_xml)
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
     context.effective_properties = deps.load_effective_properties(context.slide_xml)

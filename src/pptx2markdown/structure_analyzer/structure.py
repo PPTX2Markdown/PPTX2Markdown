@@ -92,10 +92,6 @@ def object_bottom(obj: SlideObject) -> int:
     return object_top(obj) + object_height(obj)
 
 
-def object_width(obj: SlideObject) -> int:
-    return max(1, object_right(obj) - object_left(obj))
-
-
 def build_order_context(objects: Sequence[SlideObject]) -> OrderContext:
     candidates = [o for o in objects if not o.is_footer and not o.is_decorative]
     if not candidates:
@@ -125,14 +121,6 @@ def build_order_context(objects: Sequence[SlideObject]) -> OrderContext:
     )
 
 
-def is_full_width_body(obj: SlideObject, context: OrderContext) -> bool:
-    if not obj.normalized:
-        return False
-    width_ratio = object_width(obj) / max(1, context.slide_width)
-    height_ratio = object_height(obj) / max(1, context.slide_height)
-    return width_ratio >= 0.58 and (height_ratio >= 0.12 or len(obj.normalized) >= 90)
-
-
 def is_top_title_object(obj: SlideObject, context: OrderContext) -> bool:
     if obj.is_footer or obj.is_decorative:
         return False
@@ -148,62 +136,6 @@ def is_top_title_object(obj: SlideObject, context: OrderContext) -> bool:
     ):
         return len(obj.normalized) <= 100
     return False
-
-
-def reading_top(obj: SlideObject, context: OrderContext) -> int:
-    top = object_top(obj)
-    if top >= LARGE_INT and is_top_title_object(obj, context):
-        return context.slide_top - max(250000, int(context.slide_height * 0.08))
-    return top
-
-
-def is_promotable_numbered_heading(obj: SlideObject, context: OrderContext) -> bool:
-    if not is_numbered_heading_text(obj.text):
-        return False
-    if obj.is_footer or obj.is_decorative:
-        return False
-    if is_full_width_body(obj, context):
-        return False
-    top = object_top(obj)
-    if top > context.slide_top + int(context.slide_height * 0.45):
-        return False
-    if object_height(obj) > int(context.slide_height * 0.18):
-        return False
-    if len(obj.normalized) > 90:
-        return False
-    return True
-
-
-def bucket(obj: SlideObject, context: OrderContext) -> int:
-    if obj.is_footer:
-        return 4
-    if obj.is_decorative:
-        return 5
-    if is_top_title_object(obj, context):
-        return 0
-    if is_promotable_numbered_heading(obj, context):
-        return 1
-    return 2
-
-
-def reason(obj: SlideObject, context: OrderContext) -> str:
-    if obj.is_footer:
-        return "Footer or slide number placeholder"
-    if obj.is_decorative:
-        return "Decorative connector/shape, low reading priority"
-    if is_top_title_object(obj, context):
-        if obj.coord_source == "layout":
-            return "Title placeholder with layout-inherited coordinates"
-        return "Title/layout placeholder promoted in top title band"
-    if is_promotable_numbered_heading(obj, context):
-        return "Short numbered heading promoted by position and size"
-    if obj.tag == "graphicFrame":
-        return "Table/chart frame as a body block"
-    if obj.tag == "pic":
-        return "Image block (no text)"
-    if is_full_width_body(obj, context):
-        return "Full-width body block kept in spatial order"
-    return "General body block ordered by row clustering"
 
 
 def _sort_top_left(objects: Sequence[SlideObject]) -> List[SlideObject]:
@@ -340,101 +272,12 @@ def _recursive_xycut(objects: Sequence[SlideObject], *, max_overlap: int) -> Lis
     return _sort_top_left(objects)
 
 
-def _order_objects_legacy(objects: Sequence[SlideObject]) -> List[SlideObject]:
-    context = build_order_context(objects)
-    tail = [o for o in objects if bucket(o, context) >= 4]
-    main = [o for o in objects if bucket(o, context) < 4]
-
-    seed = sorted(
-        main,
-        key=lambda o: (
-            reading_top(o, context),
-            object_left(o),
-            o.xml_index,
-        ),
-    )
-
-    rows: List[Dict[str, object]] = []
-    for obj in seed:
-        top = reading_top(obj, context)
-        left = object_left(obj)
-        height = object_height(obj)
-        placed = False
-
-        for row in rows:
-            anchor_top = int(row["anchor_top"])
-            row_height = int(row["max_height"])
-            tolerance = max(160000, int(min(row_height, height) * 0.35))
-            if abs(top - anchor_top) <= tolerance:
-                row["objects"].append(obj)
-                row["tops"].append(top)
-                row["lefts"].append(left)
-                row["anchor_top"] = min(row["tops"])
-                row["max_height"] = max(row_height, height)
-                placed = True
-                break
-
-        if not placed:
-            rows.append(
-                {
-                    "objects": [obj],
-                    "tops": [top],
-                    "lefts": [left],
-                    "anchor_top": top,
-                    "max_height": height,
-                }
-            )
-
-    def row_key(row: Dict[str, object]) -> Tuple[int, int, int, int]:
-        row_objects = row["objects"]
-        return (
-            int(row["anchor_top"]),
-            min(object_left(obj) for obj in row_objects),
-            min(bucket(obj, context) for obj in row_objects),
-            min(obj.xml_index for obj in row_objects),
-        )
-
-    ordered: List[SlideObject] = []
-    for row in sorted(rows, key=row_key):
-        row_objects = sorted(
-            row["objects"],
-            key=lambda obj: (
-                bucket(obj, context),
-                object_left(obj),
-                reading_top(obj, context),
-                obj.xml_index,
-            ),
-        )
-        ordered.extend(row_objects)
-
-    ordered.extend(
-        sorted(
-            tail,
-            key=lambda o: (
-                bucket(o, context),
-                reading_top(o, context),
-                object_left(o),
-                o.xml_index,
-            ),
-        )
-    )
-    return ordered
-
-
-def _order_objects_xycut(objects: Sequence[SlideObject]) -> List[SlideObject]:
+def order_objects(objects: Sequence[SlideObject]) -> List[SlideObject]:
     """Order positioned objects only by XYCut geometry."""
     positioned = [obj for obj in objects if _has_reliable_position(obj)]
     unpositioned = [obj for obj in objects if not _has_reliable_position(obj)]
     ordered = _recursive_xycut(positioned, max_overlap=XYCUT_MAX_OVERLAP_EMU)
     return ordered + sorted(unpositioned, key=lambda obj: obj.xml_index)
-
-
-def order_objects(objects: Sequence[SlideObject], mode: str) -> List[SlideObject]:
-    if mode == "xycut":
-        return _order_objects_xycut(objects)
-    if mode == "xml":
-        return _order_objects_legacy(objects)
-    raise ValueError(f"unsupported reading order mode: {mode}")
 
 
 def compute_heading_depths(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Extract reading order per slide XML and write:
+Extract XYCut structure order per slide XML and write:
 1) structure-analysis JSON
 2) reordered slide XML
 
@@ -23,7 +23,7 @@ from .xml_primitives import natural_key, register_xml_namespaces
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract reading order from slide XML and write JSON + reordered XML."
+        description="Extract XYCut structure from slide XML and write JSON + reordered XML."
     )
     parser.add_argument(
         "inputs",
@@ -31,15 +31,9 @@ def parse_args() -> argparse.Namespace:
         help="Input slide xml file(s). If omitted, process all *.xml from ./target_slides.",
     )
     parser.add_argument(
-        "--mode",
-        choices=("xml", "xycut"),
-        default="xml",
-        help="Reading order mode.",
-    )
-    parser.add_argument(
         "--output-dir",
         default="./output",
-        help="Output directory for reading-order JSON/XML artifacts.",
+        help="Output directory for structure-analysis JSON/XML artifacts.",
     )
     parser.add_argument(
         "--strict",
@@ -48,25 +42,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--placeholder-inheritance",
-        "--pptx-inheritance",
         dest="pptx_inheritance",
-        choices=("none", "geometry", "style", "placeholder", "semantic"),
+        choices=("none", "geometry", "style"),
         default="style",
         help=(
             "Placeholder inheritance depth for markdown extraction. "
             "none uses slide XML only; geometry inherits placeholder type/bbox; "
-            "style also inherits text style signals such as font size and list semantics. "
-            "Legacy values placeholder=geometry and semantic=style are accepted."
+            "style also inherits text style signals such as font size and list semantics."
         ),
     )
     parser.add_argument(
         "--inherited-shapes",
-        choices=("none", "visible", "all", "semantic"),
+        choices=("none", "visible", "all"),
         default="visible",
         help=(
             "Whether to materialize layout/master-only shapes. "
             "visible keeps slideshow-visible text/images while filtering placeholder prompts; "
-            "all keeps every shape. Legacy semantic=visible is accepted."
+            "all keeps every shape."
         ),
     )
     return parser.parse_args()
@@ -94,7 +86,6 @@ def main() -> None:
             row = write_outputs(
                 slide_xml,
                 output_dir,
-                mode=args.mode,
                 strict=args.strict,
                 pptx_inheritance=args.pptx_inheritance,
                 inherited_shapes=args.inherited_shapes,
