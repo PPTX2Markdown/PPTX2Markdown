@@ -94,11 +94,13 @@ output/
 `convert_manifest.json` records per-slide status, warnings, and block statistics.
 JSON output uses the same `PresentationDocument` intermediate representation that
 the Markdown renderer consumes. Slides contain ordered blocks with `kind`,
-`content`, `shape_id`, and optional `heading_level` fields.
+`content`, `shape_id`, optional `heading_level`, EMU `bbox`, and `source_part`
+fields. The source is recorded by basename and format without an absolute path.
 
 ## Documentation
 
 - [Converter internals](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
+- [Output schema](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.md)
 - [Structure analyzer](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
 
 ## License

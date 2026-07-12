@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import inspect
+import json
 import unittest
+from pathlib import Path
+
+from pydantic import ValidationError
 
 import pptx2markdown
 from pptx2markdown.main_converter.converter_models import (
+    BoundingBox,
     ContentBlock,
     PresentationDocument,
     SlideDocument,
+    SourceDocument,
     render_presentation_markdown,
+)
+
+SCHEMA_PATH = (
+    Path(__file__).parents[1] / "src" / "pptx2markdown" / "presentation_document.schema.json"
 )
 
 
@@ -32,7 +42,7 @@ class IntermediateDocumentTests(unittest.TestCase):
 
     def test_json_round_trip_preserves_markdown_rendering(self) -> None:
         document = PresentationDocument(
-            source="deck.pptx",
+            source=SourceDocument(name="deck.pptx", format="pptx"),
             slides=[
                 SlideDocument(
                     page=1,
@@ -59,6 +69,35 @@ class IntermediateDocumentTests(unittest.TestCase):
             render_presentation_markdown(restored),
             "[Page_1]\n\n# Title\n\nBody\n\n[Page_2]\n\n| A |\n| - |\n",
         )
+
+    def test_schema_contract_rejects_invalid_documents(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "source name must be a basename"):
+            SourceDocument(name="/tmp/deck.pptx", format="pptx")
+        with self.assertRaisesRegex(ValidationError, "heading blocks require heading_level"):
+            ContentBlock(kind="heading", content="Title")
+        with self.assertRaisesRegex(ValidationError, "only valid for heading blocks"):
+            ContentBlock(kind="text", content="Body", heading_level=2)
+        with self.assertRaisesRegex(ValidationError, "strictly increasing"):
+            PresentationDocument(
+                source=SourceDocument(name="deck.pptx", format="pptx"),
+                slides=[SlideDocument(page=2), SlideDocument(page=1)],
+            )
+
+    def test_schema_contract_includes_geometry_and_provenance(self) -> None:
+        block = ContentBlock(
+            kind="text",
+            content="Inherited body",
+            shape_id="layout:7",
+            bbox=BoundingBox(x=100, y=200, width=300, height=400),
+            source_part="layout",
+        )
+
+        self.assertEqual(block.bbox.unit, "emu")
+        self.assertEqual(block.source_part, "layout")
+
+    def test_checked_in_json_schema_matches_pydantic_model(self) -> None:
+        checked_in = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(checked_in, PresentationDocument.model_json_schema())
 
 
 if __name__ == "__main__":

@@ -98,6 +98,14 @@ positive gap, and unequal textbox heights.
   content, shape IDs, and heading levels.
 - Tests validate JSON round trips and confirm that rendering a JSON output
   reproduces the Markdown-mode output.
+- `PresentationDocument` 1.0 now uses a basename-only source object, positive
+  ordered pages, closed block kinds, heading invariants, optional EMU bbox, and
+  slide/layout/master provenance. Its checked-in JSON Schema ships in the
+  Python package and is protected by a drift test.
+- `tests/fixtures/xycut_layout_cases.pptx` adds six real layout cases covering
+  two and three columns, a full-width divider, identical-bbox XML tie-breaking,
+  rotation, and mixed text/native-table ordering. JSON output is also tested
+  byte-for-byte across separate work directories.
 
 ### Content regression fixes
 
@@ -159,7 +167,7 @@ The following checks passed after the geometry-only XYCut, static image, and
 JSON intermediate representation changes:
 
 - `python -m compileall -q src/pptx2markdown tests`
-- `PYTHONPATH=src python -m unittest discover -v`: 27 tests passed
+- `PYTHONPATH=src python -m unittest discover -v`: 33 tests passed
 - `ruff check src tests`
 - `ruff format --check src tests`
 - all 12 local sample decks: 128 slides converted, 0 slide failures
@@ -171,9 +179,8 @@ JSON intermediate representation changes:
 - JSON output for `reading_order_test.pptx` converted 4 slides with 0 failures.
 - Re-rendering that JSON produced the same content as Markdown mode.
 
-Wheel/sdist and Twine checks passed for commit `4919d68`. They could not be
-rerun after this work item because the active virtual environment does not have
-`build`, Hatchling, or Twine installed, and network access is unavailable.
+`uv build --offline` produced both wheel and sdist after the schema/golden-data
+work. Both archives contain `pptx2markdown/presentation_document.schema.json`.
 
 Pure geometric XYCut now restores the expected order without inspecting text:
 
@@ -209,6 +216,8 @@ or mixed-responsibility functions only where the result is easier to read.
   the common intermediate document.
 - `src/pptx2markdown/main_converter/converter_models.py`: intermediate models
   and Markdown renderer.
+- `src/pptx2markdown/presentation_document.schema.json`: packaged output
+  contract for `PresentationDocument` 1.0.
 - `src/pptx2markdown/main_converter/structure_analysis_pipeline.py`: invokes
   the deterministic structure-analysis stage.
 - `src/pptx2markdown/structure_analyzer/structure.py`: reading order and heading
@@ -219,6 +228,8 @@ or mixed-responsibility functions only where the result is easier to read.
   slide/layout/master object resolution.
 - `tests/test_xycut_reading_order.py`: current regression tests.
 - `tests/test_xycut_pptx_fixture.py`: actual PPTX coordinate-tolerance tests.
+- `tests/test_xycut_layout_pptx_fixture.py`: actual PPTX layout, schema, table,
+  geometry, and byte-determinism tests.
 - `tests/test_content_regressions.py`: focused content-loss regression tests.
 - `tests/test_intermediate_document.py`: JSON round-trip and renderer contract.
 - `tests/test_sample_regressions.py`: local end-to-end sample contracts.

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 def utc_now_z() -> str:
@@ -61,6 +61,38 @@ class ShapeBlock:
         )
 
 
+class SourceDocument(BaseModel):
+    """Stable source identity without machine-specific absolute paths."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    format: Literal["pptx", "ppt"]
+
+    @model_validator(mode="after")
+    def validate_name_is_basename(self) -> "SourceDocument":
+        if Path(self.name).name != self.name:
+            raise ValueError("source name must be a basename")
+        return self
+
+
+class BoundingBox(BaseModel):
+    """Shape bounds in PowerPoint English Metric Units (EMU)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: int
+    y: int
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    unit: Literal["emu"] = "emu"
+
+    @classmethod
+    def from_corners(cls, corners: tuple[int, int, int, int]) -> "BoundingBox":
+        x1, y1, x2, y2 = corners
+        return cls(x=x1, y=y1, width=x2 - x1, height=y2 - y1)
+
+
 class ContentBlock(BaseModel):
     """A rendered content unit in presentation reading order."""
 
@@ -77,9 +109,21 @@ class ContentBlock(BaseModel):
         "table",
         "unsupported",
     ]
-    content: str
+    content: str = Field(min_length=1)
     shape_id: Optional[str] = None
     heading_level: Optional[int] = Field(default=None, ge=1, le=6)
+    bbox: Optional[BoundingBox] = None
+    source_part: Literal["slide", "layout", "master"] = "slide"
+
+    @model_validator(mode="after")
+    def validate_heading_contract(self) -> "ContentBlock":
+        if not self.content.strip():
+            raise ValueError("content must not be blank")
+        if self.kind == "heading" and self.heading_level is None:
+            raise ValueError("heading blocks require heading_level")
+        if self.kind != "heading" and self.heading_level is not None:
+            raise ValueError("heading_level is only valid for heading blocks")
+        return self
 
 
 class SlideDocument(BaseModel):
@@ -87,7 +131,7 @@ class SlideDocument(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    page: int
+    page: int = Field(ge=1)
     blocks: List[ContentBlock] = Field(default_factory=list)
 
 
@@ -96,9 +140,16 @@ class PresentationDocument(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = "1.0"
-    source: str
+    schema_version: Literal["1.0"] = "1.0"
+    source: SourceDocument
     slides: List[SlideDocument] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_slide_order(self) -> "PresentationDocument":
+        pages = [slide.page for slide in self.slides]
+        if pages != sorted(set(pages)):
+            raise ValueError("slide pages must be unique and strictly increasing")
+        return self
 
 
 def render_slide_markdown(slide: SlideDocument) -> str:

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .converter_models import ContentBlock, ShapeBlock, SlideDocument, SlideStats
+from .converter_models import BoundingBox, ContentBlock, ShapeBlock, SlideDocument, SlideStats
 from .heading_rules import (
     HeadingPolicy,
 )
@@ -356,6 +356,23 @@ def _table_overlay_shape_entries(items: Sequence[FlattenedShape]) -> List[Dict[s
         }
         for item in items
     ]
+
+
+def _attach_block_provenance(
+    blocks: List[ContentBlock],
+    start_index: int,
+    *,
+    bbox: Optional[Tuple[int, int, int, int]],
+    source_part: object,
+) -> None:
+    normalized_source = str(source_part or "slide")
+    if normalized_source not in {"slide", "layout", "master"}:
+        normalized_source = "slide"
+    block_bbox = BoundingBox.from_corners(bbox) if bbox is not None else None
+    for index in range(start_index, len(blocks)):
+        blocks[index] = blocks[index].model_copy(
+            update={"bbox": block_bbox, "source_part": normalized_source}
+        )
 
 
 def _append_rendered_text_block(
@@ -760,6 +777,7 @@ def convert_one_slide(
             stats.skipped_blocks += 1
             continue
 
+        block_start = len(blocks)
         if tag == "sp":
             _handle_text_shape_block(
                 child,
@@ -771,9 +789,7 @@ def convert_one_slide(
                 context=context,
                 deps=deps,
             )
-            continue
-
-        if tag == "pic":
+        elif tag == "pic":
             _handle_picture_block(
                 child,
                 blocks=blocks,
@@ -783,9 +799,7 @@ def convert_one_slide(
                 assets=assets,
                 deps=deps,
             )
-            continue
-
-        if tag == "graphicFrame":
+        elif tag == "graphicFrame":
             _handle_graphic_frame_block(
                 child,
                 blocks=blocks,
@@ -795,7 +809,12 @@ def convert_one_slide(
                 assets=assets,
                 deps=deps,
             )
-            continue
+        _attach_block_provenance(
+            blocks,
+            block_start,
+            bbox=item.bbox,
+            source_part=props.get("source_part", "slide"),
+        )
 
     heading_blocks = [block for block in blocks if block.kind == "heading"]
     if len(heading_blocks) == 1 and heading_blocks[0].heading_level != 1:

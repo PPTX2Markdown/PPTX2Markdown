@@ -43,6 +43,7 @@ from .converter_models import (
     ShapeBlock,
     SlideDocument,
     SlideStats,
+    SourceDocument,
     render_presentation_markdown,
 )
 from .package_inputs import (
@@ -208,6 +209,7 @@ def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "has_list_semantics": bool(row.get("has_list_semantics", False)),
             "ph_type": row.get("ph_type"),
             "is_decorative": bool(row.get("is_decorative", False)),
+            "source_part": row.get("source_part", "slide"),
         }
     return out
 
@@ -1309,7 +1311,10 @@ def _convert_package(
         pkg_row["slides"].append(row)
 
     document = PresentationDocument(
-        source=str(package.source_pptx_path),
+        source=SourceDocument(
+            name=package.source_pptx_path.name,
+            format=("ppt" if package.source_pptx_path.suffix.lower() == ".ppt" else "pptx"),
+        ),
         slides=slides,
     )
     if config.output_format == "json":

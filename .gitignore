@@ -23,6 +23,7 @@ pptx_samples/
 *.pptx
 *.ppt
 *.pdf
+!tests/fixtures/*.pptx
 
 # Claude Code local settings
 .claude/settings.local.json

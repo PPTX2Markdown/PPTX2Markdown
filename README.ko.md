@@ -94,11 +94,14 @@ output/
 `convert_manifest.json`에는 슬라이드별 상태, 경고, 블록 통계가 기록됩니다.
 JSON 출력은 Markdown 렌더러가 사용하는 것과 동일한 `PresentationDocument`
 중간표현입니다. 각 슬라이드는 읽기 순서대로 정렬된 블록을 가지며 블록에는
-`kind`, `content`, `shape_id`, 선택적 `heading_level` 필드가 들어갑니다.
+`kind`, `content`, `shape_id`, 선택적 `heading_level`, EMU `bbox`,
+`source_part` 필드가 들어갑니다. 입력 정보는 절대경로 없이 파일명과
+형식만 기록합니다.
 
 ## 문서
 
 - [메인 컨버터 내부 구조](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
+- [출력 스키마](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.md)
 - [구조 분석기](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
 
 ## 라이선스

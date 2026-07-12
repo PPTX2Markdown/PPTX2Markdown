@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "xycut_layout_cases.pptx",
+    "format": "pptx"
+  },
+  "cases": [
+    {
+      "slide": 1,
+      "policy": "a full-width title precedes two independently read columns",
+      "blocks": [
+        ["heading", "L1 TITLE — full width above two columns"],
+        ["text", "L1 LEFT A"],
+        ["text", "L1 LEFT B"],
+        ["text", "L1 RIGHT A"],
+        ["text", "L1 RIGHT B"]
+      ]
+    },
+    {
+      "slide": 2,
+      "policy": "three geometric columns are read from left to right",
+      "blocks": [
+        ["heading", "L2 TITLE — three independent columns"],
+        ["text", "L2 C1 A"],
+        ["text", "L2 C1 B"],
+        ["text", "L2 C2 A"],
+        ["text", "L2 C2 B"],
+        ["text", "L2 C3 A"],
+        ["text", "L2 C3 B"]
+      ]
+    },
+    {
+      "slide": 3,
+      "policy": "a full-width divider exposes independent lower columns",
+      "blocks": [
+        ["heading", "L3 TITLE — section divider exposes lower columns"],
+        ["text", "L3 FULL WIDTH DIVIDER"],
+        ["text", "L3 LEFT A"],
+        ["text", "L3 LEFT B"],
+        ["text", "L3 RIGHT A"],
+        ["text", "L3 RIGHT B"]
+      ]
+    },
+    {
+      "slide": 4,
+      "policy": "objects with identical bounds use original XML order",
+      "blocks": [
+        ["heading", "L4 TITLE — identical bounds use XML order"],
+        ["text", "L4 BACK"],
+        ["text", "L4 FRONT"],
+        ["text", "L4 BELOW"]
+      ],
+      "identical_bbox": ["L4 BACK", "L4 FRONT"]
+    },
+    {
+      "slide": 5,
+      "policy": "rotation does not replace stored bbox geometry",
+      "blocks": [
+        ["heading", "L5 TITLE — rotation does not change bbox policy"],
+        ["text", "L5 LEFT ROTATED"],
+        ["text", "L5 LEFT LOWER"],
+        ["text", "L5 RIGHT ROTATED"],
+        ["text", "L5 RIGHT LOWER"]
+      ]
+    },
+    {
+      "slide": 6,
+      "policy": "text and a native table share one geometric reading order",
+      "blocks": [
+        ["heading", "L6 TITLE — text and native table share one order"],
+        ["text", "L6 NARRATIVE"],
+        ["table", "| Metric | Value |\n|---|---|\n| Alpha | 10 |\n| Beta | 20 |"]
+      ]
+    }
+  ]
+}

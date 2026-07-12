@@ -1,0 +1,115 @@
+{
+  "$defs": {
+    "BoundingBox": {
+      "additionalProperties": false,
+      "description": "Shape bounds in PowerPoint English Metric Units (EMU).",
+      "properties": {
+        "height": {"exclusiveMinimum": 0, "title": "Height", "type": "integer"},
+        "unit": {"const": "emu", "default": "emu", "title": "Unit", "type": "string"},
+        "width": {"exclusiveMinimum": 0, "title": "Width", "type": "integer"},
+        "x": {"title": "X", "type": "integer"},
+        "y": {"title": "Y", "type": "integer"}
+      },
+      "required": ["x", "y", "width", "height"],
+      "title": "BoundingBox",
+      "type": "object"
+    },
+    "ContentBlock": {
+      "additionalProperties": false,
+      "description": "A rendered content unit in presentation reading order.",
+      "properties": {
+        "bbox": {
+          "anyOf": [{"$ref": "#/$defs/BoundingBox"}, {"type": "null"}],
+          "default": null
+        },
+        "content": {"minLength": 1, "title": "Content", "type": "string"},
+        "heading_level": {
+          "anyOf": [
+            {"maximum": 6, "minimum": 1, "type": "integer"},
+            {"type": "null"}
+          ],
+          "default": null,
+          "title": "Heading Level"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "heading",
+            "list",
+            "math",
+            "image",
+            "chart",
+            "smartart",
+            "table",
+            "unsupported"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "shape_id": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "title": "Shape Id"
+        },
+        "source_part": {
+          "default": "slide",
+          "enum": ["slide", "layout", "master"],
+          "title": "Source Part",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "content"],
+      "title": "ContentBlock",
+      "type": "object"
+    },
+    "SlideDocument": {
+      "additionalProperties": false,
+      "description": "JSON-serializable intermediate representation for one slide.",
+      "properties": {
+        "blocks": {
+          "items": {"$ref": "#/$defs/ContentBlock"},
+          "title": "Blocks",
+          "type": "array"
+        },
+        "page": {"minimum": 1, "title": "Page", "type": "integer"}
+      },
+      "required": ["page"],
+      "title": "SlideDocument",
+      "type": "object"
+    },
+    "SourceDocument": {
+      "additionalProperties": false,
+      "description": "Stable source identity without machine-specific absolute paths.",
+      "properties": {
+        "format": {
+          "enum": ["pptx", "ppt"],
+          "title": "Format",
+          "type": "string"
+        },
+        "name": {"minLength": 1, "title": "Name", "type": "string"}
+      },
+      "required": ["name", "format"],
+      "title": "SourceDocument",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Canonical intermediate representation shared by all output formats.",
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "slides": {
+      "items": {"$ref": "#/$defs/SlideDocument"},
+      "title": "Slides",
+      "type": "array"
+    },
+    "source": {"$ref": "#/$defs/SourceDocument"}
+  },
+  "required": ["source"],
+  "title": "PresentationDocument",
+  "type": "object"
+}

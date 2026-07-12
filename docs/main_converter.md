@@ -53,6 +53,8 @@ pptx2markdown sample3.pptx --output-format json
 슬라이드 변환기는 `PresentationDocument` 안에 `SlideDocument`와 순서가 보장된
 `ContentBlock`을 생성합니다. Markdown 출력은 이 중간표현만 해석하므로 JSON과
 Markdown 출력 경로가 별도의 파싱 로직을 갖지 않습니다.
+스키마 1.0은 입력 basename/형식, 양수 페이지, 닫힌 block kind, heading
+불변조건, EMU bbox, slide/layout/master 출처를 규정합니다.
 
 # Reading Order
 
