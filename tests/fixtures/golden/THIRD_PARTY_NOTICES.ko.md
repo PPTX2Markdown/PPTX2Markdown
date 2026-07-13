@@ -4,7 +4,7 @@
 
 이 문서는 이 디렉터리에 저장된 외부 PPTX 파일에 적용됩니다. 파일별 source,
 변경되지 않는 source URL, revision, SHA-256 digest는 `manifest.json`에
-기록합니다. 프로젝트 소유 `synthetic_*.pptx` fixture는 저장소의 MIT 라이선스를
+기록합니다. 프로젝트 소유 `synthetic_*.pptx` fixture는 저장소의 Apache License 2.0을
 적용하며 외부 저작물이 아닙니다.
 
 외부 fixture는 다음 MIT 라이선스 프로젝트에서 가져왔습니다.
