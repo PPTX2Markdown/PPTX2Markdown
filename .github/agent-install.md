@@ -1,5 +1,7 @@
 # pptx2markdown Agent Installation Instructions
 
+English | [한국어](agent-install.ko.md)
+
 You are an AI coding agent helping the user install `pptx2markdown` on this
 machine. Install the released package from PyPI. Do not install from a repository
 clone, local wheel, `dist/`, or another local build artifact unless the user

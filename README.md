@@ -1,134 +1,235 @@
 # pptx2markdown
 
+[![Quality](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml/badge.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml)
 [![PyPI](https://img.shields.io/pypi/v/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
 [![Python](https://img.shields.io/pypi/pyversions/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
 
-Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markdown — built for RAG pipelines and document processing.
+English | [한국어](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.ko.md)
 
-[한국어 README](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.ko.md)
+`pptx2markdown` converts PowerPoint presentations into deterministic Markdown or
+JSON for search, RAG, and document-processing pipelines. It parses native OOXML
+structure and shape geometry directly: no OCR, vision model, API key, or cloud
+service is used.
 
-## Features
+## Why pptx2markdown?
 
-- **Text & headings** — heading levels inferred from slide structure, font size, and placeholder inheritance (slide → layout → master)
-- **Tables** — native PPTX tables rendered as Markdown tables
-- **Charts & SmartArt** — converted to Markdown via [chart2md](https://pypi.org/project/chart2md/) and [smartart2md](https://pypi.org/project/smartart2md/)
-- **Embedded attachments** — preserves PDF, audio, Office, ZIP, and OLE Packager payloads as linked files
-- **Formulas** — OMML equations converted to LaTeX via [omml2latex](https://pypi.org/project/omml2latex/)
-- **Images** — copied from the PPTX package as local assets and linked deterministically
-- **Reading order** — deterministic recursive XY-cut on native shape geometry
+- **One static pipeline** — `.pptx` content is parsed from XML, relationships,
+  and embedded package parts.
+- **Deterministic reading order** — recursive geometric XY-cut orders native
+  shapes without semantic or model-based overrides.
+- **One output contract** — Markdown and JSON are rendered from the same
+  versioned `PresentationDocument`.
+- **Rich native content** — text, headings, lists, tables, charts, SmartArt,
+  formulas, images, speaker notes, and embedded attachments are retained.
+- **Reviewable regressions** — real PPTX fixtures are checked against
+  byte-for-byte JSON and Markdown golden outputs on Linux, macOS, and Windows.
+
+## Supported content
+
+| Content | Behavior |
+| --- | --- |
+| Text and headings | Preserves text and infers headings from native placeholder and style evidence |
+| Lists | Preserves ordered and unordered list structure |
+| Tables | Renders native PowerPoint tables as Markdown tables |
+| Charts | Converts native charts through [chart2md](https://pypi.org/project/chart2md/) |
+| SmartArt | Converts diagram content through [smartart2md](https://pypi.org/project/smartart2md/) |
+| Formulas | Converts OMML equations to LaTeX through [omml2latex](https://pypi.org/project/omml2latex/) |
+| Images | Copies embedded image parts to deterministic local asset paths |
+| Speaker notes | Keeps notes separate from visible slide content |
+| Attachments | Preserves recoverable PDF, audio, video, Office, ZIP, 3D, and OLE payloads as linked files |
+
+The parser does **not** OCR text inside images, transcribe audio or video,
+reconstruct animations, interpret connector semantics, or reproduce slides
+pixel-for-pixel. PowerPoint review comments are intentionally excluded.
+
+## Requirements
+
+- Python 3.12 or newer
+- `.pptx`: no Microsoft Office or LibreOffice required
+- legacy `.ppt`: Microsoft PowerPoint on Windows or LibreOffice
+- EMF/WMF conversion: LibreOffice when conversion is needed
 
 ## Installation
 
-```bash
-pip install pptx2markdown
-```
-
 ### Let an AI agent install it
 
-You can delegate environment detection, isolated installation, optional
-LibreOffice setup, and verification to a local coding agent. Copy this prompt
-to the agent and approve commands only after reviewing its explanation:
+A local coding agent can inspect the environment, choose an isolated install,
+optionally configure LibreOffice, and verify the CLI. Give it one of these
+prompts and review every permission request.
+
+Most agents:
 
 ```text
 Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.md and install pptx2markdown for this machine. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
 ```
 
-For Codex, you may start with `/plan` so it can ask about the installation scope
-and optional legacy `.ppt` support before making changes. The full agent procedure
-is in [`.github/agent-install.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.md).
+Codex interactive planning:
 
-**LibreOffice** (optional) is used to convert legacy `.ppt` inputs and EMF/WMF images:
+```text
+/plan
+Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.md and install pptx2markdown for this machine. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
+```
+
+See the complete [agent installation procedure](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.md).
+
+### Manual installation
+
+For an isolated CLI, use `uv`:
+
+```bash
+uv tool install pptx2markdown
+```
+
+Alternatively, use `pipx` or an active virtual environment:
+
+```bash
+pipx install pptx2markdown
+# or, inside an active virtual environment
+python -m pip install pptx2markdown
+```
+
+LibreOffice is optional:
 
 ```bash
 # macOS
-brew install libreoffice
+brew install --cask libreoffice
+
 # Ubuntu / Debian
-sudo apt-get install -y libreoffice libreoffice-impress
+sudo apt-get install libreoffice libreoffice-impress
 ```
 
-On Windows, PowerPoint COM automation is used for `.ppt` conversion when available; otherwise set `SOFFICE_PATH` to your LibreOffice executable.
+On Windows, `.ppt` conversion uses PowerPoint COM automation when available and
+otherwise tries LibreOffice. `SOFFICE_PATH` may point to a specific LibreOffice
+executable.
 
 ## Quick start
 
 ```bash
-# Convert one file → ./output/deck/deck.md
+# One file -> ./output/deck/deck.md
 pptx2markdown deck.pptx
 
-# Convert every .pptx/.ppt in the current directory
+# Every .pptx/.ppt in the current directory
 pptx2markdown
 
-# Choose the output directory
-pptx2markdown deck.pptx -o converted/
+# Multiple files and a custom output root
+pptx2markdown first.pptx second.pptx -o converted/
 
-# Write the canonical intermediate representation instead of Markdown
+# Canonical JSON instead of Markdown
 pptx2markdown deck.pptx --output-format json
 ```
 
-Or from Python:
+Temporary Office lock files matching `~$*.pptx` are silently skipped during
+batch conversion.
+
+From Python:
 
 ```python
 import pptx2markdown
 
-pptx2markdown.convert("deck.pptx", output_dir="converted")
+exit_code = pptx2markdown.convert(
+    "deck.pptx",
+    output_dir="converted",
+    output_format="markdown",
+)
+if exit_code != 0:
+    raise RuntimeError("conversion failed")
 ```
 
-## Options
+Example Markdown:
 
-### Reading order
+```markdown
+[Page_1]
 
-Reading order is always determined by recursive XY-cut on shape bounding boxes.
-The algorithm uses top-left ordering when no further geometric cut is possible
-and the original XML index only as a deterministic tie-breaker or missing-bbox fallback.
+# Quarterly results
 
-### Other flags
+- Revenue increased 18%
+- Operating margin reached 24%
+
+| Region | Revenue |
+| --- | ---: |
+| APAC | $12.4M |
+```
+
+## CLI options
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `-o, --output-dir` | `./output` | Where converted output is written |
-| `--work-dir` | `./.pptx2markdown` | Intermediate files (extraction, caches) |
-| `--output-format` | `markdown` | Final output (`markdown`/`json`) |
-| `--headings` | `auto` | Heading detection (`auto`/`strict`) |
-| `--placeholder-inheritance` | `style` | How much layout/master style to inherit (`none`/`geometry`/`style`) |
-| `--inherited-shapes` | `visible` | Materialize layout/master shapes (`none`/`visible`/`all`) |
-| `--ppt-converter` | `auto` | `.ppt` conversion backend (`powerpoint`/`libreoffice`) |
+| `-o, --output-dir` | `./output` | Final Markdown/JSON and copied assets |
+| `--work-dir` | `./.pptx2markdown` | Extracted packages, analysis files, and caches |
+| `--output-format` | `markdown` | `markdown` or `json` |
+| `--headings` | `auto` | `auto` or placeholder-only `strict` heading detection |
+| `--placeholder-inheritance` | `style` | `none`, `geometry`, or `style` inheritance |
+| `--inherited-shapes` | `visible` | `none`, `visible`, or `all` layout/master shapes |
+| `--ppt-converter` | `auto` | `auto`, `powerpoint`, or `libreoffice` for `.ppt` |
 | `--verbose` | off | Debug logging |
 
-Run `pptx2markdown --help` for the full list.
+Run `pptx2markdown --help` for the authoritative CLI reference.
 
-## Output
+## Output layout
 
-Generated paths use one shared layout. Final documents are written only below
-`output/`; extracted packages, structure-analysis files, table-pipeline files,
-and caches are written only below `.pptx2markdown/`. Supplying `--output-dir`
-or `--work-dir` moves the corresponding root without changing this layout.
-
-```
+```text
 output/
 ├── convert_manifest.json
 └── <deck-name>/
-    ├── <deck-name>.md     # or <deck-name>.json
-    └── media/             # copied image assets
+    ├── <deck-name>.md       # or <deck-name>.json
+    ├── media/
+    └── attachments/
 
 .pptx2markdown/
-├── target_slides/         # extracted PPTX packages
-├── structure_analysis/    # reordered XML and analysis sidecars
-├── table_pipeline/        # standalone table-pipeline artifacts
-└── .cache/                # reusable intermediate caches
+├── target_slides/
+├── structure_analysis/
+├── table_pipeline/
+└── .cache/
 ```
 
-`convert_manifest.json` records per-slide status, warnings, and block statistics.
-JSON output uses the same `PresentationDocument` intermediate representation that
-the Markdown renderer consumes. Slides contain ordered blocks with `kind`,
-`content`, `shape_id`, optional `heading_level`, EMU `bbox`, and `source_part`
-fields. The source is recorded by basename and format without an absolute path.
+`convert_manifest.json` records file and slide status, warnings, failures, and
+block statistics. JSON output conforms to the packaged
+`PresentationDocument 1.0` schema. Source paths are reduced to a basename and
+generated links use portable `/` separators.
+
+## Reading order and determinism
+
+Reading order always uses recursive XY-cut over native shape bounding boxes. It
+splits geometric regions into columns and rows, then uses top-left order when no
+further cut is possible. Original XML order is only a deterministic tie-breaker
+or a fallback for objects without usable geometry.
+
+For identical input and options, JSON and Markdown outputs are expected to be
+byte-for-byte stable across supported operating systems. The repository keeps
+17 reviewable PPTX fixtures with both expected formats and emitted-asset hashes.
+
+## Security model
+
+Normal `.pptx` conversion is local and makes no network or model calls. OOXML
+extraction rejects path traversal, links, encrypted entries, relationship
+escapes, and packages that exceed configured archive limits. Extracted
+attachments are data from the input presentation; inspect them before opening.
+Legacy `.ppt` and some vector-image conversions invoke the selected external
+Office converter.
 
 ## Documentation
 
-- [Converter internals](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
 - [Output schema](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.md)
+- [Main converter](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
 - [Structure analyzer](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
+- [Golden PPTX suite](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/README.md)
+
+## Development
+
+```bash
+python -m pip install -e .
+python -m unittest discover -v
+python scripts/update_goldens.py --check
+ruff check src tests scripts
+ruff format --check src tests scripts
+```
+
+When parser behavior changes intentionally, review the generated Markdown and
+JSON diffs before accepting new golden snapshots.
 
 ## License
 
-[MIT](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
+The project is distributed under the [MIT License](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE).
+Third-party golden fixture attribution is recorded in
+[`THIRD_PARTY_NOTICES.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/THIRD_PARTY_NOTICES.md).

@@ -1,5 +1,7 @@
 # PresentationDocument 1.0
 
+English | [한국어](output_schema.ko.md)
+
 `PresentationDocument` is the canonical output contract. Markdown and JSON are
 two renderings of the same ordered document; parsing does not diverge by output
 format.

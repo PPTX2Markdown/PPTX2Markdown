@@ -1,5 +1,7 @@
 # Golden output review
 
+English | [한국어](REVIEW.ko.md)
+
 This review classifies the checked-in parser results rather than treating every
 successful conversion as correct. It should be revisited whenever snapshots are
 accepted.

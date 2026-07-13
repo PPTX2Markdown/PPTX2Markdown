@@ -1,5 +1,7 @@
 # Repository golden PPTX suite
 
+English | [한국어](README.ko.md)
+
 This directory contains the small, reviewable PPTX corpus that must always be
 available to the test suite. It complements the much larger optional corpus in
 `.pptx2markdown/corpus/`.
@@ -37,3 +39,20 @@ When an intentional parser or schema change alters output, inspect the diff in
 `expected/` before replacing the snapshot and updating `manifest.json`. A
 conversion that merely exits successfully is not sufficient justification for
 accepting a new golden result.
+
+Check current snapshots with:
+
+```bash
+python scripts/update_goldens.py --check
+```
+
+After reviewing every JSON, Markdown, and asset change, intentionally accept
+new snapshots with:
+
+```bash
+python scripts/update_goldens.py --accept
+```
+
+The files below `expected/markdown/` are parser outputs, not authored
+documentation, so they are intentionally excluded from the English/Korean
+documentation-pair policy.
