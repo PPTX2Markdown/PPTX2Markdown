@@ -3,7 +3,7 @@
 [![Quality](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml/badge.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml)
 [![PyPI](https://img.shields.io/pypi/v/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
 [![Python](https://img.shields.io/pypi/pyversions/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
 
 [English](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.md) | 한국어
 
@@ -227,6 +227,6 @@ Markdown과 JSON diff를 직접 검토해야 합니다.
 
 ## 라이선스
 
-이 프로젝트는 [MIT 라이선스](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)로 배포합니다.
+이 프로젝트는 [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)으로 배포합니다.
 외부 골든 fixture의 저작권 표시는
 [`THIRD_PARTY_NOTICES.ko.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/THIRD_PARTY_NOTICES.ko.md)에 정리되어 있습니다.

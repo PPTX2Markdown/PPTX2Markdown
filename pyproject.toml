@@ -7,8 +7,8 @@ name = "pptx2markdown"
 version = "0.1.0"
 description = "Convert PPTX/PPT presentations to clean, RAG-ready Markdown (text, tables, charts, SmartArt, formulas, images)"
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "MoonYoung02", email = "happy518596@gmail.com" }]
 # NOTE: omml2latex 0.1.0 uses 3.12+ f-string syntax, so 3.11 is not supported yet.
 requires-python = ">=3.12"
@@ -51,6 +51,7 @@ packages = ["src/pptx2markdown"]
 only-include = [
     "/src",
     "/LICENSE",
+    "/NOTICE",
     "/README.md",
     "/README.ko.md",
     "/pyproject.toml",
