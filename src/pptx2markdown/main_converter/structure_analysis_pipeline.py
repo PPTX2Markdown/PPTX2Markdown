@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
 
+from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,10 +91,10 @@ def run_structure_analysis_stage(
     pptx_inheritance: str = "style",
     inherited_shapes: str = "visible",
 ) -> Tuple[Dict[str, Path], Path]:
-    ro_output = work_root / "structure_analysis" / package_name
+    ro_output = WorkspacePaths.from_base(work_dir=work_root).structure_analysis / package_name
     if ro_output.exists():
         _remove_tree_robust(ro_output)
-    ro_output.mkdir(parents=True, exist_ok=True)
+    ensure_directory(ro_output, label="structure-analysis output directory")
 
     py_exe = resolve_python_executable()
     cmd = [

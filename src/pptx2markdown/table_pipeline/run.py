@@ -5,10 +5,8 @@ Usage:
     ./run.py [input.pptx ...]
 
 Behavior:
-    - If inputs are omitted, scans ./target_pptx/*.pptx.
-    - Extracts table XML into ./artifacts/extract_results.
-    - Parses extracted XML into ./artifacts/parsing_results.
-    - Renders markdown tables into ./artifacts/tables.
+    - If inputs are omitted, scans <work-dir>/target_pptx/*.pptx.
+    - Stores all generated files under <work-dir>/table_pipeline.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ from pathlib import Path
 
 from pptx2markdown.table_pipeline import parse as table_parse
 from pptx2markdown.table_pipeline import render as table_render
+from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
@@ -44,8 +43,11 @@ def _safe_stem(path: Path) -> str:
 
 
 def _collect_default_pptx_inputs(base_dir: Path) -> list[Path]:
-    target_dir = base_dir / "target_pptx"
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = WorkspacePaths.from_base(work_dir=base_dir).target_pptx
+    if not target_dir.exists():
+        return []
+    if not target_dir.is_dir():
+        raise NotADirectoryError(f"target_pptx path is not a directory: {target_dir}")
     return sorted(
         [
             path.resolve()
@@ -63,9 +65,8 @@ def _resolve_pptx_input(raw: str, base_dir: Path) -> Path | None:
     # 1) explicit/relative path as-is (from current working directory)
     candidates.append(raw_path.expanduser())
 
-    # 2) name-based lookup under table_pipeline/target_pptx
-    target_dir = base_dir / "target_pptx"
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # 2) name-based lookup under the shared workspace target_pptx directory
+    target_dir = WorkspacePaths.from_base(work_dir=base_dir).target_pptx
     candidates.append(target_dir / raw)
     if raw_path.suffix.lower() != ".pptx":
         candidates.append(target_dir / f"{raw}.pptx")
@@ -89,8 +90,8 @@ def _safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
 
 
 def _stage_pptx_packages(base_dir: Path, pptx_paths: list[Path]) -> list[tuple[Path, Path]]:
-    staged_root = base_dir / "target_slides"
-    staged_root.mkdir(parents=True, exist_ok=True)
+    staged_root = WorkspacePaths.from_base(work_dir=base_dir).target_slides
+    ensure_directory(staged_root, label="target_slides directory")
 
     staged: list[tuple[Path, Path]] = []
     for pptx_path in pptx_paths:
@@ -125,14 +126,20 @@ def _pretty_xml_bytes(elem: ET.Element) -> bytes:
     return b"\n".join(lines) + b"\n"
 
 
-def run_pipeline(pptx_paths: list[Path]) -> int:
-    base_dir = Path.cwd()
-    extract_dir = base_dir / "artifacts" / "extract_results"
-    parsing_dir = base_dir / "artifacts" / "parsing_results"
-    tables_dir = base_dir / "artifacts" / "tables"
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    parsing_dir.mkdir(parents=True, exist_ok=True)
-    tables_dir.mkdir(parents=True, exist_ok=True)
+def run_pipeline(pptx_paths: list[Path], work_dir: Path | None = None) -> int:
+    if not pptx_paths:
+        return 0
+
+    paths = WorkspacePaths.from_base(work_dir=work_dir)
+    extract_dir = ensure_directory(
+        paths.table_extract_results, label="table extract-results directory"
+    )
+    parsing_dir = ensure_directory(
+        paths.table_parsing_results, label="table parsing-results directory"
+    )
+    tables_dir = ensure_directory(
+        paths.table_markdown_results, label="table markdown-results directory"
+    )
 
     manifest: dict[str, object] = {
         "source_mode": "explicit_inputs" if pptx_paths else "target_pptx_default",
@@ -152,7 +159,7 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
     packages = manifest["packages"]
     assert isinstance(packages, list)
 
-    staged_packages = _stage_pptx_packages(base_dir, pptx_paths)
+    staged_packages = _stage_pptx_packages(paths.work_dir, pptx_paths)
 
     for pptx_path, pkg_dir in staged_packages:
         pkg = pkg_dir.name
@@ -207,7 +214,7 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
                         md = table_render.render_parsed_table_to_markdown(
                             parsed_table=parsed,
                             header_rows=1,
-                            fill_merged=table_render.FILL_BOTH,
+                            fill_merged=table_render.FILL_HEADER,
                         )
                         md_path.write_text(md, encoding="utf-8")
                         summary["tables_rendered"] = int(summary.get("tables_rendered", 0)) + 1
@@ -257,17 +264,26 @@ def run_pipeline(pptx_paths: list[Path]) -> int:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description="Run table pipeline from target_pptx/*.pptx")
+    parser = argparse.ArgumentParser(
+        description="Run table pipeline from the shared workspace target_pptx directory"
+    )
     parser.add_argument(
         "inputs",
         nargs="*",
-        help="Optional .pptx file paths. If omitted, scans ./target_pptx",
+        help="Optional .pptx file paths. If omitted, scans <work-dir>/target_pptx",
+    )
+    parser.add_argument(
+        "--work-dir",
+        default=None,
+        help="Shared intermediate workspace. Default: ./.pptx2markdown",
     )
     args = parser.parse_args(argv[1:])
 
+    paths = WorkspacePaths.from_base(work_dir=args.work_dir)
+
     if args.inputs:
         pptx_paths: list[Path] = []
-        base_dir = Path.cwd()
+        base_dir = paths.work_dir
         for raw in args.inputs:
             p = _resolve_pptx_input(raw, base_dir=base_dir)
             if p is None:
@@ -275,12 +291,12 @@ def main(argv: list[str]) -> int:
                 return 1
             pptx_paths.append(p)
     else:
-        pptx_paths = _collect_default_pptx_inputs(Path.cwd())
+        pptx_paths = _collect_default_pptx_inputs(paths.work_dir)
         if not pptx_paths:
-            print("[ERROR] no .pptx files found in ./target_pptx", file=sys.stderr)
+            print(f"[ERROR] no .pptx files found in {paths.target_pptx}", file=sys.stderr)
             return 1
 
-    return run_pipeline(pptx_paths)
+    return run_pipeline(pptx_paths, work_dir=paths.work_dir)
 
 
 if __name__ == "__main__":

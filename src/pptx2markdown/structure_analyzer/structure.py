@@ -274,10 +274,32 @@ def _recursive_xycut(objects: Sequence[SlideObject], *, max_overlap: int) -> Lis
 
 def order_objects(objects: Sequence[SlideObject]) -> List[SlideObject]:
     """Order positioned objects only by XYCut geometry."""
-    positioned = [obj for obj in objects if _has_reliable_position(obj)]
-    unpositioned = [obj for obj in objects if not _has_reliable_position(obj)]
+    # A top-level decorative frame is visual chrome and must not seal an
+    # otherwise valid column gap. Inside a group, however, that same frame
+    # carries the group's visual boundary; retaining it prevents nested rows
+    # from being flattened into unrelated outer columns.
+    meaningful = [obj for obj in objects if not obj.is_footer and not obj.is_decorative]
+
+    def carries_group_boundary(obj: SlideObject) -> bool:
+        return bool(obj.group_path) and any(
+            candidate.group_path[: len(obj.group_path)] == obj.group_path
+            for candidate in meaningful
+        )
+
+    structural_decorators = [
+        obj for obj in objects if obj.is_decorative and carries_group_boundary(obj)
+    ]
+    candidates = meaningful + structural_decorators
+    candidate_ids = {id(obj) for obj in candidates}
+    excluded = [obj for obj in objects if id(obj) not in candidate_ids]
+    positioned = [obj for obj in candidates if _has_reliable_position(obj)]
+    unpositioned = [obj for obj in candidates if not _has_reliable_position(obj)]
     ordered = _recursive_xycut(positioned, max_overlap=XYCUT_MAX_OVERLAP_EMU)
-    return ordered + sorted(unpositioned, key=lambda obj: obj.xml_index)
+    return (
+        ordered
+        + sorted(unpositioned, key=lambda obj: obj.xml_index)
+        + sorted(excluded, key=lambda obj: obj.xml_index)
+    )
 
 
 def compute_heading_depths(

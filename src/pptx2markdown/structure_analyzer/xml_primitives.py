@@ -84,7 +84,20 @@ def extract_bbox_emu(elem: ET.Element) -> Optional[Tuple[int, int, int, int]]:
     if any(v >= LARGE_INT for v in (x, y, w, h)):
         return None
     if w <= 0 or h <= 0:
-        return None
+        # Some producers store an auto-fit text box with a zero extent and let
+        # PowerPoint calculate its natural height at render time. Preserve its
+        # explicit anchor and non-zero axis so it can participate in ordering.
+        is_autofit_text = (
+            local_name(elem.tag) == "sp"
+            and elem.find(".//a:spAutoFit", NS) is not None
+            and w >= 0
+            and h >= 0
+            and (w > 0 or h > 0)
+        )
+        if not is_autofit_text:
+            return None
+        w = max(1, w)
+        h = max(1, h)
     return (x, y, x + w, y + h)
 
 
@@ -92,6 +105,46 @@ def register_xml_namespaces() -> None:
     ET.register_namespace("a", NS["a"])
     ET.register_namespace("p", NS["p"])
     ET.register_namespace("r", NS["r"])
+
+
+def has_slide_number_field(elem: Optional[ET.Element]) -> bool:
+    """Return whether a shape contains an explicit OOXML slide-number field."""
+    if elem is None:
+        return False
+    return any(
+        (field.attrib.get("type") or "").strip().casefold() == "slidenum"
+        for field in elem.findall(".//a:fld", NS)
+    )
+
+
+def _slide_number_text_node_ids(elem: ET.Element) -> set[int]:
+    return {
+        id(text_node)
+        for field in elem.findall(".//a:fld", NS)
+        if (field.attrib.get("type") or "").strip().casefold() == "slidenum"
+        for text_node in field.findall(".//a:t", NS)
+    }
+
+
+def text_without_slide_number_fields(elem: Optional[ET.Element]) -> str:
+    """Return shape text while excluding only explicit slide-number field runs."""
+    if elem is None:
+        return ""
+    excluded = _slide_number_text_node_ids(elem)
+    return " ".join(
+        text_node.text.strip()
+        for text_node in elem.findall(".//a:t", NS)
+        if id(text_node) not in excluded and (text_node.text or "").strip()
+    )
+
+
+def is_slide_number_only_shape(elem: Optional[ET.Element]) -> bool:
+    """Return whether a shape has a slide-number field and no other visible text."""
+    return bool(
+        elem is not None
+        and has_slide_number_field(elem)
+        and not text_without_slide_number_fields(elem)
+    )
 
 
 # 도형 요소 안에 OMML 수식(oMath/oMathPara)이 포함되어 있는지 검사한다.

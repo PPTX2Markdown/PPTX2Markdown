@@ -33,6 +33,8 @@ from omml2latex import convert_omml
 from smartart2md import ZipContext as SmartArtZipContext
 from smartart2md import convert_smartart
 
+from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
+
 from .asset_utils import copy_media_asset
 from .converter_models import (
     ConversionManifest,
@@ -46,9 +48,17 @@ from .converter_models import (
     SourceDocument,
     render_presentation_markdown,
 )
+from .embedded_attachments import (
+    convert_media_attachment as convert_media_attachment_core,
+)
+from .embedded_attachments import (
+    convert_model3d_attachment as convert_model3d_attachment_core,
+)
+from .embedded_attachments import (
+    convert_ole_attachment as convert_ole_attachment_core,
+)
 from .package_inputs import (
     collect_target_presentation_inputs,
-    default_target_dir,
     natural_key,
     prepare_package_inputs,
 )
@@ -89,7 +99,9 @@ _WORK_ROOT: Optional[Path] = None
 
 
 def default_work_root() -> Path:
-    return _WORK_ROOT if _WORK_ROOT is not None else (Path.cwd() / ".pptx2markdown")
+    if _WORK_ROOT is not None:
+        return _WORK_ROOT
+    return WorkspacePaths.from_base().work_dir
 
 
 # 로거 출력 레벨과 포맷을 한 번에 설정한다.
@@ -171,7 +183,7 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
         sid = str(row.get("shape_id", "")).strip()
         if not sid:
             continue
-        out[sid] = {
+        hint = {
             "order_index": order_index,
             "xml_index": row.get("xml_index"),
             "is_heading_candidate": bool(row.get("is_heading_candidate", False)),
@@ -181,6 +193,14 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
             "ph_type": row.get("ph_type"),
             "is_title_placeholder": bool(row.get("is_title_placeholder", False)),
         }
+        out[sid] = hint
+        # Materialized layout/master shapes receive their synthetic xml_index as
+        # cNvPr id in the reordered XML. Keep that generated id connected to the
+        # original sidecar row as well as the source-part-qualified shape id.
+        if row.get("inheritance_kind") == "materialized":
+            synthetic_id = str(row.get("xml_index", "")).strip()
+            if synthetic_id:
+                out[synthetic_id] = hint
     return out
 
 
@@ -203,14 +223,20 @@ def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
         sid = str(row.get("shape_id", "")).strip()
         if not sid:
             continue
-        out[sid] = {
+        props = {
             "list_kind": row.get("list_kind"),
             "list_level": row.get("list_level"),
             "has_list_semantics": bool(row.get("has_list_semantics", False)),
             "ph_type": row.get("ph_type"),
             "is_decorative": bool(row.get("is_decorative", False)),
             "source_part": row.get("source_part", "slide"),
+            "bbox": row.get("bbox"),
         }
+        out[sid] = props
+        if row.get("inheritance_kind") == "materialized":
+            synthetic_id = str(row.get("xml_index", "")).strip()
+            if synthetic_id:
+                out[synthetic_id] = props
     return out
 
 
@@ -275,6 +301,61 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     return out
 
 
+def _resolve_extracted_relationship_target(source_xml: Path, target: str) -> Path:
+    """Resolve relative and package-absolute OOXML relationship targets."""
+    if not target.startswith("/"):
+        return (source_xml.parent / target).resolve()
+
+    for parent in source_xml.parents:
+        if (parent / "[Content_Types].xml").exists():
+            return (parent / target.lstrip("/")).resolve()
+
+    # Extracted PowerPoint parts normally live below a ``ppt`` directory. This
+    # fallback keeps absolute package targets useful for reduced test fixtures.
+    for parent in source_xml.parents:
+        if parent.name == "ppt":
+            return (parent.parent / target.lstrip("/")).resolve()
+    return Path(target).resolve()
+
+
+def extract_speaker_notes(slide_xml: Path) -> Optional[str]:
+    """Extract only the body placeholder from a slide's notes part."""
+    slide_rels = slide_xml.parent / "_rels" / f"{slide_xml.name}.rels"
+    if not slide_rels.exists():
+        return None
+    try:
+        rel_root = ET.parse(slide_rels).getroot()
+    except (ET.ParseError, OSError):
+        return None
+
+    notes_xml: Optional[Path] = None
+    for rel in rel_root.findall("rel:Relationship", REL_NS):
+        if not rel.attrib.get("Type", "").endswith("/notesSlide"):
+            continue
+        target = rel.attrib.get("Target", "").strip()
+        if target:
+            notes_xml = _resolve_extracted_relationship_target(slide_xml, target)
+        break
+    if notes_xml is None or not notes_xml.exists():
+        return None
+
+    try:
+        notes_root = ET.parse(notes_xml).getroot()
+    except (ET.ParseError, OSError):
+        return None
+    notes_rels = notes_xml.parent / "_rels" / f"{notes_xml.name}.rels"
+    notes_rel_map = build_rels_map(notes_rels if notes_rels.exists() else None)
+    rendered: List[str] = []
+    for shape in notes_root.findall(".//p:sp", NS):
+        ph = shape.find("./p:nvSpPr/p:nvPr/p:ph", NS)
+        if ph is None or ph.attrib.get("type", "body") != "body":
+            continue
+        markdown = render_shape_blocks(extract_shape_blocks(shape, notes_rel_map)).strip()
+        if markdown:
+            rendered.append(markdown)
+    return "\n\n".join(rendered) or None
+
+
 # 같은 패키지 안에서 슬라이드 관계 파일을 우선순위에 따라 선택한다.
 def choose_rels_in_package(slide_xml: Path) -> Optional[Path]:
     # Strictly stay inside same ppt package to avoid cross-package mismatches.
@@ -317,7 +398,13 @@ def resolve_image_path(
         pkg_name = None
     if pkg_name:
         target_name = Path(target).name
-        remapped = default_work_root() / "target_slides" / pkg_name / "ppt" / "media" / target_name
+        remapped = (
+            WorkspacePaths.from_base(work_dir=default_work_root()).target_slides
+            / pkg_name
+            / "ppt"
+            / "media"
+            / target_name
+        )
         if remapped.exists():
             abs_path = remapped.absolute()
     return str(abs_path), None
@@ -366,7 +453,9 @@ def _sanitize_block_latex(latex: str) -> str:
     if sanitized.startswith("$$") and sanitized.endswith("$$"):
         sanitized = sanitized[2:-2].strip()
     sanitized = sanitized.strip("$").strip()
-    return sanitized
+    return "\n".join(
+        re.sub(r"[ \t]+", " ", line).strip() for line in sanitized.splitlines()
+    ).strip()
 
 
 def _build_inline_math_segment(math_elem: ET.Element) -> ParagraphSegment:
@@ -387,14 +476,31 @@ def _extract_run_text(run_elem: ET.Element) -> str:
     return "".join(node.text or "" for node in run_elem.findall(".//a:t", NS))
 
 
-def _append_text_segment(segments: List[ParagraphSegment], text: str) -> None:
+def _run_font_pt(run: ET.Element) -> Optional[float]:
+    r_pr = run.find("./a:rPr", NS)
+    raw = r_pr.attrib.get("sz") if r_pr is not None else None
+    try:
+        size = int(raw or "")
+    except ValueError:
+        return None
+    return size / 100.0 if size > 0 else None
+
+
+def _append_text_segment(
+    segments: List[ParagraphSegment], text: str, font_pt: Optional[float] = None
+) -> None:
     if not text:
         return
     if segments and segments[-1].kind == "text":
         previous = segments[-1]
-        segments[-1] = ParagraphSegment(kind="text", text=previous.text + text)
+        font_candidates = [value for value in (previous.font_pt, font_pt) if value is not None]
+        segments[-1] = ParagraphSegment(
+            kind="text",
+            text=previous.text + text,
+            font_pt=max(font_candidates) if font_candidates else None,
+        )
         return
-    segments.append(ParagraphSegment(kind="text", text=text))
+    segments.append(ParagraphSegment(kind="text", text=text, font_pt=font_pt))
 
 
 def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment]) -> bool:
@@ -452,13 +558,44 @@ def _append_math_segments(container: ET.Element, segments: List[ParagraphSegment
     return appended
 
 
-def parse_paragraph_segments(paragraph: ET.Element) -> List[ParagraphSegment]:
+def _external_hyperlink_target(
+    run: ET.Element, rels_map: Optional[Dict[str, str]]
+) -> Optional[str]:
+    if not rels_map:
+        return None
+    hlink = run.find("./a:rPr/a:hlinkClick", NS)
+    if hlink is None:
+        return None
+    rid = hlink.attrib.get(f"{{{NS['r']}}}id") or hlink.attrib.get("r:id")
+    target = rels_map.get(rid or "", "").strip()
+    if re.match(r"^(?:https?://|mailto:)", target, flags=re.IGNORECASE):
+        return target
+    return None
+
+
+def parse_paragraph_segments(
+    paragraph: ET.Element, rels_map: Optional[Dict[str, str]] = None
+) -> List[ParagraphSegment]:
     segments: List[ParagraphSegment] = []
     for child in list(paragraph):
         tag = local_name(child.tag)
         if tag in {"r", "fld"}:
+            if tag == "fld" and (child.attrib.get("type") or "").strip().casefold() == "slidenum":
+                continue
             text = _extract_run_text(child)
-            _append_text_segment(segments, text)
+            target = _external_hyperlink_target(child, rels_map)
+            font_pt = _run_font_pt(child)
+            if text and target:
+                segments.append(
+                    ParagraphSegment(
+                        kind="hyperlink",
+                        text=text,
+                        target=target,
+                        font_pt=font_pt,
+                    )
+                )
+            else:
+                _append_text_segment(segments, text, font_pt)
             continue
         if tag == "br":
             segments.append(ParagraphSegment(kind="break", text=""))
@@ -475,9 +612,9 @@ def parse_paragraph_segments(paragraph: ET.Element) -> List[ParagraphSegment]:
     return segments
 
 
-def paragraph_text(paragraph: ET.Element) -> str:
+def paragraph_text(paragraph: ET.Element, rels_map: Optional[Dict[str, str]] = None) -> str:
     parts: List[str] = []
-    for segment in parse_paragraph_segments(paragraph):
+    for segment in parse_paragraph_segments(paragraph, rels_map):
         if segment.kind == "break":
             continue
         plain = segment.text
@@ -510,6 +647,10 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     p_pr = paragraph.find("./a:pPr", NS)
     if p_pr is None:
         return False
+    # `lvl` can be emitted for indentation/alignment even when the producer
+    # explicitly disables bullets. The explicit bullet choice wins.
+    if p_pr.find("./a:buNone", NS) is not None:
+        return False
     if p_pr.attrib.get("lvl") is not None:
         return True
     if p_pr.find("./a:buChar", NS) is not None:
@@ -517,30 +658,6 @@ def paragraph_has_list_semantics(paragraph: ET.Element) -> bool:
     if p_pr.find("./a:buAutoNum", NS) is not None:
         return True
     return False
-
-
-# 주변 리스트 문맥에 맞는 짧은 일반 텍스트를 리스트 항목으로 승격한다.
-def promote_plain_text_to_list(
-    blocks: Sequence[ShapeBlock],
-) -> List[ShapeBlock]:
-    if not any(block.kind in {"list_ul", "list_ol"} for block in blocks):
-        return list(blocks)
-
-    text_blocks = [
-        (idx, block.plain_text) for idx, block in enumerate(blocks) if block.kind == "text"
-    ]
-    if len(text_blocks) < 3:
-        return list(blocks)
-
-    first_list_kind = next(
-        (block.kind for block in blocks if block.kind in {"list_ul", "list_ol"}), "list_ul"
-    )
-    promoted = list(blocks)
-    for idx, text in text_blocks:
-        if len(text) > 80 or text.endswith((".", ":")):
-            continue
-        promoted[idx] = ShapeBlock(kind=first_list_kind, segments=promoted[idx].segments, level=0)
-    return promoted
 
 
 # PowerPoint의 불연속 목록 레벨을 0,1,2... 형태의 연속 깊이로 정규화한다.
@@ -558,24 +675,34 @@ def normalize_list_levels(blocks: Sequence[ShapeBlock]) -> List[ShapeBlock]:
             normalized.append(block)
             continue
         mapped = remap[int(block.level or 0)]
-        normalized.append(ShapeBlock(kind=block.kind, segments=block.segments, level=mapped))
+        normalized.append(
+            ShapeBlock(
+                kind=block.kind,
+                segments=block.segments,
+                level=mapped,
+                list_explicit_none=block.list_explicit_none,
+            )
+        )
     return normalized
 
 
 # shape 하나에서 텍스트 문단들을 추출해 중간 표현 블록 목록으로 바꾼다.
 # 각 문단을 plain text / unordered list / ordered list로 분류하고 필요한 level도 함께 기록한다.
-def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
+def extract_shape_blocks(
+    shape_elem: ET.Element, rels_map: Optional[Dict[str, str]] = None
+) -> List[ShapeBlock]:
     blocks: List[ShapeBlock] = []
     for p in shape_elem.findall("./p:txBody/a:p", NS):
-        segments = parse_paragraph_segments(p)
+        segments = parse_paragraph_segments(p, rels_map)
         if not segments:
             continue
-        plain_text = paragraph_text(p)
+        plain_text = paragraph_text(p, rels_map)
         if not plain_text and not any(
             segment.kind in {"math_inline", "math_block"} for segment in segments
         ):
             continue
         p_pr = p.find("./a:pPr", NS)
+        list_explicit_none = p_pr is not None and p_pr.find("./a:buNone", NS) is not None
         has_auto_num = p_pr is not None and p_pr.find("./a:buAutoNum", NS) is not None
         if paragraph_has_list_semantics(p):
             level = paragraph_level(p)
@@ -584,10 +711,18 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
                     kind=("list_ol" if has_auto_num else "list_ul"),
                     segments=segments,
                     level=0 if level is None else level,
+                    list_explicit_none=False,
                 )
             )
         else:
-            blocks.append(ShapeBlock(kind="text", segments=segments, level=None))
+            blocks.append(
+                ShapeBlock(
+                    kind="text",
+                    segments=segments,
+                    level=None,
+                    list_explicit_none=list_explicit_none,
+                )
+            )
     return blocks
 
 
@@ -596,11 +731,11 @@ def extract_shape_blocks(shape_elem: ET.Element) -> List[ShapeBlock]:
 def render_shape_blocks(blocks: Sequence[ShapeBlock]) -> str:
     if not blocks:
         return ""
-    blocks = normalize_list_levels(promote_plain_text_to_list(blocks))
+    blocks = normalize_list_levels(blocks)
 
     rendered: List[str] = []
     ordered_counters: Dict[int, int] = {}
-    for idx, block in enumerate(blocks):
+    for block in blocks:
         text = block.markdown_text
         if block.kind in {"list_ul", "list_ol"}:
             indent = "  " * max(0, int(block.level or 0))
@@ -615,21 +750,7 @@ def render_shape_blocks(blocks: Sequence[ShapeBlock]) -> str:
                 rendered.append(f"{indent}- {text}")
             continue
 
-        prev_kind = blocks[idx - 1].kind if idx > 0 else None
-        next_kind = blocks[idx + 1].kind if idx + 1 < len(blocks) else None
-        if prev_kind in {"list_ul", "list_ol"} and next_kind in {"list_ul", "list_ol"}:
-            prev_level = max(0, int(blocks[idx - 1].level or 0))
-            indent = "  " * prev_level
-            if prev_kind == "list_ol":
-                clean_text = re.sub(r"^\d+\s*\.\s*", "", text).strip() or text
-                ordered_counters[prev_level] = ordered_counters.get(prev_level, 0) + 1
-                for deeper in [k for k in ordered_counters.keys() if k > prev_level]:
-                    del ordered_counters[deeper]
-                rendered.append(f"{indent}{ordered_counters[prev_level]}. {clean_text}")
-            else:
-                rendered.append(f"{indent}- {text}")
-        else:
-            rendered.append(text)
+        rendered.append(text)
     return "\n".join(rendered).strip()
 
 
@@ -640,8 +761,14 @@ def graphic_frame_kind(graphic_frame: ET.Element) -> Optional[str]:
     if graphic_data is None:
         return None
     uri = graphic_data.attrib.get("uri", "").strip()
+    if uri.casefold().endswith("/model3d"):
+        return "model3d"
     if uri.endswith("/diagram"):
         return "diagram"
+    if uri.endswith("/ole") or any(
+        local_name(element.tag) == "oleObj" for element in graphic_data.iter()
+    ):
+        return "ole"
     if "chart" in uri:
         return "chart"
     for element in graphic_data.iter():
@@ -811,7 +938,16 @@ def convert_smartart_to_markdown(
         media_dir=media_dir,
     )
     if not rendered:
-        return None, f"smartart conversion failed: empty markdown output: {data_part_path}"
+        structural_types = {"doc", "parTrans", "sibTrans", "pres"}
+        data_nodes = sum(
+            1
+            for point in data_root.findall(".//dgm:pt", NS)
+            if point.attrib.get("type") not in structural_types
+        )
+        if data_nodes:
+            suffix = "node" if data_nodes == 1 else "nodes"
+            return f"[smartart: {data_nodes} unlabeled {suffix}]", None
+        return None, "smartart contains no data nodes"
     return rendered, None
 
 
@@ -959,6 +1095,66 @@ def convert_table_to_markdown(
     )
 
 
+def convert_ole_attachment(
+    graphic_frame: ET.Element,
+    *,
+    rels_path: Optional[Path],
+    rels_map: Dict[str, str],
+    output_dir: Optional[Path],
+    attachments_dir: Optional[Path],
+    copied_attachments: Optional[Dict[str, Path]],
+) -> Tuple[Optional[str], Optional[str]]:
+    return convert_ole_attachment_core(
+        graphic_frame,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        output_dir=output_dir,
+        attachments_dir=attachments_dir,
+        copied_attachments=copied_attachments,
+        ns=NS,
+    )
+
+
+def convert_media_attachment(
+    picture: ET.Element,
+    *,
+    rels_path: Optional[Path],
+    rels_map: Dict[str, str],
+    output_dir: Optional[Path],
+    attachments_dir: Optional[Path],
+    copied_attachments: Optional[Dict[str, Path]],
+) -> Tuple[Optional[str], Optional[str]]:
+    return convert_media_attachment_core(
+        picture,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        output_dir=output_dir,
+        attachments_dir=attachments_dir,
+        copied_attachments=copied_attachments,
+        ns=NS,
+    )
+
+
+def convert_model3d_attachment(
+    graphic_frame: ET.Element,
+    *,
+    rels_path: Optional[Path],
+    rels_map: Dict[str, str],
+    output_dir: Optional[Path],
+    attachments_dir: Optional[Path],
+    copied_attachments: Optional[Dict[str, Path]],
+) -> Tuple[Optional[str], Optional[str]]:
+    return convert_model3d_attachment_core(
+        graphic_frame,
+        rels_path=rels_path,
+        rels_map=rels_map,
+        output_dir=output_dir,
+        attachments_dir=attachments_dir,
+        copied_attachments=copied_attachments,
+        ns=NS,
+    )
+
+
 # slide_converter core가 필요로 하는 의존성 묶음을 구성한다.
 # 이 파일에 정의된 XML 파싱/렌더링 정책을 하나의 객체로 모아 core 구현에 주입한다.
 def _slide_conversion_deps() -> SlideConversionDeps:
@@ -980,6 +1176,9 @@ def _slide_conversion_deps() -> SlideConversionDeps:
         graphic_frame_kind=graphic_frame_kind,
         convert_chart_to_markdown=convert_chart_to_markdown,
         convert_smartart_to_markdown=convert_smartart_to_markdown,
+        convert_ole_attachment=convert_ole_attachment,
+        convert_media_attachment=convert_media_attachment,
+        convert_model3d_attachment=convert_model3d_attachment,
     )
 
 
@@ -1085,15 +1284,9 @@ def _parse_args() -> argparse.Namespace:
 
 # CLI 인자를 내부 ConverterConfig로 정규화한다.
 def _build_config(args: argparse.Namespace) -> ConverterConfig:
-    work_root = (
-        Path(args.work_dir).expanduser().resolve()
-        if getattr(args, "work_dir", None)
-        else (Path.cwd() / ".pptx2markdown").resolve()
-    )
-    output_root = (
-        Path(args.output_dir).expanduser().resolve()
-        if getattr(args, "output_dir", None)
-        else (Path.cwd() / "output").resolve()
+    paths = WorkspacePaths.from_base(
+        work_dir=getattr(args, "work_dir", None),
+        output_dir=getattr(args, "output_dir", None),
     )
     heading_mode = str(args.headings)
     if heading_mode not in {"auto", "strict"}:
@@ -1108,8 +1301,8 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
     if inherited_shapes not in {"none", "visible", "all"}:
         raise ValueError("inherited_shapes must be 'none', 'visible', or 'all'")
     return ConverterConfig(
-        cwd=work_root,
-        output_dir=output_root,
+        cwd=paths.work_dir,
+        output_dir=paths.output_dir,
         inputs=list(args.inputs),
         output_format=output_format,
         heading_mode=heading_mode,
@@ -1123,18 +1316,23 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
 # 실제 처리에 사용할 입력 패키지 경로 목록을 확정한다.
 # 사용자가 직접 넘긴 입력이 있으면 그것만 검증/추출하고,
 # 없으면 target_pptx 아래 파일들을 자동 탐색해서 동일한 형식으로 준비한다.
-def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
+def _resolve_prepared_inputs(
+    config: ConverterConfig,
+) -> Tuple[List[PreparedPackage], List[Dict[str, object]]]:
     # 누락된 입력에 대해 어떤 경로들을 확인했는지 자세히 로그로 남긴다.
-    def _log_missing_inputs(missing_inputs: Sequence[Dict[str, object]]) -> None:
-        if not missing_inputs:
+    def _log_input_failures(failures: Sequence[Dict[str, object]]) -> None:
+        if not failures:
             return
-        logger.error("Input .pptx/.ppt file not found.")
-        for row in missing_inputs:
+        logger.error("Some presentation inputs could not be prepared.")
+        for row in failures:
             requested = str(row.get("input", "")).strip()
             if requested:
                 logger.error("- requested: %s", requested)
+            error = str(row.get("error", "")).strip()
+            if error:
+                logger.error("  error: %s", error)
             checked = row.get("checked")
-            if isinstance(checked, list):
+            if not error and isinstance(checked, list):
                 for candidate in checked:
                     logger.error("  checked: %s", candidate)
 
@@ -1144,37 +1342,58 @@ def _resolve_prepared_inputs(config: ConverterConfig) -> List[PreparedPackage]:
             for x in config.inputs
             if Path(x).suffix and Path(x).suffix.lower() not in {".pptx", ".ppt"}
         ]
-        if unsupported_inputs:
-            logger.error("Only .pptx/.ppt inputs are allowed.")
-            logger.error("Provide files like: sample1.pptx sample2.ppt")
-            for item in unsupported_inputs:
-                logger.error("- %s", item)
-            raise ValueError("invalid presentation inputs")
+        unsupported_failures = [
+            {
+                "input": item,
+                "checked": [],
+                "error": "Only .pptx/.ppt inputs are allowed.",
+                "error_type": "UnsupportedInput",
+            }
+            for item in unsupported_inputs
+        ]
+        supported_inputs = [item for item in config.inputs if item not in unsupported_inputs]
         prepared_inputs, missing_inputs = prepare_package_inputs(
             config.cwd,
-            config.inputs,
+            supported_inputs,
             force_extract=True,
             ppt_converter=config.ppt_converter,
         )
-        if missing_inputs:
-            _log_missing_inputs(missing_inputs)
-            raise ValueError("missing presentation inputs")
-        return prepared_inputs
+        failures = [*unsupported_failures, *missing_inputs]
+        _log_input_failures(failures)
+        return prepared_inputs, failures
 
-    auto_presentation_inputs = collect_target_presentation_inputs()
+    auto_presentation_inputs = collect_target_presentation_inputs(config.cwd)
     if not auto_presentation_inputs:
         logger.info("No .pptx/.ppt files found in: %s", Path.cwd().resolve())
-        return []
+        return [], []
     prepared_inputs, missing_inputs = prepare_package_inputs(
         config.cwd,
         auto_presentation_inputs,
         force_extract=True,
         ppt_converter=config.ppt_converter,
     )
-    if missing_inputs:
-        _log_missing_inputs(missing_inputs)
-        raise ValueError("missing auto-discovered presentation inputs")
-    return prepared_inputs
+    _log_input_failures(missing_inputs)
+    return prepared_inputs, missing_inputs
+
+
+def _append_input_failures(
+    failures: Sequence[Dict[str, object]], manifest: ConversionManifest
+) -> None:
+    for failure in failures:
+        requested = str(failure.get("input", "")).strip()
+        error = str(failure.get("error", "input file was not found")).strip()
+        manifest.packages.append(
+            {
+                "name": Path(requested).stem or requested,
+                "source": requested,
+                "status": "failed",
+                "stage": "input",
+                "error": error,
+                "error_type": failure.get("error_type", "InputNotFound"),
+                "slides": [],
+            }
+        )
+        manifest.summary.failed += 1
 
 
 # 패키지 단위의 선행 stage가 실패했을 때, 해당 패키지의 모든 슬라이드를 실패로 기록한다.
@@ -1222,6 +1441,8 @@ def _convert_package(
     )
     media_dir = pkg_out / "media"
     copied_media: Dict[str, Path] = {}
+    attachments_dir = pkg_out / "attachments"
+    copied_attachments: Dict[str, Path] = {}
     pkg_out.mkdir(parents=True, exist_ok=True)
 
     pkg_row: Dict[str, object] = {
@@ -1234,26 +1455,32 @@ def _convert_package(
     pkg_row[f"result_{'md' if config.output_format == 'markdown' else 'json'}"] = str(output_path)
 
     slides: List[SlideDocument] = []
-    try:
-        ro_map, ro_output = run_structure_analysis_stage(
-            work_root=config.cwd,
-            package_name=pkg_name,
-            slide_xmls=slide_xmls,
-            strict=config.strict,
-            pptx_inheritance=config.pptx_inheritance,
-            inherited_shapes=config.inherited_shapes,
-        )
+    if not slide_xmls:
+        ro_map = {}
+        ro_output = WorkspacePaths.from_base(work_dir=config.cwd).structure_analysis / pkg_name
+        ensure_directory(ro_output, label="structure-analysis output directory")
         pkg_row["structure_analysis_output_dir"] = str(ro_output)
-    except Exception as e:  # noqa: BLE001
-        _append_package_stage_failure(
-            pkg_row=pkg_row,
-            slide_xmls=slide_xmls,
-            error_message=f"structure_analysis stage failed: {e}",
-            manifest=manifest,
-            package_name=pkg_name,
-            stage_label="structure_analysis",
-        )
-        return
+    else:
+        try:
+            ro_map, ro_output = run_structure_analysis_stage(
+                work_root=config.cwd,
+                package_name=pkg_name,
+                slide_xmls=slide_xmls,
+                strict=config.strict,
+                pptx_inheritance=config.pptx_inheritance,
+                inherited_shapes=config.inherited_shapes,
+            )
+            pkg_row["structure_analysis_output_dir"] = str(ro_output)
+        except Exception as e:  # noqa: BLE001
+            _append_package_stage_failure(
+                pkg_row=pkg_row,
+                slide_xmls=slide_xmls,
+                error_message=f"structure_analysis stage failed: {e}",
+                manifest=manifest,
+                package_name=pkg_name,
+                stage_label="structure_analysis",
+            )
+            return
 
     for i, slide_xml in enumerate(slide_xmls, 1):
         page_no = parse_slide_number(slide_xml.name, i)
@@ -1278,6 +1505,8 @@ def _convert_package(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                attachments_dir=attachments_dir,
+                copied_attachments=copied_attachments,
             )
             slide_document, stats = convert_one_slide(
                 context=context,
@@ -1285,6 +1514,9 @@ def _convert_package(
                 strict_headings=config.strict,
                 heading_mode=config.heading_mode,
             )
+            speaker_notes = extract_speaker_notes(slide_xml)
+            if speaker_notes:
+                slide_document = slide_document.model_copy(update={"notes": speaker_notes})
             slides.append(slide_document)
 
             row.update({"status": "ok", **stats.to_slide_row_fields()})
@@ -1342,26 +1574,17 @@ def main() -> int:
 def run(config: ConverterConfig) -> int:
     global _WORK_ROOT
     _WORK_ROOT = config.cwd
-    config.output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        prepared_inputs = _resolve_prepared_inputs(config)
-    except ValueError:
-        return 1
-    if not prepared_inputs:
+    prepared_inputs, input_failures = _resolve_prepared_inputs(config)
+    if not prepared_inputs and not input_failures:
         return 0
 
-    packages = prepared_inputs
-    if not packages:
-        logger.info("No valid PPTX package directories found.")
-        logger.info("Checked default directory:")
-        logger.info("- %s", default_target_dir(config.cwd).resolve())
-        return 0
-
+    ensure_directory(config.output_dir, label="output directory")
     manifest = ConversionManifest()
+    _append_input_failures(input_failures, manifest)
 
     # 각 패키지에 대하여 일괄적으로 메인 컨버터 로직인 _convert_package를 수행한다.
-    for pkg in packages:
+    for pkg in prepared_inputs:
         _convert_package(config, pkg, manifest)
 
     manifest.mark_finished()
@@ -1381,6 +1604,7 @@ def run(config: ConverterConfig) -> int:
         "charts=%s "
         "smartarts=%s "
         "tables=%s "
+        "attachments=%s "
         "table_skipped=%s "
         "images_resolved=%s "
         "images_unresolved=%s",
@@ -1390,6 +1614,7 @@ def run(config: ConverterConfig) -> int:
         manifest.summary.chart_blocks,
         manifest.summary.smartart_blocks,
         manifest.summary.table_blocks,
+        manifest.summary.attachment_blocks,
         manifest.summary.table_skipped_blocks,
         manifest.summary.resolved_images,
         manifest.summary.unresolved_images,

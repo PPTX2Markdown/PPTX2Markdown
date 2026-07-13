@@ -26,6 +26,15 @@ wheels = [
 ]
 
 [[package]]
+name = "olefile"
+version = "0.47"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/1b/077b508e3e500e1629d366249c3ccb32f95e50258b231705c09e3c7a4366/olefile-0.47.zip", hash = "sha256:599383381a0bf3dfbd932ca0ca6515acd174ed48870cbf7fee123d698c192c1c", size = 112240, upload-time = "2023-12-01T16:22:53.025Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/17/d3/b64c356a907242d719fc668b71befd73324e47ab46c8ebbbede252c154b2/olefile-0.47-py2.py3-none-any.whl", hash = "sha256:543c7da2a7adadf21214938bb79c83ea12b473a4b6ee4ad4bf854e7715e13d1f", size = 114565, upload-time = "2023-12-01T16:22:51.518Z" },
+]
+
+[[package]]
 name = "omml2latex"
 version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -40,6 +49,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chart2md" },
+    { name = "olefile" },
     { name = "omml2latex" },
     { name = "pydantic" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
@@ -49,6 +59,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "chart2md", specifier = ">=0.1.0" },
+    { name = "olefile", specifier = ">=0.47" },
     { name = "omml2latex", specifier = ">=0.1.0" },
     { name = "pydantic", specifier = ">=2.10.0,<3" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,8 +29,10 @@ from .xml_primitives import (
     contains_math,
     first_off,
     get_nvpr_paths,
+    is_slide_number_only_shape,
     local_name,
     parse_int,
+    text_without_slide_number_fields,
 )
 
 LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
@@ -437,11 +438,12 @@ def extract_slide_objects_xml(
             else:
                 coord_source = "unknown"
 
-        text = normalize_text("".join(t.text or "" for t in child.findall(".//a:t", NS)))
-        normalized = text
+        text = text_without_slide_number_fields(child)
+        normalized = normalize_text(text)
         font_pt = extract_font_pt(child)
         list_kind = None
         list_level = None
+        is_footer_value = (ph_type in FOOTER_TYPES) or is_slide_number_only_shape(child)
         is_decorative_value = is_decorative(tag, text, child)
         is_heading_value = looks_heading(text, ph_type, strict=strict)
         source_part = "slide"
@@ -452,6 +454,7 @@ def extract_slide_objects_xml(
             font_pt = effective.font_pt
             list_kind = effective.list_kind
             list_level = effective.list_level
+            is_footer_value = effective.is_footer
             is_decorative_value = effective.is_decorative
             is_heading_value = effective.is_heading
             source_part = effective.source_part
@@ -470,7 +473,7 @@ def extract_slide_objects_xml(
                 coord_source=coord_source,
                 text=text,
                 normalized=normalized,
-                is_footer=(ph_type in FOOTER_TYPES) or bool(re.fullmatch(r"\d+", normalized)),
+                is_footer=is_footer_value,
                 is_decorative=is_decorative_value,
                 is_heading=is_heading_value,
                 is_title_placeholder=ph_type in TITLE_TYPES,

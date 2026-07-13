@@ -7,13 +7,15 @@ Markdown 또는 JSON으로 출력하는 메인 진입점입니다.
 
 1. 인자를 주면
 
-- `.pptx` 입력은 자동으로 `target_slides/<stem>/`으로 추출 후 처리
-- 패키지 선택자(`sample1`)는 `target_slides/sample1` 패키지를 처리
+- `.pptx` 입력은 자동으로 `<work-dir>/target_slides/<stem>/`으로 추출 후 처리
 - 여러 개 혼합 입력 가능
 
 2. 인자를 주지 않으면
 
-- `target_pptx/*.pptx` 전체를 자동 추출/처리
+- 현재 디렉터리와 `<work-dir>/target_pptx/`의 `.pptx`/`.ppt`를 자동 추출/처리
+
+기본 `<work-dir>`은 저장소 루트의 `.pptx2markdown/`입니다. 경로 조회만으로
+`target_slides`나 `target_pptx` 폴더를 만들지 않으며 실제 파일을 쓸 때만 생성합니다.
 
 ## 출력
 
@@ -23,6 +25,13 @@ Markdown 또는 JSON으로 출력하는 메인 진입점입니다.
 - JSON 옵션 결과: `output/<package>/<package>.json`
 - 매니페스트: `output/convert_manifest.json`
 - 이미지 복사본: `output/<package>/media/*`
+
+중간 산출물은 모두 `.pptx2markdown/` 아래에 모입니다.
+
+- 압축 해제 패키지: `.pptx2markdown/target_slides/*`
+- 구조 분석: `.pptx2markdown/structure_analysis/*`
+- 테이블 파이프라인: `.pptx2markdown/table_pipeline/*`
+- 캐시: `.pptx2markdown/.cache/*`
 
 ## 기본 실행 예시
 

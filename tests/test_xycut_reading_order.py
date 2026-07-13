@@ -32,6 +32,21 @@ def make_object(
 
 
 class XycutReadingOrderTests(unittest.TestCase):
+    def test_decorative_frame_does_not_block_column_cut(self) -> None:
+        left_top = make_object("Left top", (0, 0, 100_000, 40_000), 1)
+        left_bottom = make_object("Left bottom", (0, 60_000, 100_000, 100_000), 2)
+        right_top = make_object("Right top", (200_000, 0, 300_000, 40_000), 3)
+        right_bottom = make_object("Right bottom", (200_000, 60_000, 300_000, 100_000), 4)
+        frame = make_object("", (0, 0, 300_000, 100_000), 5)
+        frame.is_decorative = True
+
+        ordered = order_objects([left_top, right_top, left_bottom, right_bottom, frame])
+
+        self.assertEqual(
+            [obj.text for obj in ordered],
+            ["Left top", "Left bottom", "Right top", "Right bottom", ""],
+        )
+
     def test_numbered_text_does_not_override_geometry(self) -> None:
         objects = [
             make_object("2. XML mode", (100_000, 300_000, 250_000, 340_000), 1),
@@ -141,8 +156,6 @@ class XycutReadingOrderTests(unittest.TestCase):
         ]
         semantic[0].is_heading = True
         semantic[0].is_title_placeholder = True
-        semantic[1].is_footer = True
-        semantic[2].is_decorative = True
 
         semantic_order = [obj.shape_id for obj in order_objects(semantic)]
         generic_order = [obj.shape_id for obj in order_objects(generic)]

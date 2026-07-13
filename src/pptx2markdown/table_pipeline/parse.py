@@ -19,15 +19,50 @@ def _int_attr(elem: ET.Element, name: str, default: int = 0) -> int:
         return default
 
 
+def _paragraph_list_semantics(
+    paragraph: ET.Element, tx_body: ET.Element
+) -> tuple[str | None, int]:
+    direct = paragraph.find("./a:pPr", NS)
+    level = _int_attr(direct, "lvl", 0) if direct is not None else 0
+    candidates: list[ET.Element] = []
+    if direct is not None:
+        if direct.find("./a:buNone", NS) is not None:
+            return None, level
+        candidates.append(direct)
+    inherited = tx_body.find(f"./a:lstStyle/a:lvl{level + 1}pPr", NS)
+    if inherited is not None:
+        candidates.append(inherited)
+    for properties in candidates:
+        if properties.find("./a:buAutoNum", NS) is not None:
+            return "ol", level
+        if properties.find("./a:buChar", NS) is not None:
+            return "ul", level
+    return None, level
+
+
 def _cell_text(tc: ET.Element) -> str:
     paragraphs: list[str] = []
-    for p in tc.findall(".//a:txBody/a:p", NS):
+    ordered_counts: dict[int, int] = {}
+    tx_body = tc.find("./a:txBody", NS)
+    if tx_body is None:
+        return ""
+    for p in tx_body.findall("./a:p", NS):
         runs = p.findall(".//a:t", NS)
         if not runs:
             continue
         text = "".join(t.text or "" for t in runs)
         text = re.sub(r"\s+", " ", text).strip()
         if text:
+            list_kind, level = _paragraph_list_semantics(p, tx_body)
+            indent = "  " * max(0, level)
+            if list_kind == "ul":
+                text = f"{indent}- {text}"
+            elif list_kind == "ol":
+                ordered_counts[level] = ordered_counts.get(level, 0) + 1
+                ordered_counts = {
+                    key: value for key, value in ordered_counts.items() if key <= level
+                }
+                text = f"{indent}{ordered_counts[level]}. {text}"
             paragraphs.append(text)
     return "\n".join(paragraphs)
 

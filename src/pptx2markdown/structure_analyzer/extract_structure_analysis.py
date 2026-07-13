@@ -7,8 +7,9 @@ Extract XYCut structure order per slide XML and write:
 Usage:
   python extract_structure_analysis.py [slide1.xml slide2.xml ...]
 
-If no positional args are given, all *.xml in ./target_slides are processed.
-Outputs are written to ./output by default (override with --output-dir).
+If no positional args are given, all *.xml in the canonical workspace
+``target_slides`` directory are processed. Outputs are written under the same
+workspace by default (override with --output-dir).
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+
+from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
 from .pipeline import gather_input_files, write_outputs
 from .xml_primitives import natural_key, register_xml_namespaces
@@ -28,12 +31,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "inputs",
         nargs="*",
-        help="Input slide xml file(s). If omitted, process all *.xml from ./target_slides.",
+        help="Input slide XML file(s). If omitted, scan <work-dir>/target_slides.",
     )
     parser.add_argument(
         "--output-dir",
-        default="./output",
-        help="Output directory for structure-analysis JSON/XML artifacts.",
+        default=None,
+        help="Output directory. Default: <work-dir>/structure_analysis",
+    )
+    parser.add_argument(
+        "--work-dir",
+        default=None,
+        help="Shared intermediate workspace. Default: ./.pptx2markdown",
     )
     parser.add_argument(
         "--strict",
@@ -67,9 +75,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    target_dir = Path("./target_slides")
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = WorkspacePaths.from_base(work_dir=args.work_dir)
+    target_dir = paths.target_slides
+    output_dir = (
+        Path(args.output_dir).expanduser().resolve()
+        if args.output_dir
+        else paths.structure_analysis
+    )
 
     register_xml_namespaces()
 
@@ -79,6 +91,7 @@ def main() -> None:
         print(f"Checked default directory: {target_dir.resolve()}")
         return
 
+    ensure_directory(output_dir, label="structure-analysis output directory")
     manifest = {"processed": [], "failed": []}
 
     for slide_xml in sorted(inputs, key=natural_key):

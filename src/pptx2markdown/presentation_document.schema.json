@@ -41,6 +41,7 @@
             "chart",
             "smartart",
             "table",
+            "attachment",
             "unsupported"
           ],
           "title": "Kind",
@@ -70,6 +71,12 @@
           "items": {"$ref": "#/$defs/ContentBlock"},
           "title": "Blocks",
           "type": "array"
+        },
+        "hidden": {"default": false, "title": "Hidden", "type": "boolean"},
+        "notes": {
+          "anyOf": [{"type": "string"}, {"type": "null"}],
+          "default": null,
+          "title": "Notes"
         },
         "page": {"minimum": 1, "title": "Page", "type": "integer"}
       },

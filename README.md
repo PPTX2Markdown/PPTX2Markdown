@@ -13,6 +13,7 @@ Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markd
 - **Text & headings** — heading levels inferred from slide structure, font size, and placeholder inheritance (slide → layout → master)
 - **Tables** — native PPTX tables rendered as Markdown tables
 - **Charts & SmartArt** — converted to Markdown via [chart2md](https://pypi.org/project/chart2md/) and [smartart2md](https://pypi.org/project/smartart2md/)
+- **Embedded attachments** — preserves PDF, audio, Office, ZIP, and OLE Packager payloads as linked files
 - **Formulas** — OMML equations converted to LaTeX via [omml2latex](https://pypi.org/project/omml2latex/)
 - **Images** — copied from the PPTX package as local assets and linked deterministically
 - **Reading order** — deterministic recursive XY-cut on native shape geometry
@@ -22,6 +23,20 @@ Convert PowerPoint (`.pptx` / `.ppt`) presentations into clean, structured Markd
 ```bash
 pip install pptx2markdown
 ```
+
+### Let an AI agent install it
+
+You can delegate environment detection, isolated installation, optional
+LibreOffice setup, and verification to a local coding agent. Copy this prompt
+to the agent and approve commands only after reviewing its explanation:
+
+```text
+Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.md and install pptx2markdown for this machine. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
+```
+
+For Codex, you may start with `/plan` so it can ask about the installation scope
+and optional legacy `.ppt` support before making changes. The full agent procedure
+is in [`.github/agent-install.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.md).
 
 **LibreOffice** (optional) is used to convert legacy `.ppt` inputs and EMF/WMF images:
 
@@ -83,12 +98,23 @@ Run `pptx2markdown --help` for the full list.
 
 ## Output
 
+Generated paths use one shared layout. Final documents are written only below
+`output/`; extracted packages, structure-analysis files, table-pipeline files,
+and caches are written only below `.pptx2markdown/`. Supplying `--output-dir`
+or `--work-dir` moves the corresponding root without changing this layout.
+
 ```
 output/
 ├── convert_manifest.json
 └── <deck-name>/
     ├── <deck-name>.md     # or <deck-name>.json
     └── media/             # copied image assets
+
+.pptx2markdown/
+├── target_slides/         # extracted PPTX packages
+├── structure_analysis/    # reordered XML and analysis sidecars
+├── table_pipeline/        # standalone table-pipeline artifacts
+└── .cache/                # reusable intermediate caches
 ```
 
 `convert_manifest.json` records per-slide status, warnings, and block statistics.

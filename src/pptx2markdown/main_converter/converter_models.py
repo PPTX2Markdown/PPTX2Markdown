@@ -16,6 +16,8 @@ def utc_now_z() -> str:
 class ParagraphSegment:
     kind: str
     text: str
+    target: Optional[str] = None
+    font_pt: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class ShapeBlock:
     kind: str
     segments: List[ParagraphSegment] = field(default_factory=list)
     level: Optional[int] = None
+    list_explicit_none: bool = False
 
     @property
     def plain_text(self) -> str:
@@ -38,12 +41,15 @@ class ShapeBlock:
         rendered: List[str] = []
         for segment in self.segments:
             if segment.kind == "break":
-                if rendered and not rendered[-1].endswith("\n"):
+                if rendered:
                     rendered.append("\n")
                 continue
             text = segment.text.strip()
             if not text:
                 continue
+            if segment.kind == "hyperlink" and segment.target:
+                label = text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+                text = f"[{label}]({segment.target})"
             if rendered and not rendered[-1].endswith("\n"):
                 rendered.append(" ")
             rendered.append(text)
@@ -107,6 +113,7 @@ class ContentBlock(BaseModel):
         "chart",
         "smartart",
         "table",
+        "attachment",
         "unsupported",
     ]
     content: str = Field(min_length=1)
@@ -132,7 +139,9 @@ class SlideDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     page: int = Field(ge=1)
+    hidden: bool = False
     blocks: List[ContentBlock] = Field(default_factory=list)
+    notes: Optional[str] = None
 
 
 class PresentationDocument(BaseModel):
@@ -154,6 +163,8 @@ class PresentationDocument(BaseModel):
 
 def render_slide_markdown(slide: SlideDocument) -> str:
     parts = [f"[Page_{slide.page}]"]
+    if slide.hidden:
+        parts.append("<!-- hidden: true -->")
     for block in slide.blocks:
         content = block.content.strip()
         if not content:
@@ -161,6 +172,8 @@ def render_slide_markdown(slide: SlideDocument) -> str:
         if block.kind == "heading" and block.heading_level is not None:
             content = f"{'#' * block.heading_level} {content}"
         parts.append(content)
+    if slide.notes and slide.notes.strip():
+        parts.extend(["[Speaker_Notes]", slide.notes.strip()])
     return "\n\n".join(parts).rstrip() + "\n"
 
 
@@ -183,6 +196,7 @@ class SlideStats(BaseModel):
     chart_blocks: int = 0
     smartart_blocks: int = 0
     table_blocks: int = 0
+    attachment_blocks: int = 0
     table_skipped_blocks: int = 0
     unsupported_blocks: int = 0
     skipped_blocks: int = 0
@@ -203,6 +217,7 @@ class SlideStats(BaseModel):
             "chart_blocks": self.chart_blocks,
             "smartart_blocks": self.smartart_blocks,
             "table_blocks": self.table_blocks,
+            "attachment_blocks": self.attachment_blocks,
             "table_skipped_blocks": self.table_skipped_blocks,
             "unsupported_blocks": self.unsupported_blocks,
             "skipped_blocks": self.skipped_blocks,
@@ -226,6 +241,7 @@ class ManifestSummary(BaseModel):
     chart_blocks: int = 0
     smartart_blocks: int = 0
     table_blocks: int = 0
+    attachment_blocks: int = 0
     table_skipped_blocks: int = 0
 
     def add_slide(self, stats: SlideStats) -> None:
@@ -239,6 +255,7 @@ class ManifestSummary(BaseModel):
         self.chart_blocks += stats.chart_blocks
         self.smartart_blocks += stats.smartart_blocks
         self.table_blocks += stats.table_blocks
+        self.attachment_blocks += stats.attachment_blocks
         self.table_skipped_blocks += stats.table_skipped_blocks
 
 

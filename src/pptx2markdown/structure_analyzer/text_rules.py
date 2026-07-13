@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Optional
 
 
 def normalize_text(text: str) -> str:
-    value = text.lower().replace("\n", " ")
-    value = re.sub(r"[^0-9a-z\uac00-\ud7a3\.\s]", " ", value)
+    value = unicodedata.normalize("NFKC", text or "").casefold().replace("\n", " ")
+    value = "".join(
+        char
+        if char == "." or char.isspace() or unicodedata.category(char).startswith(("L", "N"))
+        else " "
+        for char in value
+    )
     value = re.sub(r"\s+", " ", value).strip()
     return value
 

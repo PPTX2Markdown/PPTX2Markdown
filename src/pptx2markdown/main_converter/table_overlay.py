@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
@@ -294,6 +295,84 @@ def _table_cell_text(content: str) -> str:
     return "<br>".join(lines)
 
 
+def _linked_table_cell_text(
+    cell: ET.Element,
+    rels_map: Dict[str, str],
+    *,
+    ns: Dict[str, str],
+) -> Optional[Tuple[str, str]]:
+    """Return plain and Markdown-linked cell text when a safe run link exists."""
+    linked_paragraphs: List[str] = []
+    plain_paragraphs: List[str] = []
+    found_link = False
+    relationship_attr = f"{{{ns['r']}}}id"
+    for paragraph in cell.findall(".//a:txBody/a:p", ns):
+        linked_parts: List[str] = []
+        plain_parts: List[str] = []
+        for child in list(paragraph):
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag == "br":
+                linked_parts.append(" ")
+                plain_parts.append(" ")
+                continue
+            if tag not in {"r", "fld"}:
+                continue
+            text = "".join(node.text or "" for node in child.findall(".//a:t", ns))
+            if not text:
+                continue
+            plain_parts.append(text)
+            hlink = child.find("./a:rPr/a:hlinkClick", ns)
+            rid = hlink.attrib.get(relationship_attr) if hlink is not None else None
+            target = rels_map.get(rid or "", "").strip()
+            if re.match(r"^(?:https?://|mailto:)", target, flags=re.IGNORECASE):
+                label = text.replace("[", r"\[").replace("]", r"\]")
+                linked_parts.append(f"[{label}]({target})")
+                found_link = True
+            else:
+                linked_parts.append(text)
+        linked = re.sub(r"\s+", " ", "".join(linked_parts)).strip()
+        plain = re.sub(r"\s+", " ", "".join(plain_parts)).strip()
+        if linked:
+            linked_paragraphs.append(linked)
+        if plain:
+            plain_paragraphs.append(plain)
+    if not found_link:
+        return None
+    return " ".join(plain_paragraphs), " ".join(linked_paragraphs)
+
+
+def inject_table_run_hyperlinks(
+    parsed_table: Dict[str, object],
+    table: ET.Element,
+    rels_map: Dict[str, str],
+    *,
+    ns: Dict[str, str],
+) -> Dict[str, object]:
+    rows = parsed_table.get("rows")
+    if not isinstance(rows, list) or not rels_map:
+        return parsed_table
+    for row_idx, table_row in enumerate(table.findall("./a:tr", ns)):
+        if row_idx >= len(rows) or not isinstance(rows[row_idx], list):
+            continue
+        parsed_row = rows[row_idx]
+        for col_idx, table_cell in enumerate(table_row.findall("./a:tc", ns)):
+            if col_idx >= len(parsed_row) or not isinstance(parsed_row[col_idx], dict):
+                continue
+            linked_text = _linked_table_cell_text(table_cell, rels_map, ns=ns)
+            if linked_text is None:
+                continue
+            plain, linked = linked_text
+            parsed_cell = parsed_row[col_idx]
+            current = str(parsed_cell.get("text", ""))
+            if current == plain:
+                parsed_cell["text"] = linked
+            elif plain and plain in current:
+                parsed_cell["text"] = current.replace(plain, linked, 1)
+            elif not current:
+                parsed_cell["text"] = linked
+    return parsed_table
+
+
 def _append_cell_content(
     cell: Dict[str, object], content: str, normalize_text_fn: Callable[[str], str]
 ) -> None:
@@ -431,10 +510,11 @@ def convert_table_to_markdown(
         media_dir=media_dir,
         copied_media=copied_media,
     )
+    parsed = inject_table_run_hyperlinks(parsed, tbl, rels_map or {}, ns=ns)
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,
         header_rows=1,
-        fill_merged=table_render.FILL_BOTH,
+        fill_merged=table_render.FILL_HEADER,
     )
     warnings = list(cell_fill_warnings) + list(overlay_warnings) + list(cell_image_warnings)
     if warnings:

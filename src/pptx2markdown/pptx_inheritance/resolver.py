@@ -22,10 +22,13 @@ from pptx2markdown.structure_analyzer.text_rules import is_numbered_heading_text
 from pptx2markdown.structure_analyzer.xml_primitives import (
     contains_math,
     extract_bbox_emu,
+    first_ext,
     first_off,
     get_nvpr_paths,
+    is_slide_number_only_shape,
     local_name,
     parse_int,
+    text_without_slide_number_fields,
 )
 
 PLACEHOLDER_DEFAULT_TYPE = "obj"
@@ -154,6 +157,23 @@ def _relationship_target(source_xml: Path, rel_type: str) -> Optional[Path]:
     return None
 
 
+def _relationship_ids(source_xml: Optional[Path]) -> set[str]:
+    if source_xml is None:
+        return set()
+    rels = source_xml.parent / "_rels" / f"{source_xml.name}.rels"
+    if not rels.exists():
+        return set()
+    try:
+        rel_root = ET.parse(rels).getroot()
+    except (ET.ParseError, OSError):
+        return set()
+    return {
+        rel.attrib["Id"]
+        for rel in rel_root.findall("rel:Relationship", REL_NS)
+        if rel.attrib.get("Id") and str(rel.attrib.get("Type", "")).rstrip("/").endswith("/image")
+    }
+
+
 def resolve_slide_layout(slide_xml: Path) -> Optional[Path]:
     return _relationship_target(slide_xml, SLIDE_LAYOUT_REL_TYPE)
 
@@ -247,6 +267,28 @@ def _placeholder_element(elem: Optional[ET.Element]) -> Optional[ET.Element]:
     return elem.find(ph_path, NS)
 
 
+def _placeholder_for_unique_type(
+    index: Dict[str, ET.Element], ph_type: Optional[str]
+) -> Optional[ET.Element]:
+    """Return the sole placeholder of a type when idx matching is impossible."""
+    if ph_type is None:
+        return None
+    matches: List[ET.Element] = []
+    seen: set[int] = set()
+    for elem in index.values():
+        marker = id(elem)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        ph = _placeholder_element(elem)
+        if ph is None:
+            continue
+        candidate_type = ph.attrib.get("type", PLACEHOLDER_DEFAULT_TYPE)
+        if candidate_type == ph_type:
+            matches.append(elem)
+    return matches[0] if len(matches) == 1 else None
+
+
 def _placeholder_chain(
     slide_ph: Optional[ET.Element],
     layout_index: Dict[str, ET.Element],
@@ -256,9 +298,21 @@ def _placeholder_chain(
 ) -> PlaceholderChain:
     idx = _placeholder_idx(slide_ph)
     layout_elem = _placeholder_for_idx(layout_index, layout_ambiguous, idx)
+    slide_type = (
+        slide_ph.attrib.get("type", PLACEHOLDER_DEFAULT_TYPE) if slide_ph is not None else None
+    )
+    if layout_elem is None:
+        layout_elem = _placeholder_for_unique_type(layout_index, slide_type)
     layout_ph = _placeholder_element(layout_elem)
 
     master_elem = _placeholder_for_idx(master_index, master_ambiguous, idx)
+    effective_type = (
+        layout_ph.attrib.get("type", slide_type or PLACEHOLDER_DEFAULT_TYPE)
+        if layout_ph is not None
+        else slide_type
+    )
+    if master_elem is None:
+        master_elem = _placeholder_for_unique_type(master_index, effective_type)
     master_ph = _placeholder_element(master_elem)
 
     return PlaceholderChain(
@@ -310,6 +364,16 @@ def _xfrm_components(elem: Optional[ET.Element]) -> Dict[str, Optional[int]]:
             break
     cx = _parse_optional_int(ext.attrib.get("cx")) if ext is not None else None
     cy = _parse_optional_int(ext.attrib.get("cy")) if ext is not None else None
+    if (
+        elem.find(".//a:spAutoFit", NS) is not None
+        and cx is not None
+        and cy is not None
+        and cx >= 0
+        and cy >= 0
+        and (cx > 0 or cy > 0)
+    ):
+        cx = max(1, cx)
+        cy = max(1, cy)
     return {
         "x": _parse_optional_int(off.attrib.get("x")) if off is not None else None,
         "y": _parse_optional_int(off.attrib.get("y")) if off is not None else None,
@@ -510,11 +574,7 @@ def _extract_semantic_list_semantics(
 
 
 def _shape_text(elem: ET.Element) -> Tuple[str, str]:
-    texts: List[str] = []
-    for t in elem.findall(".//a:t", NS):
-        if t.text and t.text.strip():
-            texts.append(t.text.strip())
-    text = " ".join(texts)
+    text = text_without_slide_number_fields(elem)
     return text, normalize_text(text)
 
 
@@ -545,6 +605,13 @@ def _has_embedded_image(elem: ET.Element) -> bool:
     return blip is not None and bool(blip.attrib.get(f"{{{NS['r']}}}embed"))
 
 
+def _embedded_image_relationship_id(elem: ET.Element) -> Optional[str]:
+    blip = elem.find(".//a:blip", NS)
+    if blip is None:
+        return None
+    return blip.attrib.get(f"{{{NS['r']}}}embed") or None
+
+
 def is_decorative(
     tag: str,
     text: str,
@@ -553,6 +620,23 @@ def is_decorative(
 ) -> bool:
     if tag == "cxnSp":
         return True
+    has_embedded_image = elem is not None and _has_embedded_image(elem)
+    if tag == "pic" and elem is not None:
+        ext = first_ext(elem)
+        if ext is not None:
+            width = _parse_optional_int(ext.attrib.get("cx"))
+            height = _parse_optional_int(ext.attrib.get("cy"))
+            if width is not None and height is not None and (width <= 0 or height <= 0):
+                return True
+    if tag == "sp" and has_embedded_image and elem is not None:
+        ext = first_ext(elem)
+        if ext is not None:
+            width = _parse_optional_int(ext.attrib.get("cx"))
+            height = _parse_optional_int(ext.attrib.get("cy"))
+            if width is not None and height is not None and (width <= 0 or height <= 0):
+                return True
+        if tag == "sp":
+            return False
     if tag == "pic" and ph_type is not None and (elem is None or not _has_embedded_image(elem)):
         return True
     if not (text or "").strip() and not contains_math(elem) and tag not in {"pic", "graphicFrame"}:
@@ -564,8 +648,16 @@ def _is_visible_materialized_shape(elem: ET.Element, tag: str, ph_type: Optional
     text, _ = _shape_text(elem)
     if ph_type is not None:
         return False
+    if _is_placeholder_prompt_text(text):
+        return False
     if text.strip():
         return True
+    if tag == "sp" and _has_embedded_image(elem):
+        # Image-filled autoshapes on layouts/masters are commonly a background
+        # split into dozens of raster fragments. Emitting every fragment on
+        # every slide overwhelms the semantic document. The explicit `all`
+        # inheritance mode still keeps them; `visible` treats them as chrome.
+        return False
     if tag == "pic":
         bbox = extract_bbox_emu(elem)
         if bbox is None:
@@ -582,12 +674,46 @@ def _is_visible_materialized_shape(elem: ET.Element, tag: str, ph_type: Optional
     return False
 
 
+def _is_placeholder_prompt_text(text: str) -> bool:
+    """Recognize editing prompts accidentally stored as ordinary layout text."""
+    # Keep prompt delimiters such as ‹#›; normalize_text intentionally removes
+    # punctuation and would erase the strongest signal before classification.
+    normalized = re.sub(r"\s+", " ", text or "").strip()
+    if not normalized:
+        return False
+    folded = normalized.casefold()
+    if folded.startswith(("click to edit master", "click to add ")):
+        return True
+    return bool(
+        re.fullmatch(
+            r"[<\u2039\u00ab]\s*(?:#|slide\s+number|date(?:/time)?|footer)\s*[>\u203a\u00bb]",
+            folded,
+        )
+    )
+
+
 def _inheritance_kind(source_part: str, coord_source: str) -> str:
     if source_part != "slide":
         return "materialized"
     if coord_source in {"layout", "master"}:
         return "placeholder"
     return "direct"
+
+
+def _is_unpositioned_literal_date_placeholder(
+    elem: ET.Element, ph_type: Optional[str], bbox: Optional[Tuple[int, int, int, int]]
+) -> bool:
+    if ph_type != "dt" or bbox is not None or elem.find(".//a:fld", NS) is not None:
+        return False
+    return any((node.text or "").strip() for node in elem.findall(".//a:t", NS))
+
+
+def _is_synthetic_literal_date_anchor(
+    ph_type: Optional[str],
+    bbox: Optional[Tuple[int, int, int, int]],
+    coord_source: str,
+) -> bool:
+    return ph_type == "dt" and bbox == (0, 0, 1, 1) and coord_source == "default"
 
 
 def _shape_from_part(
@@ -604,6 +730,7 @@ def _shape_from_part(
     list_level: Optional[int],
     strict: bool,
     text_override: Optional[str] = None,
+    valid_relationship_ids: Optional[set[str]] = None,
 ) -> EffectiveShape:
     tag = local_name(child.tag)
     c_nv_path, _ = get_nvpr_paths(tag)
@@ -620,6 +747,18 @@ def _shape_from_part(
         normalized = normalize_text(text_override)
     shape_id = c_nv_pr.attrib.get("id", str(xml_index)) if c_nv_pr is not None else str(xml_index)
     name = c_nv_pr.attrib.get("name", "") if c_nv_pr is not None else ""
+    is_decorative_value = is_decorative(tag, text, child, ph_type)
+    if (
+        tag == "sp"
+        and not text.strip()
+        and valid_relationship_ids is not None
+        and (embed := _embedded_image_relationship_id(child)) is not None
+        and embed not in valid_relationship_ids
+    ):
+        # Some producers leave stale image-fill rIds on invisible autoshapes.
+        # A missing relationship has no renderable payload and must not affect
+        # XYCut ordering or become an unresolved-image block.
+        is_decorative_value = True
     return EffectiveShape(
         shape_id=(shape_id if source_part == "slide" else f"{source_part}:{shape_id}"),
         xml_index=xml_index,
@@ -632,8 +771,12 @@ def _shape_from_part(
         coord_source=coord_source,
         text=text,
         normalized=normalized,
-        is_footer=(ph_type in FOOTER_TYPES) or bool(re.fullmatch(r"\d+", normalized)),
-        is_decorative=is_decorative(tag, text, child, ph_type),
+        is_footer=(
+            (ph_type in FOOTER_TYPES)
+            and not _is_synthetic_literal_date_anchor(ph_type, bbox, coord_source)
+        )
+        or is_slide_number_only_shape(child),
+        is_decorative=is_decorative_value,
         is_heading=looks_heading(text, ph_type, strict=strict),
         is_title_placeholder=ph_type in TITLE_TYPES,
         font_pt=font_pt,
@@ -660,6 +803,7 @@ def _materialize_part_shapes(
     if sp_tree is None:
         return []
     shapes: List[EffectiveShape] = []
+    valid_relationship_ids = _relationship_ids(part_xml)
     local_index = 0
     for child in list(sp_tree):
         tag = local_name(child.tag)
@@ -693,6 +837,7 @@ def _materialize_part_shapes(
                 list_kind=list_kind,
                 list_level=list_level,
                 strict=strict,
+                valid_relationship_ids=valid_relationship_ids,
             )
         )
     return shapes
@@ -733,6 +878,7 @@ def resolve_effective_slide(
     xml_images: List[Dict[str, object]] = []
     used_placeholder_indexes: set[str] = set()
     xml_idx = 0
+    valid_slide_relationship_ids = _relationship_ids(slide_xml)
 
     for child in list(sp_tree):
         tag = local_name(child.tag)
@@ -759,6 +905,13 @@ def resolve_effective_slide(
             ph_idx = chain.idx
             bbox = extract_bbox_emu(child)
             inherited_coord_source = None
+        if _is_unpositioned_literal_date_placeholder(child, ph_type, bbox):
+            # Malformed producers can omit all xfrm geometry while leaving a
+            # literal date-placeholder run visible at the origin. Preserve a
+            # minimal anchor so XYCut orders the visible text before positioned
+            # content instead of silently dropping or appending it.
+            bbox = (0, 0, 1, 1)
+            inherited_coord_source = "default"
         if ph_idx is not None:
             used_placeholder_indexes.add(ph_idx)
 
@@ -786,6 +939,7 @@ def resolve_effective_slide(
             list_kind=list_kind,
             list_level=list_level,
             strict=strict,
+            valid_relationship_ids=valid_slide_relationship_ids,
         )
         shapes.append(shape)
 

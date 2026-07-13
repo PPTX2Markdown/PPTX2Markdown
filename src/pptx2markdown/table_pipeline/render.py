@@ -8,13 +8,28 @@ from typing import Any
 FILL_H = "horizontal"
 FILL_V = "vertical"
 FILL_BOTH = "both"
+FILL_HEADER = "header"
 
 
 def _normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
+    normalized: list[str] = []
+    for line in text.splitlines():
+        leading_spaces = len(line) - len(line.lstrip(" "))
+        body = re.sub(r"\s+", " ", line.lstrip()).strip()
+        if body:
+            normalized.append((" " * leading_spaces) + body)
+    return "\n".join(normalized)
 
 
-def _fill_allowed(fill_merged: str, cell_type: str) -> bool:
+def _fill_allowed(
+    fill_merged: str,
+    cell_type: str,
+    *,
+    row_index: int,
+    header_rows: int,
+) -> bool:
+    if fill_merged == FILL_HEADER:
+        return row_index < header_rows and cell_type in {"hMerge", "vMerge"}
     if fill_merged == FILL_BOTH:
         return cell_type in {"hMerge", "vMerge"}
     if fill_merged == FILL_H:
@@ -24,7 +39,12 @@ def _fill_allowed(fill_merged: str, cell_type: str) -> bool:
     return False
 
 
-def _dense_grid_from_parsed_table(payload: dict[str, Any], fill_merged: str) -> list[list[str]]:
+def _dense_grid_from_parsed_table(
+    payload: dict[str, Any],
+    fill_merged: str,
+    *,
+    header_rows: int,
+) -> list[list[str]]:
     rows = payload.get("rows")
     n_rows = int(payload.get("n_rows", len(rows or [])))
     n_cols = int(payload.get("n_cols", 0))
@@ -46,7 +66,12 @@ def _dense_grid_from_parsed_table(payload: dict[str, Any], fill_merged: str) -> 
                 text = _normalize_text(str(cell.get("text", "")))
                 dense[r_idx][c_idx] = text
                 origin_texts[(r_idx, c_idx)] = text
-            elif ctype in {"hMerge", "vMerge"} and _fill_allowed(fill_merged, ctype):
+            elif ctype in {"hMerge", "vMerge"} and _fill_allowed(
+                fill_merged,
+                ctype,
+                row_index=r_idx,
+                header_rows=header_rows,
+            ):
                 origin = cell.get("origin")
                 if (
                     isinstance(origin, list)
@@ -103,12 +128,17 @@ def _render_markdown_flat(dense: list[list[str]], header_rows: int, use_header_r
 def render_parsed_table_to_markdown(
     parsed_table: dict[str, Any],
     header_rows: int = 1,
-    fill_merged: str = FILL_BOTH,
+    fill_merged: str = FILL_HEADER,
 ) -> str:
     """Public API for rendering parsed-table payload into markdown."""
-    dense = _dense_grid_from_parsed_table(parsed_table, fill_merged=fill_merged)
+    normalized_header_rows = max(0, int(header_rows))
+    dense = _dense_grid_from_parsed_table(
+        parsed_table,
+        fill_merged=fill_merged,
+        header_rows=normalized_header_rows,
+    )
     return _render_markdown_flat(
         dense=dense,
-        header_rows=max(0, int(header_rows)),
+        header_rows=normalized_header_rows,
         use_header_rows=header_rows > 0,
     )

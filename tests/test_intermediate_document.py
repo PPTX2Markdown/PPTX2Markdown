@@ -58,6 +58,8 @@ class IntermediateDocumentTests(unittest.TestCase):
                 ),
                 SlideDocument(
                     page=2,
+                    hidden=True,
+                    notes="Explain the table.",
                     blocks=[ContentBlock(kind="table", content="| A |\n| - |")],
                 ),
             ],
@@ -67,7 +69,11 @@ class IntermediateDocumentTests(unittest.TestCase):
 
         self.assertEqual(
             render_presentation_markdown(restored),
-            "[Page_1]\n\n# Title\n\nBody\n\n[Page_2]\n\n| A |\n| - |\n",
+            (
+                "[Page_1]\n\n# Title\n\nBody\n\n[Page_2]\n\n"
+                "<!-- hidden: true -->\n\n| A |\n| - |\n\n"
+                "[Speaker_Notes]\n\nExplain the table.\n"
+            ),
         )
 
     def test_schema_contract_rejects_invalid_documents(self) -> None:
@@ -94,6 +100,9 @@ class IntermediateDocumentTests(unittest.TestCase):
 
         self.assertEqual(block.bbox.unit, "emu")
         self.assertEqual(block.source_part, "layout")
+
+        hidden_slide = SlideDocument(page=1, hidden=True)
+        self.assertTrue(hidden_slide.hidden)
 
     def test_checked_in_json_schema_matches_pydantic_model(self) -> None:
         checked_in = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))

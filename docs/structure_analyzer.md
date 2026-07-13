@@ -30,14 +30,16 @@
 
 - 슬라이드 XML 파일 경로(1개 이상)
   - 형식: `*.xml`
-  - 예: `python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/target_slides/slide1.xml`
+  - 예: `python -m pptx2markdown.structure_analyzer.extract_structure_analysis slide1.xml`
 - 입력 인자 생략
-  - 동작: `./target_slides/*.xml` 전체 처리
-  - 참고: 이 기본 경로는 **실행 위치(cwd)** 기준입니다.
+  - 동작: `<work-dir>/target_slides/*.xml` 전체 처리
+  - 기본 `<work-dir>`: `./.pptx2markdown`
 
 ## 출력
 
-기본 출력 경로는 `./output` 입니다. (`--output-dir`로 변경 가능)
+기본 출력 경로는 `<work-dir>/structure_analysis`입니다. 메인 변환기와 같은
+작업 루트를 사용하므로 실행 위치마다 별도 `output` 또는 `target_slides` 폴더를
+만들지 않습니다. (`--output-dir`로 변경 가능)
 
 - 슬라이드별 구조 분석 JSON
   - `<output-dir>/<slide_stem>.structure_analysis.json`
@@ -57,19 +59,19 @@
 ### 1) 단일/복수 파일 처리
 
 ```bash
-python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/target_slides/slide1.xml structure_analyzer/target_slides/slide2.xml
+python -m pptx2markdown.structure_analyzer.extract_structure_analysis slide1.xml slide2.xml
 ```
 
 ### 2) 기본 입력 경로 일괄 처리
 
 ```bash
-python3 structure_analyzer/extract_structure_analysis.py
+python -m pptx2markdown.structure_analyzer.extract_structure_analysis
 ```
 
 ### 3) 출력 경로 지정
 
 ```bash
-python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/target_slides/slide1.xml --output-dir structure_analyzer/output
+python -m pptx2markdown.structure_analyzer.extract_structure_analysis slide1.xml --output-dir custom-analysis
 ```
 
 ## XY-cut 순서
@@ -82,6 +84,7 @@ python3 structure_analyzer/extract_structure_analysis.py structure_analyzer/targ
 ## 주요 옵션 요약
 
 - `--output-dir <path>`: 결과(JSON/XML/manifest) 저장 디렉터리
+- `--work-dir <path>`: 공유 중간 작업 루트 (기본값: `./.pptx2markdown`)
 - `--strict`: XML 기반 strict heading 규칙 적용
 - `--placeholder-inheritance none|geometry|style`: placeholder 상속 반영 깊이 지정
 - `--inherited-shapes none|visible|all`: layout/master-only shape materialization 범위 지정

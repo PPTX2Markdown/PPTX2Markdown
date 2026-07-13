@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+
+from pptx2markdown.structure_analyzer.xml_primitives import is_slide_number_only_shape
 
 from .converter_models import BoundingBox, ContentBlock, ShapeBlock, SlideDocument, SlideStats
 from .heading_rules import (
@@ -29,6 +31,10 @@ from .heading_rules import (
 _DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "grpSp", "cxnSp"}
 _LEAF_DRAWABLE_TAGS = {"sp", "pic", "graphicFrame", "cxnSp"}
 _LARGE_INT = 10**18
+
+
+def _is_hidden_slide(root: ET.Element) -> bool:
+    return str(root.attrib.get("show", "1")).strip().lower() in {"0", "false", "off"}
 
 
 @dataclass(frozen=True)
@@ -84,7 +90,7 @@ class SlideConversionDeps:
         [Sequence[Dict[str, object]], Path, Dict[str, str], Optional[Path]],
         Tuple[Dict[str, List[Dict[str, object]]], set[str], List[str], int, int],
     ]
-    extract_shape_blocks: Callable[[ET.Element], List[ShapeBlock]]
+    extract_shape_blocks: Callable[[ET.Element, Dict[str, str]], List[ShapeBlock]]
     render_shape_blocks: Callable[[Sequence[ShapeBlock]], str]
     split_triangle_bullets: Callable[[str], List[str]]
     normalize_text: Callable[[str], str]
@@ -110,6 +116,9 @@ class SlideConversionDeps:
         ],
         Tuple[Optional[str], Optional[str]],
     ]
+    convert_ole_attachment: Callable[..., Tuple[Optional[str], Optional[str]]]
+    convert_media_attachment: Callable[..., Tuple[Optional[str], Optional[str]]]
+    convert_model3d_attachment: Callable[..., Tuple[Optional[str], Optional[str]]]
 
 
 @dataclass
@@ -117,6 +126,8 @@ class SlideRenderAssets:
     output_dir: Optional[Path] = None
     media_dir: Optional[Path] = None
     copied_media: Optional[Dict[str, Path]] = None
+    attachments_dir: Optional[Path] = None
+    copied_attachments: Optional[Dict[str, Path]] = None
 
 
 @dataclass
@@ -249,9 +260,20 @@ def _expanded_children(elem: ET.Element) -> Iterable[ET.Element]:
             yield child
             continue
 
-        selected = child.find("./{*}Choice")
-        if selected is None:
-            selected = child.find("./{*}Fallback")
+        choice = child.find("./{*}Choice")
+        fallback = child.find("./{*}Fallback")
+        if choice is not None and fallback is not None:
+            graphic_data = choice.find(".//{*}graphicData")
+            uri = graphic_data.attrib.get("uri", "").casefold() if graphic_data is not None else ""
+            if uri.endswith("/model3d"):
+                # Office stores a static preview beside the editable GLB model.
+                # Keep both: the fallback is the visible slide representation,
+                # while the Choice branch lets the converter preserve the source.
+                yield from list(fallback)
+                yield from list(choice)
+                continue
+
+        selected = choice if choice is not None else fallback
         if selected is None:
             continue
         yield from list(selected)
@@ -331,7 +353,12 @@ def _ordered_flattened_shapes(
         if "order_index" in hint:
             known += 1
 
-    if known < max(1, len(items) // 2):
+    # The structure stage has already rewritten top-level XML into XYCut order.
+    # Sorting a partially matched list would move every unmatched inherited
+    # object behind matched objects and destroy that correct order. Only sort
+    # when every flattened leaf can be tied back to its sidecar row; this is
+    # still needed for leaves inside groups, whose internal XML is not rewritten.
+    if known != len(items):
         return items
 
     def sort_key(item: FlattenedShape) -> Tuple[int, int, Tuple[int, ...]]:
@@ -344,6 +371,30 @@ def _ordered_flattened_shapes(
         return (0, order_index, item.z_path)
 
     return sorted(items, key=sort_key)
+
+
+def _with_effective_bboxes(
+    items: Sequence[FlattenedShape], context: SlideConversionContext
+) -> List[FlattenedShape]:
+    enriched: List[FlattenedShape] = []
+    for item in items:
+        if item.bbox is not None:
+            enriched.append(item)
+            continue
+        raw_bbox = context.effective_properties.get(item.shape_id, {}).get("bbox")
+        if not (
+            isinstance(raw_bbox, (list, tuple))
+            and len(raw_bbox) == 4
+            and all(isinstance(value, int) for value in raw_bbox)
+        ):
+            enriched.append(item)
+            continue
+        bbox = tuple(raw_bbox)
+        if bbox[2] <= bbox[0] or bbox[3] <= bbox[1]:
+            enriched.append(item)
+            continue
+        enriched.append(replace(item, bbox=bbox))
+    return enriched
 
 
 def _table_overlay_shape_entries(items: Sequence[FlattenedShape]) -> List[Dict[str, object]]:
@@ -386,10 +437,10 @@ def _append_rendered_text_block(
 ) -> None:
     if kind != "heading":
         has_triangle_bullet = "▶" in rendered
-        rendered_lines = deps.split_triangle_bullets(rendered)
-        if rendered_lines:
-            rendered = "\n".join(rendered_lines)
         if has_triangle_bullet:
+            rendered_lines = deps.split_triangle_bullets(rendered)
+            if rendered_lines:
+                rendered = "\n".join(rendered_lines)
             kind = "list"
     blocks.append(
         ContentBlock(
@@ -405,6 +456,16 @@ def _apply_effective_list_properties(
     blocks: List[ShapeBlock],
     props: Dict[str, object],
 ) -> List[ShapeBlock]:
+    # In an ordinary text box, explicit bullet paragraphs may be mixed with
+    # unmarked plain paragraphs. A shape-level summary of the first list item
+    # must not turn every sibling paragraph into a bullet. Placeholder text,
+    # on the other hand, can legitimately inherit bullet semantics from its
+    # layout/master when individual paragraphs omit them.
+    if (
+        any(block.kind in {"list_ul", "list_ol"} for block in blocks)
+        and not str(props.get("ph_type") or "").strip()
+    ):
+        return blocks
     if not props.get("has_list_semantics"):
         return blocks
     raw_list_kind = str(props.get("list_kind") or "").strip()
@@ -422,7 +483,7 @@ def _apply_effective_list_properties(
         if block.kind in {"list_ul", "list_ol"}:
             converted.append(block)
             continue
-        if block.kind != "text" or not block.plain_text:
+        if block.kind != "text" or not block.plain_text or block.list_explicit_none:
             converted.append(block)
             continue
         converted.append(
@@ -430,10 +491,43 @@ def _apply_effective_list_properties(
                 kind=list_kind,
                 level=level,
                 segments=block.segments,
+                list_explicit_none=False,
             )
         )
         changed = True
     return converted if changed else blocks
+
+
+def _font_separated_heading_sections(blocks: Sequence[ShapeBlock]) -> List[str]:
+    if len(blocks) != 1 or any(
+        segment.kind not in {"text", "break"} for segment in blocks[0].segments
+    ):
+        return []
+    lines: List[Tuple[str, List[float]]] = []
+    text_parts: List[str] = []
+    font_sizes: List[float] = []
+
+    def flush() -> None:
+        text = "".join(text_parts).strip()
+        if text:
+            lines.append((text, list(font_sizes)))
+        text_parts.clear()
+        font_sizes.clear()
+
+    for segment in blocks[0].segments:
+        if segment.kind == "break":
+            flush()
+            continue
+        text_parts.append(segment.text)
+        if segment.font_pt is not None and segment.font_pt > 0:
+            font_sizes.append(segment.font_pt)
+    flush()
+    if len(lines) < 2 or not lines[0][1]:
+        return []
+    remaining_sizes = [size for _, sizes in lines[1:] for size in sizes]
+    if not remaining_sizes or max(lines[0][1]) < max(remaining_sizes) * 1.5:
+        return []
+    return [lines[0][0], "\n".join(text for text, _ in lines[1:])]
 
 
 def _handle_text_shape_block(
@@ -449,13 +543,25 @@ def _handle_text_shape_block(
 ) -> None:
     ph = child.find(".//p:ph", context.ns)
     ph_type = ph.attrib.get("type") if ph is not None else None
-    if ph_type in {"sldNum", "ftr", "dt"}:
+    is_unpositioned_literal_date = (
+        ph_type == "dt"
+        and child.find(".//a:fld", context.ns) is None
+        and child.find("./p:spPr/a:xfrm", context.ns) is None
+        and any((node.text or "").strip() for node in child.findall(".//a:t", context.ns))
+    )
+    if (
+        ph_type in {"sldNum", "ftr"}
+        or (ph_type == "dt" and not is_unpositioned_literal_date)
+        or is_slide_number_only_shape(child)
+    ):
         stats.skipped_blocks += 1
         return
 
     sid = deps.shape_id_of(child)
     props = context.effective_properties.get(sid, {})
-    shape_blocks = _apply_effective_list_properties(deps.extract_shape_blocks(child), props)
+    shape_blocks = _apply_effective_list_properties(
+        deps.extract_shape_blocks(child, context.rels_map), props
+    )
     has_list_semantics = any(block.kind in {"list_ul", "list_ol"} for block in shape_blocks)
     has_math_shape = any(block.has_math for block in shape_blocks)
     text = deps.render_shape_blocks(shape_blocks)
@@ -463,10 +569,6 @@ def _handle_text_shape_block(
     if not text or not plain_text:
         stats.skipped_blocks += 1
         return
-    if re.fullmatch(r"\d+", plain_text):
-        stats.skipped_blocks += 1
-        return
-
     if has_math_shape:
         stats.math_blocks += 1
     for block in shape_blocks:
@@ -490,6 +592,21 @@ def _handle_text_shape_block(
         font_pt = None
 
     rendered_text = re.sub(r"\s+", " ", (text or "").strip())
+    text_sections = [
+        re.sub(r"\s+", " ", section).strip()
+        for section in re.split(r"\n{2,}", text or "")
+        if section.strip()
+    ]
+    font_sections = _font_separated_heading_sections(shape_blocks)
+    if len(text_sections) == 1 and font_sections:
+        text_sections = font_sections
+    heading_ph_type = ph_type if ph_type is not None else hint.get("ph_type")
+    can_split_heading_body = (
+        len(text_sections) > 1
+        and heading_ph_type in {"title", "ctrTitle", "subTitle"}
+        and not has_list_semantics
+        and not has_math_shape
+    )
 
     strong_heading_signal = (
         not strict_headings
@@ -554,22 +671,21 @@ def _handle_text_shape_block(
                 strong_heading_signal = True
 
     rendered = text
+    trailing_text: Optional[str] = None
     block_kind = "math" if has_math_shape else "text"
     heading_level: Optional[int] = None
-    if not strict_headings and not strong_heading_signal:
-        if has_list_semantics:
-            is_candidate = False
+    if not strict_headings and heading_ph_type not in {"title", "ctrTitle", "subTitle"}:
         if hr_looks_like_multi_numbered_items(plain_text):
             is_candidate = False
-        if hr_is_body_like_long_sentence(plain_text):
+        elif not strong_heading_signal and hr_is_body_like_long_sentence(plain_text):
             is_candidate = False
 
     heading_threshold = heading_policy.threshold
     if is_candidate and isinstance(depth, int) and 1 <= depth <= 6 and score >= heading_threshold:
         if strict_headings:
-            heading_text = plain_text
+            heading_text = text_sections[0] if can_split_heading_body else plain_text
         else:
-            heading_source = plain_text
+            heading_source = text_sections[0] if can_split_heading_body else plain_text
             if re.match(
                 r"^\d+(?:\s*\.\s*\d+)*\s*\.?\s+",
                 rendered_text,
@@ -582,6 +698,8 @@ def _handle_text_shape_block(
             block_kind = "heading"
             heading_level = depth
             state.used_headings.add(key)
+            if can_split_heading_body:
+                trailing_text = "\n\n".join(text_sections[1:])
         else:
             stats.skipped_blocks += 1
             return
@@ -596,8 +714,55 @@ def _handle_text_shape_block(
         heading_level=heading_level,
         deps=deps,
     )
+    if block_kind == "heading" and trailing_text:
+        _append_rendered_text_block(
+            blocks,
+            trailing_text,
+            shape_id=sid,
+            kind="text",
+            heading_level=None,
+            deps=deps,
+        )
     stats.text_blocks += 1
     state.text_block_index += 1
+
+
+def _shape_has_image_fill(
+    child: ET.Element,
+    ns: Dict[str, str],
+    rels_map: Optional[Dict[str, str]] = None,
+) -> bool:
+    blip = child.find("./p:spPr/a:blipFill/a:blip", ns)
+    if blip is None:
+        return False
+    embed = blip.attrib.get(f"{{{ns['r']}}}embed")
+    if not embed:
+        return False
+    if rels_map is None:
+        return True
+    target = rels_map.get(embed, "")
+    return Path(target).suffix.casefold() in {
+        ".bmp",
+        ".emf",
+        ".gif",
+        ".jpeg",
+        ".jpg",
+        ".png",
+        ".svg",
+        ".tif",
+        ".tiff",
+        ".webp",
+        ".wmf",
+    }
+
+
+def _shape_has_text_or_math(child: ET.Element, ns: Dict[str, str]) -> bool:
+    if any((node.text or "").strip() for node in child.findall(".//a:t", ns)):
+        return True
+    return any(
+        isinstance(node.tag, str) and _local_name(node.tag) in {"oMath", "oMathPara"}
+        for node in child.iter()
+    )
 
 
 def _handle_picture_block(
@@ -617,31 +782,55 @@ def _handle_picture_block(
 
     blip = child.find(".//a:blip", context.ns)
     embed = blip.attrib.get(f"{{{context.ns['r']}}}embed") if blip is not None else None
-    img_path, warn = deps.resolve_image_path(context.rels_map, context.rels_path, embed)
-    if warn:
-        stats.unresolved_images += 1
-        stats.warnings.append(warn)
-    else:
-        stats.resolved_images += 1
+    emitted = False
+    if embed:
+        img_path, warn = deps.resolve_image_path(context.rels_map, context.rels_path, embed)
+        if warn:
+            stats.unresolved_images += 1
+            stats.warnings.append(warn)
+        else:
+            stats.resolved_images += 1
 
-    rendered_image = deps.format_markdown_image(
-        img_path,
+        rendered_image = deps.format_markdown_image(
+            img_path,
+            output_dir=assets.output_dir,
+            media_dir=assets.media_dir,
+            copied_media=assets.copied_media,
+        )
+
+        blocks.append(ContentBlock(kind="image", content=rendered_image, shape_id=sid or None))
+        stats.image_blocks += 1
+        emitted = True
+    attachment_md, attachment_warning = deps.convert_media_attachment(
+        child,
+        rels_path=context.rels_path,
+        rels_map=context.rels_map,
         output_dir=assets.output_dir,
-        media_dir=assets.media_dir,
-        copied_media=assets.copied_media,
+        attachments_dir=assets.attachments_dir,
+        copied_attachments=assets.copied_attachments,
     )
-
-    blocks.append(ContentBlock(kind="image", content=rendered_image, shape_id=sid or None))
-    stats.image_blocks += 1
+    if attachment_md:
+        blocks.append(ContentBlock(kind="attachment", content=attachment_md, shape_id=sid or None))
+        stats.attachment_blocks += 1
+        emitted = True
+    if attachment_warning:
+        stats.warnings.append(attachment_warning)
+    if not emitted:
+        # Empty blips are commonly emitted as inert master decorations or
+        # sub-pixel sentinel pictures. They have no visible/static payload.
+        stats.skipped_blocks += 1
 
 
 def _append_unsupported_graphic_frame(
-    blocks: List[ContentBlock], stats: SlideStats, shape_id: str
+    blocks: List[ContentBlock],
+    stats: SlideStats,
+    shape_id: str,
+    label: str = "graphicFrame(non-table)",
 ) -> None:
     blocks.append(
         ContentBlock(
             kind="unsupported",
-            content="[unsupported: graphicFrame(non-table)]",
+            content=f"[unsupported: {label}]",
             shape_id=shape_id or None,
         )
     )
@@ -692,9 +881,97 @@ def _handle_graphic_frame_block(
                 ContentBlock(kind="smartart", content=smartart_md, shape_id=shape_id or None)
             )
             stats.smartart_blocks += 1
+        elif smartart_err == "smartart contains no data nodes":
+            stats.skipped_blocks += 1
         else:
             _append_unsupported_graphic_frame(blocks, stats, shape_id)
             stats.warnings.append(smartart_err or "smartart conversion failed")
+        return
+
+    if gf_kind == "ole":
+        attachment_md, attachment_error = deps.convert_ole_attachment(
+            child,
+            rels_path=context.rels_path,
+            rels_map=context.rels_map,
+            output_dir=assets.output_dir,
+            attachments_dir=assets.attachments_dir,
+            copied_attachments=assets.copied_attachments,
+        )
+        if attachment_md:
+            blocks.append(
+                ContentBlock(
+                    kind="attachment",
+                    content=attachment_md,
+                    shape_id=shape_id or None,
+                )
+            )
+            stats.attachment_blocks += 1
+            if attachment_error:
+                stats.warnings.append(attachment_error)
+            return
+        # Linked OLE objects often have no portable payload but do carry an
+        # embedded preview picture in their AlternateContent fallback. Keep
+        # that visible representation instead of emitting an unsupported
+        # marker for an unavailable machine-local link.
+        blip = child.find(".//a:blip", context.ns)
+        preview_embed = (
+            blip.attrib.get(f"{{{context.ns['r']}}}embed") if blip is not None else None
+        )
+        if preview_embed:
+            preview_path, preview_warning = deps.resolve_image_path(
+                context.rels_map,
+                context.rels_path,
+                preview_embed,
+            )
+            if preview_warning:
+                stats.unresolved_images += 1
+                stats.warnings.append(preview_warning)
+            else:
+                rendered_preview = deps.format_markdown_image(
+                    preview_path,
+                    output_dir=assets.output_dir,
+                    media_dir=assets.media_dir,
+                    copied_media=assets.copied_media,
+                )
+                blocks.append(
+                    ContentBlock(
+                        kind="image",
+                        content=rendered_preview,
+                        shape_id=shape_id or None,
+                    )
+                )
+                stats.image_blocks += 1
+                stats.resolved_images += 1
+                if attachment_error:
+                    stats.warnings.append(attachment_error)
+                return
+        _append_unsupported_graphic_frame(blocks, stats, shape_id, "ole-object")
+        stats.warnings.append(attachment_error or "OLE attachment extraction failed")
+        return
+
+    if gf_kind == "model3d":
+        attachment_md, attachment_error = deps.convert_model3d_attachment(
+            child,
+            rels_path=context.rels_path,
+            rels_map=context.rels_map,
+            output_dir=assets.output_dir,
+            attachments_dir=assets.attachments_dir,
+            copied_attachments=assets.copied_attachments,
+        )
+        if attachment_md:
+            blocks.append(
+                ContentBlock(
+                    kind="attachment",
+                    content=attachment_md,
+                    shape_id=shape_id or None,
+                )
+            )
+            stats.attachment_blocks += 1
+            if attachment_error:
+                stats.warnings.append(attachment_error)
+            return
+        _append_unsupported_graphic_frame(blocks, stats, shape_id, "model3d")
+        stats.warnings.append(attachment_error or "3D model extraction failed")
         return
 
     table_md, err = deps.convert_table_to_markdown(
@@ -736,7 +1013,10 @@ def convert_one_slide(
     context.rels_map = deps.build_rels_map(context.rels_path)
     context.heading_hints = deps.load_heading_hints(context.slide_xml)
     context.effective_properties = deps.load_effective_properties(context.slide_xml)
-    flattened_shapes = _ordered_flattened_shapes(_flatten_slide_shapes(sp_tree, context), context)
+    flattened_shapes = _ordered_flattened_shapes(
+        _with_effective_bboxes(_flatten_slide_shapes(sp_tree, context), context),
+        context,
+    )
     (
         context.table_overlay_map,
         context.consumed_picture_ids,
@@ -779,16 +1059,30 @@ def convert_one_slide(
 
         block_start = len(blocks)
         if tag == "sp":
-            _handle_text_shape_block(
-                child,
-                blocks=blocks,
-                heading_policy=heading_policy,
-                strict_headings=strict_headings,
-                state=state,
-                stats=stats,
-                context=context,
-                deps=deps,
-            )
+            has_image_fill = _shape_has_image_fill(child, context.ns, context.rels_map)
+            if has_image_fill:
+                _handle_picture_block(
+                    child,
+                    blocks=blocks,
+                    state=state,
+                    stats=stats,
+                    context=context,
+                    assets=assets,
+                    deps=deps,
+                )
+            if _shape_has_text_or_math(child, context.ns):
+                _handle_text_shape_block(
+                    child,
+                    blocks=blocks,
+                    heading_policy=heading_policy,
+                    strict_headings=strict_headings,
+                    state=state,
+                    stats=stats,
+                    context=context,
+                    deps=deps,
+                )
+            elif not has_image_fill:
+                stats.skipped_blocks += 1
         elif tag == "pic":
             _handle_picture_block(
                 child,
@@ -821,4 +1115,8 @@ def convert_one_slide(
         only_heading = heading_blocks[0]
         blocks[blocks.index(only_heading)] = only_heading.model_copy(update={"heading_level": 1})
 
-    return SlideDocument(page=context.page_no, blocks=blocks), stats
+    return SlideDocument(
+        page=context.page_no,
+        hidden=_is_hidden_slide(root),
+        blocks=blocks,
+    ), stats

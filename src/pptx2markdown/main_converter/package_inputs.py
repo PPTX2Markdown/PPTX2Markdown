@@ -10,41 +10,69 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from pptx2markdown.workspace_paths import WorkspacePaths
+
 from .converter_models import PreparedPackage
 from .ppt_to_pptx import PptConversionError, convert_ppt_to_pptx
 
 logger = logging.getLogger(__name__)
+OLE_COMPOUND_FILE_SIGNATURE = bytes.fromhex("D0CF11E0A1B11AE1")
+
+
+class EncryptedPresentationError(ValueError):
+    """Raised when an OOXML presentation is wrapped in an encrypted OLE file."""
+
+
+STRICT_OOXML_NAMESPACE_MAP = {
+    b"http://purl.oclc.org/ooxml/presentationml/main": (
+        b"http://schemas.openxmlformats.org/presentationml/2006/main"
+    ),
+    b"http://purl.oclc.org/ooxml/drawingml/main": (
+        b"http://schemas.openxmlformats.org/drawingml/2006/main"
+    ),
+    b"http://purl.oclc.org/ooxml/drawingml/chart": (
+        b"http://schemas.openxmlformats.org/drawingml/2006/chart"
+    ),
+    b"http://purl.oclc.org/ooxml/drawingml/diagram": (
+        b"http://schemas.openxmlformats.org/drawingml/2006/diagram"
+    ),
+    b"http://purl.oclc.org/ooxml/spreadsheetml/main": (
+        b"http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ),
+    b"http://purl.oclc.org/ooxml/wordprocessingml/main": (
+        b"http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ),
+    b"http://purl.oclc.org/ooxml/officeDocument/math": (
+        b"http://schemas.openxmlformats.org/officeDocument/2006/math"
+    ),
+    b"http://purl.oclc.org/ooxml/officeDocument/relationships": (
+        b"http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    ),
+    b"http://purl.oclc.org/ooxml/package/relationships": (
+        b"http://schemas.openxmlformats.org/package/2006/relationships"
+    ),
+    b"http://purl.oclc.org/ooxml/package/content-types": (
+        b"http://schemas.openxmlformats.org/package/2006/content-types"
+    ),
+    b"http://purl.oclc.org/ooxml/package/metadata/core-properties": (
+        b"http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+    ),
+}
 
 
 def default_target_dir(base_dir: Path) -> Path:
     """Return the directory that stores extracted PPTX packages."""
-    local_target = base_dir / "target_slides"
-    if local_target.exists() and not local_target.is_dir():
-        raise NotADirectoryError(
-            f"target_slides path exists but is not a directory: {local_target}"
-        )
-    local_target.mkdir(parents=True, exist_ok=True)
-    return local_target
+    return WorkspacePaths.from_base(work_dir=base_dir).target_slides
 
 
 def default_pptx_input_dir(base_dir: Path) -> Path:
     """Return the default directory for source PPT/PPTX inputs."""
-    local_target = base_dir / "target_pptx"
-    if local_target.exists() and not local_target.is_dir():
-        raise NotADirectoryError(f"target_pptx path exists but is not a directory: {local_target}")
-    local_target.mkdir(parents=True, exist_ok=True)
-    return local_target
+    return WorkspacePaths.from_base(work_dir=base_dir).target_pptx
 
 
 def default_ppt_conversion_cache_dir(base_dir: Path) -> Path:
     """Return the cache directory used for legacy .ppt conversion."""
-    cache_dir = base_dir / ".cache" / "ppt_to_pptx"
-    if cache_dir.exists() and not cache_dir.is_dir():
-        raise NotADirectoryError(
-            f"ppt conversion cache path exists but is not a directory: {cache_dir}"
-        )
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
+    return WorkspacePaths.from_base(work_dir=base_dir).ppt_conversion_cache
 
 
 def natural_key(name: str) -> Tuple[object, ...]:
@@ -85,12 +113,39 @@ def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
 
 def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
     """Extract a PPTX zip after rejecting path traversal entries."""
+    with pptx_path.open("rb") as stream:
+        signature = stream.read(len(OLE_COMPOUND_FILE_SIGNATURE))
+    if signature == OLE_COMPOUND_FILE_SIGNATURE:
+        raise EncryptedPresentationError(
+            "password-protected or encrypted PPTX is not supported; "
+            "remove the password in PowerPoint or LibreOffice and try again"
+        )
     with zipfile.ZipFile(pptx_path) as archive:
         for member in archive.infolist():
             member_path = Path(member.filename)
             if member_path.is_absolute() or ".." in member_path.parts:
                 raise ValueError(f"Unsafe archive entry: {member.filename}")
         archive.extractall(dest_dir)
+
+
+def normalize_strict_ooxml_package(package_dir: Path) -> int:
+    """Map ISO Strict OOXML namespaces to the equivalent parser namespaces."""
+    changed = 0
+    candidates = [package_dir / "[Content_Types].xml"]
+    candidates.extend(package_dir.rglob("*.xml"))
+    candidates.extend(package_dir.rglob("*.rels"))
+    for path in candidates:
+        if not path.is_file():
+            continue
+        original = path.read_bytes()
+        normalized = original
+        for strict_uri, transitional_uri in STRICT_OOXML_NAMESPACE_MAP.items():
+            normalized = normalized.replace(strict_uri, transitional_uri)
+        if normalized == original:
+            continue
+        path.write_bytes(normalized)
+        changed += 1
+    return changed
 
 
 def extract_pptx_to_target(
@@ -113,6 +168,7 @@ def extract_pptx_to_target(
     )
 
     if package_marker_matches(pkg_dir, pptx_path):
+        normalize_strict_ooxml_package(pkg_dir)
         return package.with_package_dir(pkg_dir.resolve())
 
     marker = pkg_dir / ".pptx_source.json"
@@ -126,10 +182,21 @@ def extract_pptx_to_target(
             )
 
     pkg_dir.mkdir(parents=True, exist_ok=True)
-    safe_extract_pptx(pptx_path, pkg_dir)
+    try:
+        safe_extract_pptx(pptx_path, pkg_dir)
+        normalize_strict_ooxml_package(pkg_dir)
+    except Exception:
+        # Never leave a partially extracted package that could be mistaken for
+        # a valid cache entry on the next run.
+        shutil.rmtree(pkg_dir, ignore_errors=True)
+        raise
 
     slides_dir = pkg_dir / "ppt" / "slides"
-    if not slides_dir.exists() or not slides_dir.is_dir():
+    presentation_xml = pkg_dir / "ppt" / "presentation.xml"
+    if not (
+        (slides_dir.exists() and slides_dir.is_dir())
+        or (presentation_xml.exists() and presentation_xml.is_file())
+    ):
         shutil.rmtree(pkg_dir, ignore_errors=True)
         raise ValueError(f"Not a valid pptx package after extraction: {pptx_path}")
 
@@ -282,21 +349,27 @@ def prepare_package_inputs(
 
         try:
             picked_file = normalize_presentation_to_pptx(cwd, picked_file, ppt_converter)
-        except PptConversionError as exc:
-            logger.error("[ppt-convert] failed: %s", exc)
-            raise ValueError("ppt conversion failed") from exc
-
-        package = PreparedPackage(
-            package_dir=extraction_root / picked_file.stem,
-            source_pptx_path=picked_file,
-        )
-        prepared.append(
-            extract_pptx_to_target(
-                package,
-                extraction_root,
-                allow_replace_unmanaged=force_extract,
+            package = PreparedPackage(
+                package_dir=extraction_root / picked_file.stem,
+                source_pptx_path=picked_file,
             )
-        )
+            prepared.append(
+                extract_pptx_to_target(
+                    package,
+                    extraction_root,
+                    allow_replace_unmanaged=force_extract,
+                )
+            )
+        except (OSError, ValueError, zipfile.BadZipFile, PptConversionError) as exc:
+            logger.error("[input] failed: %s -> %s", picked_file, exc)
+            row = _missing_input_row(item, candidates)
+            row.update(
+                {
+                    "error": str(exc) or exc.__class__.__name__,
+                    "error_type": exc.__class__.__name__,
+                }
+            )
+            missing_inputs.append(row)
 
     return prepared, missing_inputs
 
@@ -311,20 +384,29 @@ def _missing_input_row(item: str, candidates: Sequence[Path]) -> Dict[str, objec
     }
 
 
-def collect_target_presentation_inputs() -> List[str]:
-    """Collect presentation inputs from the user's current directory."""
+def collect_target_presentation_inputs(work_dir: Optional[Path] = None) -> List[str]:
+    """Collect presentations from the current directory and canonical input directory."""
     by_stem: Dict[str, Path] = {}
 
-    for path in Path.cwd().iterdir():
-        if not path.is_file() or not is_supported_presentation_file(path):
+    roots = [Path.cwd()]
+    if work_dir is not None:
+        roots.append(default_pptx_input_dir(work_dir))
+
+    for root in roots:
+        if not root.exists():
             continue
-        resolved = path.resolve()
-        key = path.stem.lower()
-        existing = by_stem.get(key)
-        if existing is None or (
-            existing.suffix.lower() == ".ppt" and path.suffix.lower() == ".pptx"
-        ):
-            by_stem[key] = resolved
+        if not root.is_dir():
+            raise NotADirectoryError(f"presentation input path is not a directory: {root}")
+        for path in root.iterdir():
+            if not path.is_file() or not is_supported_presentation_file(path):
+                continue
+            resolved = path.resolve()
+            key = path.stem.lower()
+            existing = by_stem.get(key)
+            if existing is None or (
+                existing.suffix.lower() == ".ppt" and path.suffix.lower() == ".pptx"
+            ):
+                by_stem[key] = resolved
 
     files = sorted(by_stem.values(), key=lambda path: natural_key(path.name))
     return [str(path) for path in files]
