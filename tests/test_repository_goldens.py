@@ -93,6 +93,11 @@ class RepositoryGoldenTests(unittest.TestCase):
                 package_dir = self.outputs[output_format] / stem
                 result = package_dir / f"{stem}.{extension}"
                 snapshot = self.snapshot_dirs[output_format] / f"{stem}.{extension}"
+                self.assertNotIn(
+                    b"\r\n",
+                    result.read_bytes(),
+                    f"{case['file']} must use LF output ({output_format})",
+                )
                 self.assertEqual(
                     result.read_bytes(),
                     snapshot.read_bytes(),
@@ -135,9 +140,9 @@ class RepositoryGoldenTests(unittest.TestCase):
 
     def test_batch_conversion_summary_is_stable_in_both_formats(self) -> None:
         for output_format, output_dir in self.outputs.items():
-            conversion_manifest = json.loads(
-                (output_dir / "convert_manifest.json").read_text(encoding="utf-8")
-            )
+            manifest_path = output_dir / "convert_manifest.json"
+            self.assertNotIn(b"\r\n", manifest_path.read_bytes(), output_format)
+            conversion_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 conversion_manifest["summary"],
                 self.manifest["expected_summary"],

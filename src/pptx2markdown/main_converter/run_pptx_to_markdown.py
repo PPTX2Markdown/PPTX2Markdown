@@ -419,7 +419,7 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
     if path.startswith("[unresolved-image") or output_dir is None:
         return path
     try:
-        return os.path.relpath(path, start=str(output_dir))
+        return os.path.relpath(path, start=str(output_dir)).replace("\\", "/")
     except Exception:
         return path
 
@@ -1554,7 +1554,7 @@ def _convert_package(
         output_text += "\n"
     else:
         output_text = render_presentation_markdown(document)
-    output_path.write_text(output_text, encoding="utf-8")
+    output_path.write_text(output_text, encoding="utf-8", newline="\n")
     manifest.summary.processed_packages += 1
     manifest.packages.append(pkg_row)
 
@@ -1589,9 +1589,11 @@ def run(config: ConverterConfig) -> int:
 
     manifest.mark_finished()
     manifest_path = config.output_dir / "convert_manifest.json"
+    manifest_text = json.dumps(manifest.model_dump(mode="python"), ensure_ascii=False, indent=2)
     manifest_path.write_text(
-        json.dumps(manifest.model_dump(mode="python"), ensure_ascii=False, indent=2),
+        manifest_text + "\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     logger.info("Wrote package outputs under: %s", config.output_dir.resolve())

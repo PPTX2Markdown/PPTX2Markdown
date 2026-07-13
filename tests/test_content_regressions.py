@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 from pptx2markdown.main_converter.run_pptx_to_markdown import (
     _ooxml_part_from_relationship,
@@ -13,6 +14,7 @@ from pptx2markdown.main_converter.run_pptx_to_markdown import (
     load_effective_properties,
     load_heading_hints,
     paragraph_has_list_semantics,
+    relativize_markdown_path,
     render_shape_blocks,
 )
 from pptx2markdown.main_converter.slide_converter import (
@@ -87,6 +89,15 @@ def _empty_slide_tree() -> ET.ElementTree:
 
 
 class ContentRegressionTests(unittest.TestCase):
+    def test_markdown_asset_paths_always_use_uri_separators(self) -> None:
+        with patch(
+            "pptx2markdown.main_converter.run_pptx_to_markdown.os.path.relpath",
+            return_value=r"media\image1.png",
+        ):
+            relative = relativize_markdown_path("ignored", Path("output"))
+
+        self.assertEqual(relative, "media/image1.png")
+
     def test_text_normalization_preserves_all_unicode_scripts(self) -> None:
         self.assertEqual(
             normalize_text("网格系统 · 日本語 · Русский · Café"),
