@@ -5,7 +5,7 @@ English | [한국어](THIRD_PARTY_NOTICES.ko.md)
 This notice covers the upstream PPTX files stored in this directory. The exact
 file-to-source mapping, immutable source URL, revision, and SHA-256 digest are
 recorded in `manifest.json`. Project-owned `synthetic_*.pptx` fixtures are
-covered by the repository's own MIT license and are not third-party works.
+covered by the repository's own Apache License 2.0 and are not third-party works.
 
 The upstream fixtures were retrieved from the following MIT-licensed projects:
 
