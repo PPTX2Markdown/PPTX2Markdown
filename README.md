@@ -1,296 +1,235 @@
-# PPTX2Markdown
+# pptx2markdown
 
-PPTX를 Markdown으로 변환하는 파이프라인입니다.
+[![Quality](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml/badge.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/actions/workflows/quality.yml)
+[![PyPI](https://img.shields.io/pypi/v/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
+[![Python](https://img.shields.io/pypi/pyversions/pptx2markdown)](https://pypi.org/project/pptx2markdown/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)
 
-## 개요
+English | [한국어](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.ko.md)
 
-이 프로젝트는 PPTX 파일을 분석해 Markdown으로 변환합니다. 텍스트, 테이블, 이미지 블록을 각각 적절한 방식으로 처리하며, 이미지의 경우 VLM 기반 변환도 지원합니다.
+`pptx2markdown` converts PowerPoint presentations into deterministic Markdown or
+JSON for search, RAG, and document-processing pipelines. It parses native OOXML
+structure and shape geometry directly: no OCR, vision model, API key, or cloud
+service is used.
 
-### 주요 구성 요소
+## Why pptx2markdown?
 
-- `main_converter`: 메인 엔드투엔드 실행기
-- `surya_pipeline`: Surya 기반 reading-order 재정렬
-- `structure_analyzer`: XML 기반 reading-order 분석
-- `table_pipeline`: 네이티브 테이블 추출 및 렌더링
-- `image_pipeline`: 이미지 블록을 Markdown으로 변환하는 VLM 계층
+- **One static pipeline** — `.pptx` content is parsed from XML, relationships,
+  and embedded package parts.
+- **Deterministic reading order** — recursive geometric XY-cut orders native
+  shapes without semantic or model-based overrides.
+- **One output contract** — Markdown and JSON are rendered from the same
+  versioned `PresentationDocument`.
+- **Rich native content** — text, headings, lists, tables, charts, SmartArt,
+  formulas, images, speaker notes, and embedded attachments are retained.
+- **Reviewable regressions** — real PPTX fixtures are checked against
+  byte-for-byte JSON and Markdown golden outputs on Linux, macOS, and Windows.
 
-## 설치
+## Supported content
 
-### 1. uv 기반 설치
+| Content | Behavior |
+| --- | --- |
+| Text and headings | Preserves text and infers headings from native placeholder and style evidence |
+| Lists | Preserves ordered and unordered list structure |
+| Tables | Renders native PowerPoint tables as Markdown tables |
+| Charts | Converts native charts through [chart2md](https://pypi.org/project/chart2md/) |
+| SmartArt | Converts diagram content through [smartart2md](https://pypi.org/project/smartart2md/) |
+| Formulas | Converts OMML equations to LaTeX through [omml2latex](https://pypi.org/project/omml2latex/) |
+| Images | Copies embedded image parts to deterministic local asset paths |
+| Speaker notes | Keeps notes separate from visible slide content |
+| Attachments | Preserves recoverable PDF, audio, video, Office, ZIP, 3D, and OLE payloads as linked files |
 
-#### 요구 사항
+The parser does **not** OCR text inside images, transcribe audio or video,
+reconstruct animations, interpret connector semantics, or reproduce slides
+pixel-for-pixel. PowerPoint review comments are intentionally excluded.
 
-- uv
-- LibreOffice
-  - EMF/WMF 이미지를 PNG로 변환할 때 필요
-- 로컬 Qwen 모드 사용 시
-  - `requirements.txt` 설치 필요
-  - GPU 환경 권장
-- Gemini 모드 사용 시
-  - 프로젝트 루트 `.env` 파일에 `GEMINI_API_KEY` 설정 필요
-- OpenAI 모드 사용 시
-  - 프로젝트 루트 `.env` 파일에 `OPENAI_API_KEY` 설정 필요
+## Requirements
 
-#### 저장소 클론 후 환경 구성
+- Python 3.12 or newer
+- `.pptx`: no Microsoft Office or LibreOffice required
+- legacy `.ppt`: Microsoft PowerPoint on Windows or LibreOffice
+- EMF/WMF conversion: LibreOffice when conversion is needed
+
+## Installation
+
+### Let an AI agent install it
+
+A local coding agent can inspect the environment, choose an isolated install,
+optionally configure LibreOffice, and verify the CLI. Give it one of these
+prompts and review every permission request.
+
+Most agents:
+
+```text
+Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.md and install pptx2markdown for this machine. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
+```
+
+Codex interactive planning:
+
+```text
+/plan
+Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.md and install pptx2markdown for this machine. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
+```
+
+See the complete [agent installation procedure](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.md).
+
+### Manual installation
+
+For an isolated CLI, use `uv`:
 
 ```bash
-git clone https://github.com/PPTX2Markdown/PPTX2Markdown.git
-cd PPTX2Markdown
-uv sync
+uv tool install pptx2markdown
 ```
 
-#### 가상환경 적용
-
-macOS / Linux:
+Alternatively, use `pipx` or an active virtual environment:
 
 ```bash
-source .venv/bin/activate
+pipx install pptx2markdown
+# or, inside an active virtual environment
+python -m pip install pptx2markdown
 ```
 
-Windows PowerShell:
-
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-#### LibreOffice 설치
-
-macOS:
+LibreOffice is optional:
 
 ```bash
-brew install libreoffice
+# macOS
+brew install --cask libreoffice
+
+# Ubuntu / Debian
+sudo apt-get install libreoffice libreoffice-impress
 ```
 
-Ubuntu / Debian:
+On Windows, `.ppt` conversion uses PowerPoint COM automation when available and
+otherwise tries LibreOffice. `SOFFICE_PATH` may point to a specific LibreOffice
+executable.
+
+## Quick start
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y libreoffice libreoffice-impress fonts-dejavu-core libglib2.0-0 libgl1 libgomp1 libsm6 libxext6
+# One file -> ./output/deck/deck.md
+pptx2markdown deck.pptx
+
+# Every .pptx/.ppt in the current directory
+pptx2markdown
+
+# Multiple files and a custom output root
+pptx2markdown first.pptx second.pptx -o converted/
+
+# Canonical JSON instead of Markdown
+pptx2markdown deck.pptx --output-format json
 ```
 
-Windows PowerShell:
-다음 웹 페이지에서 직접 다운로드 후 환경변수 설정
+Temporary Office lock files matching `~$*.pptx` are silently skipped during
+batch conversion.
 
-- 설치 페이지 : https://www.libreoffice.org/download/download-libreoffice/?type=win-x86_64&version=25.8.4&lang=ss
+From Python:
 
-```powershell
-$env:SOFFICE_PATH="C:\Program Files\LibreOffice\program\soffice.exe"
+```python
+import pptx2markdown
+
+exit_code = pptx2markdown.convert(
+    "deck.pptx",
+    output_dir="converted",
+    output_format="markdown",
+)
+if exit_code != 0:
+    raise RuntimeError("conversion failed")
 ```
 
-### 2. Docker 기반 설치
+Example Markdown:
 
-#### 요구 사항
+```markdown
+[Page_1]
 
-- Docker
-- Docker Compose
-- NVIDIA GPU를 사용할 경우
-  - NVIDIA driver
-  - NVIDIA Container Toolkit
+# Quarterly results
 
-#### 포함 파일
+- Revenue increased 18%
+- Operating margin reached 24%
 
-- [Dockerfile](/mnt/c/study/graduation/PPTX2Markdown/Dockerfile)
-- [docker-compose.yml](/mnt/c/study/graduation/PPTX2Markdown/docker-compose.yml)
+| Region | Revenue |
+| --- | ---: |
+| APAC | $12.4M |
+```
 
-#### 구성 특징
+## CLI options
 
-- 저장소 루트가 컨테이너의 `/workspace`로 마운트됩니다.
-- Hugging Face / torch / pip 캐시는 compose 볼륨으로 유지됩니다.
-- 기본 compose 설정은 GPU용 PyTorch wheel(`cu128`)을 설치하고 `gpus: all`로 실행합니다.
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-o, --output-dir` | `./output` | Final Markdown/JSON and copied assets |
+| `--work-dir` | `./.pptx2markdown` | Extracted packages, analysis files, and caches |
+| `--output-format` | `markdown` | `markdown` or `json` |
+| `--headings` | `auto` | `auto` or placeholder-only `strict` heading detection |
+| `--placeholder-inheritance` | `style` | `none`, `geometry`, or `style` inheritance |
+| `--inherited-shapes` | `visible` | `none`, `visible`, or `all` layout/master shapes |
+| `--ppt-converter` | `auto` | `auto`, `powerpoint`, or `libreoffice` for `.ppt` |
+| `--verbose` | off | Debug logging |
 
-#### 빌드 및 실행
+Run `pptx2markdown --help` for the authoritative CLI reference.
+
+## Output layout
+
+```text
+output/
+├── convert_manifest.json
+└── <deck-name>/
+    ├── <deck-name>.md       # or <deck-name>.json
+    ├── media/
+    └── attachments/
+
+.pptx2markdown/
+├── target_slides/
+├── structure_analysis/
+├── table_pipeline/
+└── .cache/
+```
+
+`convert_manifest.json` records file and slide status, warnings, failures, and
+block statistics. JSON output conforms to the packaged
+`PresentationDocument 1.0` schema. Source paths are reduced to a basename and
+generated links use portable `/` separators.
+
+## Reading order and determinism
+
+Reading order always uses recursive XY-cut over native shape bounding boxes. It
+splits geometric regions into columns and rows, then uses top-left order when no
+further cut is possible. Original XML order is only a deterministic tie-breaker
+or a fallback for objects without usable geometry.
+
+For identical input and options, JSON and Markdown outputs are expected to be
+byte-for-byte stable across supported operating systems. The repository keeps
+17 reviewable PPTX fixtures with both expected formats and emitted-asset hashes.
+
+## Security model
+
+Normal `.pptx` conversion is local and makes no network or model calls. OOXML
+extraction rejects path traversal, links, encrypted entries, relationship
+escapes, and packages that exceed configured archive limits. Extracted
+attachments are data from the input presentation; inspect them before opening.
+Legacy `.ppt` and some vector-image conversions invoke the selected external
+Office converter.
+
+## Documentation
+
+- [Output schema](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.md)
+- [Main converter](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.md)
+- [Structure analyzer](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.md)
+- [Golden PPTX suite](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/README.md)
+
+## Development
 
 ```bash
-docker compose build
-docker compose up -d
+python -m pip install -e .
+python -m unittest discover -v
+python scripts/update_goldens.py --check
+ruff check src tests scripts
+ruff format --check src tests scripts
 ```
 
-#### 컨테이너 셸 진입
+When parser behavior changes intentionally, review the generated Markdown and
+JSON diffs before accepting new golden snapshots.
 
-```bash
-docker compose exec app bash
-```
+## License
 
-## 사용 방법
-
-### 입력 경로
-
-기본 입력 폴더:
-
-- `main_converter/target_pptx/`
-
-기본 동작:
-
-- 인자를 생략하면 `main_converter/target_pptx/*.pptx` 전체를 처리합니다.
-- 인자를 지정하면 해당 `.pptx` 파일만 처리합니다.
-
-### 기본 실행
-
-```bash
-python main_converter/run_pptx_to_markdown.py [INPUT_PPTX ...]
-```
-
-예시:
-
-```bash
-python main_converter/run_pptx_to_markdown.py
-python main_converter/run_pptx_to_markdown.py sample1.pptx sample2.pptx
-```
-
-### Reading Order 옵션
-
-```bash
-python main_converter/run_pptx_to_markdown.py --reading-order xml sample1.pptx
-python main_converter/run_pptx_to_markdown.py --reading-order surya sample1.pptx
-python main_converter/run_pptx_to_markdown.py --reading-order xycut sample1.pptx
-```
-
-### Heading 옵션
-
-- 기본값은 `strict` 입니다.
-- 완화된 heading 판정을 쓰려면 `--not-strict`를 지정합니다.
-
-```bash
-python main_converter/run_pptx_to_markdown.py sample1.pptx
-python main_converter/run_pptx_to_markdown.py --not-strict sample1.pptx
-```
-
-### Heading 옵션
-
-- 기본값은 `strict` 입니다.
-- 완화된 heading 판정을 쓰려면 `--not-strict`를 지정합니다.
-
-```bash
-python main_converter/run_pptx_to_markdown.py sample1.pptx
-python main_converter/run_pptx_to_markdown.py --not-strict sample1.pptx
-```
-
-### 이미지 VLM 옵션
-
-이미지 블록을 VLM으로 Markdown 변환하려면 `--image-vlm-provider`를 지정합니다.
-
-- 자세한 옵션 설명은 [`image_pipeline/README.md`](image_pipeline/README.md) 참고
-- 변환 실패 또는 비문서성 이미지인 경우 Markdown 이미지 링크로 fallback
-- 이미지 VLM 결과는 `.cache/image_pipeline/` 디스크 캐시에 저장되어 재실행 시 재사용됨
-- 캐시를 무시하고 처음부터 다시 계산하려면 `--ignore-image-vlm-cache` 사용
-
-Gemini 사용:
-
-프로젝트 루트 `.env`:
-
-```dotenv
-GEMINI_API_KEY=your-api-key
-```
-
-그 다음 실행:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
-  sample1.pptx
-```
-
-캐시를 무시하고 처음부터 다시 실행:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider gemini \
-  --ignore-image-vlm-cache \
-  sample1.pptx
-```
-
-로컬 Qwen 사용:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider local \
-  --image-vlm-model 3b \
-  sample1.pptx
-```
-
-OpenAI 사용:
-
-프로젝트 루트 `.env`:
-
-```dotenv
-OPENAI_API_KEY=your-api-key
-```
-
-기본 모델 `gpt-4.1-mini` 사용:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider openai \
-  sample1.pptx
-```
-
-명시적으로 모델 지정:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider openai \
-  --image-vlm-model gpt-4.1-mini \
-  sample1.pptx
-```
-
-OpenRouter 사용:
-
-프로젝트 루트 `.env`:
-
-```dotenv
-OPENROUTER_API_KEY=your-api-key
-```
-
-기본 모델 `google/gemini-2.5-flash` 사용:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider openrouter \
-  sample1.pptx
-```
-
-명시적으로 모델 지정:
-
-```bash
-python main_converter/run_pptx_to_markdown.py \
-  --image-vlm-provider openrouter \
-  --image-vlm-model google/gemini-2.5-flash \
-  sample1.pptx
-```
-
-## 출력
-
-기본 출력 경로:
-
-- `main_converter/output/xml/<package>/result.md`
-- `main_converter/output/surya/<package>/result.md`
-
-추가 산출물:
-
-- `convert_manifest.json`
-- 복사된 이미지 asset
-
-이미지 VLM이 Markdown으로 변환한 결과 앞에는 디버깅용 source marker가 붙습니다.
-
-예시:
-
-```md
-[image-vlm-source: image6.png]
-```
-
-## 주의사항
-
-- 로컬 `7b` 모델은 GPU 없이 사용하기 어렵습니다.
-- 로컬 Qwen 모드는 최초 실행 시 Hugging Face 캐시에 모델을 다운로드합니다.
-- Gemini 모드는 네트워크 연결과 유효한 API 키가 필요합니다.
-- Gemini가 `quota exceeded`를 반환하면 이번 실행에서는 남은 이미지 요청을 즉시 fallback 처리합니다.
-
-## 빠른 체크
-
-```bash
-python -m py_compile \
-  image_pipeline/service.py \
-  main_converter/converter_models.py \
-  main_converter/slide_converter.py \
-  main_converter/run_pptx_to_markdown.py
-```
+The project is distributed under the [MIT License](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE).
+Third-party golden fixture attribution is recorded in
+[`THIRD_PARTY_NOTICES.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,622 @@
+{
+  "schema_version": "1.0",
+  "corpus_root": ".pptx2markdown/corpus/files",
+  "cases": [
+    {
+      "name": "materialized layout text remains between title and subtitle",
+      "path": "apache-poi/test-data/slideshow/WithMaster.pptx",
+      "sha256": "54ae7677fd2813a815160cc72bd8960a4e482690dfc369b392868521c9b61549",
+      "page": 1,
+      "ordered_content": [
+        "First page title",
+        "This text comes from the Master Slide",
+        "First page subtitle"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "special-index title inherits master geometry",
+      "path": "apache-poi/test-data/slideshow/layouts.pptx",
+      "sha256": "9c3d53afa3115de2ba72ec77637a616aeed505a6ff3b30a46db871c4edd32be5",
+      "page": 7,
+      "ordered_content": [
+        "Blank with Default Title",
+        "Default Text",
+        "Default\nText with levels\n- Level 1\n  - Level 2\n    - Level 3"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "layout slide-number editing prompt is excluded",
+      "path": "apache-poi/test-data/slideshow/ca.ubc.cs.people_~emhill_presentations_HowWeRefactor.pptx",
+      "sha256": "54ef61cc914b0bb017f70eabe956a3e25948172ba989772dcfd6a69c2ad1620e",
+      "forbidden_content": ["‹#›"]
+    },
+    {
+      "name": "zero-height auto-fit text keeps visual anchor order",
+      "path": "apache-poi/test-data/slideshow/with_japanese.pptx",
+      "sha256": "f0b1efbfbd70f7ee2395dc2505639f99449971ba404a6ec8cf1b97d82cf45c10",
+      "page": 1,
+      "ordered_content_prefixes": [
+        "Footnote appears here",
+        "[1] This is a footnote.",
+        "Here is a text box",
+        "| Row 1 Col 1"
+      ],
+      "required_content_substrings": [
+        "[This is a hyperlink](http://tika.apache.org/)"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "zero-area pictures are excluded while visible picture remains",
+      "path": "apache-poi/test-data/slideshow/crop-to-0.pptx",
+      "sha256": "5d6aa3a226c6257592e3d97d4a4a4e4832c16411116d97e70676f38dc5a525c5",
+      "page_block_counts": {"1": 0, "2": 0, "3": 1},
+      "require_all_bbox": true
+    },
+    {
+      "name": "OLE workbook package is preserved as an attachment",
+      "path": "python-pptx/features/steps/test_files/shp-access-ole-object.pptx",
+      "sha256": "a448dc27c4d1212ad23f680c040f8a918ef7cbb6c41c9ad57f33d1d59a8f9bb4",
+      "required_content_substrings": ["[attachment: Microsoft_Excel_Worksheet.xlsx]"],
+      "attachments": {
+        "Microsoft_Excel_Worksheet.xlsx": "b27264b4bef3b1755642348ae106e60675af895635a65f37bdfee0b5bd05023e"
+      }
+    },
+    {
+      "name": "unpositioned literal date placeholder remains visible and ordered",
+      "path": "unstructured/example-docs__fake-power-point-malformed.pptx",
+      "sha256": "6b5441cf988bc28455b44ffe6d5f31add3be86ed6db513c6037c49f50d9ab2b2",
+      "page": 1,
+      "ordered_content": ["Problem Date Placeholder", "Test Slide"],
+      "require_bbox": true
+    },
+    {
+      "name": "hidden slides remain included with explicit metadata",
+      "path": "apache-poi/test-data/slideshow/60810.pptx",
+      "sha256": "61afceb0365523ceba6fc00a525157148c2ddbdb3b5d843992ac3c107e9921bf",
+      "hidden_pages": [4, 21, 22]
+    },
+    {
+      "name": "speaker notes remain separate from visual content",
+      "path": "apache-poi/test-data/slideshow/SampleShow.pptx",
+      "sha256": "bfb4b2f07c9233afd2f32aa5781d849d0c7d225bf03721a10becf487b481d828",
+      "notes_by_page": {
+        "1": "I am the notes of the first slide",
+        "2": "These are the notes of the 2nd slide\nTHIS LINE IS BOLD"
+      }
+    },
+    {
+      "name": "review comments do not leak into presentation content",
+      "path": "apache-poi/test-data/slideshow/45545_Comment.pptx",
+      "sha256": "0295a51f63150e3ee680154d07dab88062ba2306030b790561f85436f3ded7c8",
+      "forbidden_document_substrings": ["test phrase", "testdoc"]
+    },
+    {
+      "name": "mixed-font title placeholder separates heading from body lines",
+      "path": "text-extraction-bench/test_documents__office__powerpoint_bad_text.pptx",
+      "sha256": "88117ee568e0836f91ed01bb99d87bda94b53013f0a65ee51406962c7f96a860",
+      "page": 1,
+      "ordered_content": [
+        "X-Library",
+        "The fully customisable and copyright-free\nstandard content template collection\nexclusively for our customers"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "image-embedded market label remains an image block",
+      "path": "markitdown/packages__markitdown-ocr__tests__ocr_test_data__pptx_complex_layout.pptx",
+      "sha256": "2a60e9203bb6a7692d987e1e128525f79a7de5dd85b43cc1d976cef8367cd458",
+      "page": 1,
+      "ordered_content": [
+        "Product Comparison",
+        "Our products lead the market",
+        "[img(src=\"media/image1.png\")]"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "nested groups flatten into visual column order",
+      "path": "unstructured/example-docs__group-shapes-nested.pptx",
+      "sha256": "8c507014bd35262b32a61e28cd8e7e1dad46f8e82d8c22422d212fbed4fc0699",
+      "page": 1,
+      "ordered_content": ["A", "B", "D", "C", "E", "F", "G", "H", "I", "J"],
+      "require_bbox": true
+    },
+    {
+      "name": "large 368-slide deck remains complete and positioned",
+      "path": "unstructured/example-docs__science-exploration-369p.pptx",
+      "sha256": "f2964f2964d2965f80296418d869dcb45a2789a372b6b07ac9cf9be86ec05ee6",
+      "slide_count": 368,
+      "require_all_bbox": true
+    },
+    {
+      "name": "ISO Strict OOXML namespaces are normalized during extraction",
+      "path": "libreoffice/sd__qa__unit__data__strict_ooxml.pptx",
+      "sha256": "72fe4f91e03e3901421b22ab1785a49bd772ea89d67149c04b80657cb68770ce",
+      "page": 1,
+      "ordered_content": ["Title", "Subtitle"],
+      "require_bbox": true
+    },
+    {
+      "name": "text fitting stress deck preserves every text run and reference image",
+      "path": "libreoffice/sd__qa__unit__data__TextFittingComparisonWithMSO_1.pptx",
+      "sha256": "c0e3f5c79cc055bc7e8c01bbb120b06c4cb9756dd4b59f41d11ce883e7c0594d",
+      "slide_count": 16,
+      "page_block_counts": {"1": 2, "16": 1},
+      "required_content_substrings": ["ABC abc xyz 123", "1234567890"],
+      "require_all_bbox": true
+    },
+    {
+      "name": "grouped shapes WordArt SmartArt table and links keep visual order",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_groups.pptx",
+      "sha256": "e8d4cd55569be22849a584bff949d07e8c16abbd00b59feedc43f17c33b4061f",
+      "slide_count": 2,
+      "ordered_content_prefixes_by_page": {
+        "2": [
+          "MyTitle",
+          "Ungrouped text box",
+          "| col_1 |",
+          "- smart1",
+          "Text box5 [tika]",
+          "Text box1",
+          "Text box3",
+          "Text box2",
+          "WordArt1",
+          "WordArt2",
+          "Text box4",
+          "[img(src=\"media/image1.jpg\")]"
+        ]
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "complex Tika deck preserves table links WordArt charts and hidden metadata",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_various2.pptx",
+      "sha256": "24f56e909a0597264ca77e340c291382530f08b17bf03ead33e8c17b389a7938",
+      "slide_count": 10,
+      "hidden_pages": [9],
+      "notes_by_page": {
+        "2": "NotesForSlide2",
+        "3": "Notes for slide3"
+      },
+      "forbidden_content": ["12/16/2016", "masterfootermsg"],
+      "required_content_substrings": [
+        "[lucene_hyperlink](http://lucene.apache.org/)",
+        "This is some WordART",
+        "SLIDE3ChartTitle",
+        "MASTERTEXTBOX"
+      ],
+      "page_block_counts": {"2": 6, "3": 5, "4": 3},
+      "require_all_bbox": true
+    },
+    {
+      "name": "WordArt text remains searchable text",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testWordArt.pptx",
+      "sha256": "8b0abc3e867ede7adbe3d879e475e60e3c66f9a1fb810ee2a35cced6c46ab73b",
+      "page": 1,
+      "ordered_content": ["Here is some red word Art"],
+      "require_bbox": true
+    },
+    {
+      "name": "embedded PDF OLE contents are unpacked as real PDF attachments",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_EmbeddedPDF.pptx",
+      "sha256": "93bdfb75c6331c57b0b099e6d5f714e9217b3d8d23e9f3a9d9bea8b3c6081472",
+      "page": 1,
+      "ordered_content_prefixes": [
+        "[attachment: Acrobat_Document.pdf]",
+        "[img(src=\"media/image3.jpg\")]",
+        "[attachment: Acrobat_Document-2.pdf]"
+      ],
+      "attachments": {
+        "Acrobat_Document.pdf": "8035bc3f748d8b97b8a9978bd812197bf40cf2b294a7e9b30e39d7167ddc720e",
+        "Acrobat_Document-2.pdf": "c3c1a90cf6745f1a01f91b329373bb147d766bda43cae32116cea9ff34f6ac97"
+      },
+      "require_bbox": true
+    },
+    {
+      "name": "embedded audio is preserved alongside its poster image",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_embeddedMP3.pptx",
+      "sha256": "375f54146ddecfc4172a03920262b946900ebd1559eadbee5ffc133f01168ead",
+      "page": 1,
+      "ordered_content_prefixes": [
+        "[img(src=\"media/image1.png\")]",
+        "[attachment: media1.mp3]"
+      ],
+      "attachments": {
+        "media1.mp3": "e2067a2f13e5bf5528a129ead5f6d0fd7e4f507a7af54a3746e8084aa4603df4"
+      },
+      "require_bbox": true
+    },
+    {
+      "name": "direct Office package relationships remain downloadable attachments",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_embeded.pptx",
+      "sha256": "6b71dc4ae527638a71315e60bdac48265ee30eb517a7db26e76783c4d29ba6f7",
+      "page": 1,
+      "ordered_content_prefixes": [
+        "[attachment: Microsoft_Office_Word_97_-_2003_Document1.doc]",
+        "[img(src=\"media/image4.png\")]",
+        "[img(src=\"media/image5.gif\")]",
+        "The quick brown fox jumps over the lazy dog",
+        "[attachment: Microsoft_Office_Word_Document2.docx]",
+        "[img(src=\"media/image6.png\")]",
+        "[attachment: Microsoft_Office_Excel_Worksheet1.xlsx]"
+      ],
+      "attachments": {
+        "Microsoft_Office_Word_97_-_2003_Document1.doc": "27cb0cba147baf34ec7f67296453582960d32a2bd2d8988e4dda7d0ca1668a35",
+        "Microsoft_Office_Word_Document2.docx": "3c7d3114d21dae635e2e3dfb742d3cb5737ef957be5548a3c8a787cf9e4cdd2c",
+        "Microsoft_Office_Excel_Worksheet1.xlsx": "29ed1363742d3c64ba6739d063212e54f019d68c3011bc7e39a4f6627a63a193"
+      },
+      "require_bbox": true
+    },
+    {
+      "name": "OLE Package stream is recovered as an xlsx workbook",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_oleWorkbook.pptx",
+      "sha256": "9f079067f8b693a24b36f0b541d48625f13f468932f9a9af4f3192271ecc8749",
+      "slide_count": 2,
+      "ordered_content_prefixes_by_page": {
+        "2": ["MFL", "[attachment: Worksheet.xlsx]"]
+      },
+      "attachments": {
+        "Worksheet.xlsx": "94765faa1b25a040bedd9b493d06c2a6a46561651c723c2358207adce894ca46"
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "WPS Packager and Office attachments retain all nine original files",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testWPSAttachment.pptx",
+      "sha256": "5d0174fe36842e2ffca3b244ae0c57decaa05dd5bf25183873777ec18c112c81",
+      "page": 1,
+      "ordered_content_prefixes": [
+        "[attachment: TXT.txt]",
+        "[attachment: PDF.pdf]",
+        "[attachment: XML.xml]",
+        "[attachment: Document1.doc]",
+        "[attachment: Document2.docx]",
+        "[attachment: Workbook1.xls]",
+        "[attachment: Workbook2.xlsx]",
+        "[attachment: Presentation1.ppt]",
+        "[attachment: Presentation2.pptx]"
+      ],
+      "attachments": {
+        "TXT.txt": "0971f4fe61ad655e55fe3a1eefcbd80fce709f274b73109b4bc5fcb371a3123f",
+        "PDF.pdf": "d1e2bde4500cc61c536a7f4dd1cf1bb8ba11452085ae79ed45af0c3e84c2d150",
+        "XML.xml": "7d9b66bbefa9f00ce469af036b2399d6572b2debbb13386f0084445045dc47b7",
+        "Document1.doc": "230e125b480e48020b2017d1fc75fee91cab46a6980ec804d2186b8c6df81d2f",
+        "Document2.docx": "5485d7283904f44363deb701454c63f9ab4398c17c0a35263008338f379c77f4",
+        "Workbook1.xls": "aa7220d14e48f33ef402fea7553b71eb2bab69f94786488eb28af11f61a28c33",
+        "Workbook2.xlsx": "4b884f7680ad048346173da00e6ae7fa7a28ad11ca4c759b7a1071bc0e8f696b",
+        "Presentation1.ppt": "37b31bdfbd00ad529ffbb1d3094b2ec2b7d7b86602f07c9ad8113af68cafbf14",
+        "Presentation2.pptx": "41699fad832f7e4bc83460c48b6dc0672ec2c00120f8042731d95d4937cc2932"
+      },
+      "require_bbox": true
+    },
+    {
+      "name": "Packager Ole10Native ZIP payload is extracted with its original name",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__test_embedded_zip.pptx",
+      "sha256": "30df64ea3fb5ab87c19db626cf45003fa3c909127517b98ab05052bd7093a242",
+      "slide_count": 3,
+      "ordered_content_prefixes_by_page": {
+        "2": [
+          "[img(src=\"media/image1.png\")]",
+          "Java Dump",
+          "- Easiest way to see what’s going on",
+          "[attachment: SendSignal64.zip]"
+        ]
+      },
+      "attachments": {
+        "SendSignal64.zip": "9e6a8aba98aa446e749744ccdd23b3d0bb9a9d069e29f528f5eaa84f9933e309"
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "unlabeled SmartArt preserves its six visible data nodes",
+      "path": "python-pptx/features/steps/test_files/ph-populated-placeholders.pptx",
+      "sha256": "b08599276b4d708757951f2d45ac74cb4e81e94463d575e4d857690d0d231a60",
+      "page": 8,
+      "ordered_content": ["[smartart: 6 unlabeled nodes]"],
+      "require_bbox": true
+    },
+    {
+      "name": "empty auxiliary SmartArt is skipped while visible slide content remains",
+      "path": "apache-poi/test-data/integration/stress022.pptx",
+      "sha256": "0bd000a429c378fe2ac933665527407f9b5d2155e3bf110911c8985f20e32c36",
+      "slide_count": 45,
+      "ordered_content_prefixes_by_page": {
+        "3": [
+          "Les établissements de l’Enseignement Supérieur",
+          "- Ecole Supérieure",
+          "[img(src=\"media/image3.png\")]"
+        ]
+      },
+      "forbidden_document_substrings": ["[unsupported:"],
+      "require_all_bbox": true
+    },
+    {
+      "name": "unlabeled five-node SmartArt is represented without an unsupported marker",
+      "path": "apache-poi/test-data/slideshow/SmartArt.pptx",
+      "sha256": "b97e4c6d2ee1dd4094f50f9043820610268dd452d7717c537f5456636adcc353",
+      "page": 1,
+      "ordered_content": ["[smartart: 5 unlabeled nodes]"],
+      "require_bbox": true
+    },
+    {
+      "name": "master footer remains excluded from visual content blocks",
+      "path": "apache-tika/tika-parsers__tika-parsers-standard__tika-parsers-standard-modules__tika-parser-microsoft-module__src__test__resources__test-documents__testPPT_masterFooter.pptx",
+      "sha256": "968d057f3271cd0e7aa2c1d9a2083e9e8f171393854e94926b6b08ebfd8cfd47",
+      "slide_count": 1,
+      "page_block_counts": {"1": 0},
+      "forbidden_content": ["Master footer is here"]
+    },
+    {
+      "name": "real template keeps title and roadmap content order",
+      "path": "pptc/long_slides__43.pptx",
+      "sha256": "8ddb83d3798d0d5204d7a3f3d57c712fb8e5d501534fd33f852add6429990ab6",
+      "slide_count": 8,
+      "ordered_content_prefixes_by_page": {
+        "1": ["Minimalistic Newsletter", "Here is the start"],
+        "7": ["Add a Roadmap Page", "Elaborate on the data", "| YEAR | JAN | FEB"],
+        "8": [
+          "S",
+          "STRENGTHS",
+          "What are you doing well?",
+          "O",
+          "OPPORTUNITIES",
+          "What are your goals?",
+          "W",
+          "WEAKNESSES",
+          "Where do you need to improve?",
+          "T",
+          "THREATS",
+          "What are the blockers you're facing?"
+        ]
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "numeric text tiles remain visible without false bullet semantics",
+      "path": "libreoffice/sd__qa__unit__data__pptx__tdf165732.pptx",
+      "sha256": "1d006e386aa9c9dad3e15fc484707049699c0f5033bd77c9bbb472be723124f2",
+      "page": 1,
+      "ordered_content": ["0", "5", "1", "6", "2", "7", "3", "8", "4", "9"],
+      "require_bbox": true
+    },
+    {
+      "name": "numeric diagram labels are not mistaken for slide numbers",
+      "path": "libreoffice/sd__qa__unit__data__pptx__slide-section-test.pptx",
+      "sha256": "aebee5a724a9b5b8020c41fe789df9b3805265f20bf9a87dd28d8b0ed556deb0",
+      "page": 2,
+      "ordered_content": ["1", "2", "3", "4", "5"],
+      "require_bbox": true
+    },
+    {
+      "name": "numeric title placeholders remain visible headings",
+      "path": "libreoffice/sd__qa__unit__data__pptx__tdf142590.pptx",
+      "sha256": "4c6d534123a6c063a7635314dd493e99f53eae8eeba3dc241d9ef8955751b1ce",
+      "ordered_content_prefixes_by_page": {
+        "1": ["1"],
+        "2": ["2"],
+        "3": ["3"]
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "explicit date footer and slide-number placeholders remain excluded",
+      "path": "libreoffice/sd__qa__unit__data__pptx__tdf59323.pptx",
+      "sha256": "ad60eadcb08937b65a875a1cdbaee74a895d0e3f40e6e29cd9ec2af5cf79bcee",
+      "slide_count": 3,
+      "page_block_counts": {"1": 0, "2": 0, "3": 0},
+      "forbidden_content": ["6/7/2021", "FooterPage1", "1"]
+    },
+    {
+      "name": "external OLE link falls back to its embedded preview image",
+      "path": "libreoffice/sd__qa__unit__data__pptx__ole-emf_min.pptx",
+      "sha256": "99d27ff56b7c2f2568bac1fb4fb4d5ece7c6a97aeb7e949db4e0a9c541f027d0",
+      "page": 1,
+      "ordered_content": ["[img(src=\"media/image1.emf\")]"],
+      "require_bbox": true
+    },
+    {
+      "name": "empty master blip is skipped instead of becoming an unresolved image",
+      "path": "libreoffice/sd__qa__unit__data__pptx__tdf147586.pptx",
+      "sha256": "08020f23894cb22dac864ad4843a49da901e53123044549f5237ea2a83871492",
+      "required_content_substrings": ["item two", "**Chart type:** Bar Chart"],
+      "forbidden_document_substrings": ["[unresolved-image]"],
+      "require_all_bbox": true
+    },
+    {
+      "name": "valid zero-slide PowerPoint template converts to an empty document",
+      "path": "pptx-automizer/__tests__/pptx-templates/EmptyTemplate.pptx",
+      "sha256": "2ee78af0f064606191c753ea403511e1c7fe69a8aa473647d2f18a6ab5f4dbc8",
+      "slide_count": 0
+    },
+    {
+      "name": "mixed plain numbered and nested bullet paragraphs retain their semantics",
+      "path": "pptx-automizer/__tests__/pptx-templates/TextReplaceBullets.pptx",
+      "sha256": "27c8e646619ea967dcb228ba957a448d22aafbfb8bd7f2109c5a2e8233c70b32",
+      "ordered_content_prefixes_by_page": {
+        "1": ["Static Text\n1. {{bullet1}}\nNext Line with static text.\n- {{bullet2}}\n  - {{bullet2-1}}\nFinal Line"],
+        "2": ["- Placeholder\n  - Test Level 2\n    - Test Level 3"]
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "merged table body cells do not repeat origin content",
+      "path": "pptx-automizer/__tests__/pptx-templates/GS_Tables_Merged.pptx",
+      "sha256": "542eb85493348fa3a49e473434b765d7b7f807ed49fd90fa2a2f0ac56b051faa",
+      "slide_count": 4,
+      "required_content_substrings": ["| C: 2, 0 -> Merged 2 cells |  | C: 2, 2 |"],
+      "forbidden_document_substrings": ["| C: 2, 0 -> Merged 2 cells | C: 2, 0 -> Merged 2 cells |"],
+      "require_all_bbox": true
+    },
+    {
+      "name": "SVG pictures preserve three visual fallback assets",
+      "path": "pptx-automizer/__tests__/pptx-templates/SVGImages.pptx",
+      "sha256": "bd75d46992a2939e7b2bd9ef26249038dd07ff530eb1df7e0fbad50700894932",
+      "page": 1,
+      "ordered_content": [
+        "[img(src=\"media/image1.png\")]",
+        "[img(src=\"media/image3.png\")]",
+        "[img(src=\"media/image5.png\")]"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "SmartArt node order matches its rendered diagram",
+      "path": "pptx-automizer/__tests__/pptx-templates/SlideWithDiagrams.pptx",
+      "sha256": "ae4e1ad2c5b92b2bd55fcddcf219a8020e71b6486d24424a30bad658a35e5614",
+      "ordered_content_prefixes_by_page": {
+        "1": ["- Left top\n- Right top\n- Left bottom\n- Right bottom"],
+        "2": ["- top\n- top2\n- center\n- bottom\n- bottom2"],
+        "3": ["[smartart: 6 unlabeled nodes]"]
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "embedded audio and video keep poster images and stable attachments",
+      "path": "pptx-automizer/__tests__/pptx-templates/SlideWithMedia.pptx",
+      "sha256": "4d8b0c309cf8fba6ba06f1a63fa703f8800704fa3fca4d4e23d5e6b9941dbd29",
+      "ordered_content_prefixes_by_page": {
+        "1": ["[img(src=\"media/image1.png\")]", "[attachment: media1.mp3]"],
+        "2": ["[img(src=\"media/image2.png\")]", "[attachment: media2.mp4]"]
+      },
+      "attachments": {
+        "media1.mp3": "2e09b4c962bd41cd63c999e0ec76e1bbf437e20bc3488459a55eaa16f5ada0da",
+        "media2.mp4": "255378ff7d6bbcc881f2151d8c933487532dfbd6e21b972f440e35ae733304c1"
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "CJK-only text inside nested groups remains visible",
+      "path": "ppt-master/examples/ppt169_glassmorphism_demo/exports/glassmorphism_demo.pptx",
+      "sha256": "291bdc5f8a203a7076d387bc667b67b074c2a9bd94d5e7ee0892d8b22b44b46b",
+      "slide_count": 12,
+      "required_content_substrings": [
+        "真正进入生产，需要跨越四道工程化门槛",
+        "架构",
+        "上下文",
+        "评估",
+        "可观测"
+      ],
+      "require_all_bbox": true
+    },
+    {
+      "name": "CJK Swiss-grid presentation preserves multilingual design text",
+      "path": "ppt-master/examples/ppt169_swiss_grid_systems/exports/swiss_grid_systems.pptx",
+      "sha256": "8082dcb4d6c9ff93c60912daa417d62b1b31a3744fe2dd9d9f3b5e68a3e0745d",
+      "slide_count": 14,
+      "required_content_substrings": [
+        "网格系统",
+        "八条核心原则",
+        "客观先于表达",
+        "可重复可规模化"
+      ],
+      "require_all_bbox": true
+    },
+    {
+      "name": "mixed slide-number field omits only the field run",
+      "path": "python-pptx/features/steps/test_files/txt-text.pptx",
+      "sha256": "cef8bba88769e3799cab29299860bffdf598bab178d3efb8666ac83686614c68",
+      "page": 1,
+      "ordered_content": [
+        "Foo Bar\nBaz Zoo\n[yahoo.com](http://yahoo.com)",
+        "abc\na\nb\nc"
+      ],
+      "forbidden_content": ["1"],
+      "require_bbox": true
+    },
+    {
+      "name": "ShapeCrawler date footer is excluded while shape text and bullets remain",
+      "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/008.pptx",
+      "sha256": "e3b0d245ed825d882855faacdcc738a4d63d3b4da7cb563b5671a507c68777d0",
+      "page": 1,
+      "ordered_content": ["AutoShape 1", "- P1t1 P1t2\n- p2"],
+      "forbidden_content": ["08/20/2024"],
+      "require_bbox": true
+    },
+    {
+      "name": "ShapeCrawler grouped shapes preserve column order and CJK text",
+      "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/autoshapes/autoshape-grouping.pptx",
+      "sha256": "7c84322eded5e556c94a9f4b01323cea3a684e26a73575f7c41458ea0a2a759b",
+      "page": 1,
+      "ordered_content": [
+        "Title 1",
+        "Text Box 1",
+        "Text Box 2",
+        "Shape 1",
+        "Shape 2",
+        "TextBox 3",
+        "TextBox 4",
+        "TEMP",
+        "TextBox 5\nTextBox 5",
+        "TextBox 6",
+        "世界",
+        "AutoShape 1"
+      ],
+      "require_bbox": true
+    },
+    {
+      "name": "ShapeCrawler image-filled shape table lists charts and attachments remain complete",
+      "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/tables/009_table.pptx",
+      "sha256": "dcc65bfb7ceb71e54769cd3f62fa827ae2f87c8f1393036fcaa45d2c37f859de",
+      "slide_count": 5,
+      "ordered_content_prefixes_by_page": {
+        "3": [
+          "[img(src=\"media/image3.png\")]",
+          "Ph1pn1 ph1pn1",
+          "| - 0:0_p1_lvl1<br>  - 0:0_p2_lvl2 |",
+          "**Sales2**",
+          "**Chart type:** Pie Chart"
+        ]
+      },
+      "attachments": {
+        "Microsoft_Word_Document.docx": "331f7b22d73e4df109cc04a461102c8a47626b383a5963959065b50a1975575b",
+        "Result.json": "d49a439653fab878d8bfefe64db7f059f10d0caeb5ce0494683e63e10dc00740"
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "ShapeCrawler audio poster and media payload remain paired",
+      "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/audio/audio-case001.pptx",
+      "sha256": "2a55ff16890c5225d92f757dfb1097f8413de33da0bc7b44fefba9115097c886",
+      "required_content_substrings": [
+        "[img(src=\"media/image2.png\")]",
+        "[attachment: media1.mp3]",
+        "I am ShapeCrawler!"
+      ],
+      "attachments": {
+        "media1.mp3": "b3839617f506dc4f8085977a927add5a27f917d1e7fb856461912033cbee3dad"
+      },
+      "require_all_bbox": true
+    },
+    {
+      "name": "ShapeCrawler video poster and media payload remain paired",
+      "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/video/video-case001.pptx",
+      "sha256": "7062761c2e07ba0c81b34f50e4ab3f9192b49ac3d252d4ec594c1f5cafbd3c56",
+      "page": 1,
+      "ordered_content": [
+        "[img(src=\"media/image1.png\")]",
+        "[attachment: media1.mp4](attachments/media1.mp4)"
+      ],
+      "attachments": {
+        "media1.mp4": "63bcb544afb9e43b694dd54d82edc08f109ad24cd1e52fc1fbf544b5c5189eac"
+      },
+      "require_bbox": true
+    },
+    {
+      "name": "Office 3D model keeps its static preview and editable GLB payload",
+      "path": "open-xml-sdk/test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
+      "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67",
+      "page": 1,
+      "ordered_content": [
+        "[img(src=\"media/image1.png\")]",
+        "[attachment: model3d1.glb](attachments/model3d1.glb)"
+      ],
+      "attachments": {
+        "model3d1.glb": "551ea08021a491e4f88dbf1efdc5cf8ac18b5deb36f440aa77ccc271fb0c2eda"
+      },
+      "require_bbox": true
+    }
+  ]
+}

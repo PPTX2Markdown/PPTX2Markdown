@@ -1,0 +1,357 @@
+{
+  "schema_version": "1.0",
+  "description": "Repository-owned high-value PPTX regression suite",
+  "snapshot_roots": {
+    "json": "expected/json",
+    "markdown": "expected/markdown"
+  },
+  "expected_summary": {
+    "processed_packages": 17,
+    "processed_slides": 50,
+    "failed": 0,
+    "math_blocks": 0,
+    "inline_math_segments": 0,
+    "block_math_segments": 0,
+    "math_conversion_failures": 0,
+    "resolved_images": 15,
+    "unresolved_images": 0,
+    "chart_blocks": 8,
+    "smartart_blocks": 4,
+    "table_blocks": 9,
+    "attachment_blocks": 7,
+    "table_skipped_blocks": 0
+  },
+  "sources": {
+    "project": {
+      "repository": "PPTX2Markdown/PPTX2Markdown",
+      "revision": "working tree",
+      "license": "MIT",
+      "license_url": "../../../LICENSE"
+    },
+    "markitdown": {
+      "repository": "microsoft/markitdown",
+      "revision": "e144e0a2be95b34df17433bac904e635f2c5e551",
+      "license": "MIT",
+      "license_url": "https://github.com/microsoft/markitdown/blob/e144e0a2be95b34df17433bac904e635f2c5e551/LICENSE"
+    },
+    "open-xml-sdk": {
+      "repository": "dotnet/Open-XML-SDK",
+      "revision": "00967dc871f06776ae969762c6703d062308a6c9",
+      "license": "MIT",
+      "license_url": "https://github.com/dotnet/Open-XML-SDK/blob/00967dc871f06776ae969762c6703d062308a6c9/LICENSE"
+    },
+    "pptx-automizer": {
+      "repository": "singerla/pptx-automizer",
+      "revision": "6466d43abc6a9410b10b801d3aa1b510cc128446",
+      "license": "MIT",
+      "license_url": "https://github.com/singerla/pptx-automizer/blob/6466d43abc6a9410b10b801d3aa1b510cc128446/LICENSE"
+    },
+    "python-pptx": {
+      "repository": "scanny/python-pptx",
+      "revision": "278b47b1dedd5b46ee84c286e77cdfb0bf4594be",
+      "license": "MIT",
+      "license_url": "https://github.com/scanny/python-pptx/blob/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/LICENSE"
+    },
+    "shapecrawler": {
+      "repository": "ShapeCrawler/ShapeCrawler",
+      "revision": "58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7",
+      "license": "MIT",
+      "license_url": "https://github.com/ShapeCrawler/ShapeCrawler/blob/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/LICENSE"
+    }
+  },
+  "cases": [
+    {
+      "file": "markitdown_complex-layout.pptx",
+      "source": "markitdown",
+      "repository_path": "packages/markitdown-ocr/tests/ocr_test_data/pptx_complex_layout.pptx",
+      "source_url": "https://raw.githubusercontent.com/microsoft/markitdown/e144e0a2be95b34df17433bac904e635f2c5e551/packages/markitdown-ocr/tests/ocr_test_data/pptx_complex_layout.pptx",
+      "sha256": "2a60e9203bb6a7692d987e1e128525f79a7de5dd85b43cc1d976cef8367cd458",
+      "json_sha256": "f002e9c0f588c9441045a72591caf44464cb884009c130b2956085a0e63c5e17",
+      "markdown_sha256": "a1d89aa0bc78b4085ce0eaca2ba361d9809c2f2930dc606e9d80044ad1328ab3",
+      "coverage": [
+        "complex layout",
+        "text-image ordering",
+        "embedded image"
+      ],
+      "assets": {
+        "media/image1.png": "8b1c9da5cc913f9d18adfb4ba2c9d9831744cba89c60e5402b67e650f6437c4e"
+      }
+    },
+    {
+      "file": "open-xml-sdk_model3d.pptx",
+      "source": "open-xml-sdk",
+      "repository_path": "test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
+      "source_url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/00967dc871f06776ae969762c6703d062308a6c9/test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
+      "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67",
+      "json_sha256": "865a6a345e3a751e1f0d1544f0c84bc2dc4caf225fec9610bc18c6ccb2723a4b",
+      "markdown_sha256": "912c83e109ef37f4d688458f1334d0334f1af2b9ec216b10d728bd071998bbf3",
+      "coverage": [
+        "3D model",
+        "poster image",
+        "GLB attachment"
+      ],
+      "assets": {
+        "attachments/model3d1.glb": "551ea08021a491e4f88dbf1efdc5cf8ac18b5deb36f440aa77ccc271fb0c2eda",
+        "media/image1.png": "3c8ba74a45db9c75ebc77d5ad4a84e2d0117ad6e8beb7a1f667e76eea8ac1693"
+      }
+    },
+    {
+      "file": "pptx-automizer_empty-template.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/EmptyTemplate.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/EmptyTemplate.pptx",
+      "sha256": "2ee78af0f064606191c753ea403511e1c7fe69a8aa473647d2f18a6ab5f4dbc8",
+      "json_sha256": "bd499cd98b8bfd8452699d4bf2616c036ac56d017622c71c2d0ac5404205b1d7",
+      "markdown_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "coverage": [
+        "valid zero-slide package"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "pptx-automizer_media.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/SlideWithMedia.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/SlideWithMedia.pptx",
+      "sha256": "4d8b0c309cf8fba6ba06f1a63fa703f8800704fa3fca4d4e23d5e6b9941dbd29",
+      "json_sha256": "e3eb14e4fe3b23b798c5a52ed9fe3cb85ca69cde1e15b47684660783ee717b3c",
+      "markdown_sha256": "51a471caef54e3fd015cfab0e2e3e2c16509ecf631d8a9bf0a621141bfb32d65",
+      "coverage": [
+        "audio",
+        "video",
+        "poster images",
+        "media attachments"
+      ],
+      "assets": {
+        "attachments/media1.mp3": "2e09b4c962bd41cd63c999e0ec76e1bbf437e20bc3488459a55eaa16f5ada0da",
+        "attachments/media2.mp4": "255378ff7d6bbcc881f2151d8c933487532dfbd6e21b972f440e35ae733304c1",
+        "media/image1.png": "c80c36306b0d543a00156f42052313b4d7277156a6dfc2f0ee8e5436d688e0ad",
+        "media/image2.png": "c8d4871fe7727c730e97e95a2dc83c311845268d62e106003fc24d4805059848"
+      }
+    },
+    {
+      "file": "pptx-automizer_merged-tables.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/GS_Tables_Merged.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/GS_Tables_Merged.pptx",
+      "sha256": "542eb85493348fa3a49e473434b765d7b7f807ed49fd90fa2a2f0ac56b051faa",
+      "json_sha256": "6b8a945702c7a3de870afa5d1197a6810e50a7e5e83b4a2e84447817699d67a8",
+      "markdown_sha256": "c1536bd5e66ad3e19694df164f7c79fb3f265a5dc04ca76f4eae80c8e316476c",
+      "coverage": [
+        "horizontal merges",
+        "vertical merges",
+        "merged body rendering"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "pptx-automizer_smartart.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/SlideWithDiagrams.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/SlideWithDiagrams.pptx",
+      "sha256": "ae4e1ad2c5b92b2bd55fcddcf219a8020e71b6486d24424a30bad658a35e5614",
+      "json_sha256": "7b7c439449bd25036e397151e9f60423c0d7d5940b56893b94c7167a44a8fbb5",
+      "markdown_sha256": "492a94aae329af00117e9acbd84e213017306ad1105a570ba7e36fc10d223c6c",
+      "coverage": [
+        "SmartArt node order",
+        "unlabeled SmartArt"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "pptx-automizer_svg-images.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/SVGImages.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/SVGImages.pptx",
+      "sha256": "bd75d46992a2939e7b2bd9ef26249038dd07ff530eb1df7e0fbad50700894932",
+      "json_sha256": "74353a32bee59146433ee26ff512901a9b87be87cf3fad14099a1aafd051bce0",
+      "markdown_sha256": "ac50f32100eb3fcaa589f613465de9ca6e8dc4fb7c0ef54d5c26adb39f47a89b",
+      "coverage": [
+        "SVG fallback images",
+        "image ordering"
+      ],
+      "assets": {
+        "media/image1.png": "5f7b579a5c8939bbbfe59a0eddc50fbab86b7ef9ae03ceecd43f4bc950d5ec5c",
+        "media/image3.png": "0588c9dd33721297761a1b5c3b7f0a931dac3b3721febd136b08fb8a05620bd9",
+        "media/image5.png": "3a0ae11f9571e4fd3ccbf920248dc52e847efc6c349f4c77882a2eef99fcdfb7"
+      }
+    },
+    {
+      "file": "pptx-automizer_text-bullets.pptx",
+      "source": "pptx-automizer",
+      "repository_path": "__tests__/pptx-templates/TextReplaceBullets.pptx",
+      "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/TextReplaceBullets.pptx",
+      "sha256": "27c8e646619ea967dcb228ba957a448d22aafbfb8bd7f2109c5a2e8233c70b32",
+      "json_sha256": "71a7560d3b6aa1cc37005b3fe283b93696ea9d596b316125d9ce4de105a4eb39",
+      "markdown_sha256": "bd8eb33a0fdbfe095ff7496fc6f3ae89a479097aeb21240b36acdebabe4955eb",
+      "coverage": [
+        "plain paragraphs",
+        "numbered lists",
+        "nested bullets"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "python-pptx_ole-object.pptx",
+      "source": "python-pptx",
+      "repository_path": "features/steps/test_files/shp-access-ole-object.pptx",
+      "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/shp-access-ole-object.pptx",
+      "sha256": "a448dc27c4d1212ad23f680c040f8a918ef7cbb6c41c9ad57f33d1d59a8f9bb4",
+      "json_sha256": "105f1d1313e18ebbab4d652bb01d3c3b4279a61499882a1ecbbd7d68f8c6f973",
+      "markdown_sha256": "ad7378560618eb64b11f633af5ccfc78d5cd4e12873afa76ef03b72f8d5b6434",
+      "coverage": [
+        "OLE package",
+        "XLSX attachment"
+      ],
+      "assets": {
+        "attachments/Microsoft_Excel_Worksheet.xlsx": "b27264b4bef3b1755642348ae106e60675af895635a65f37bdfee0b5bd05023e"
+      }
+    },
+    {
+      "file": "python-pptx_placeholders-smartart.pptx",
+      "source": "python-pptx",
+      "repository_path": "features/steps/test_files/ph-populated-placeholders.pptx",
+      "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/ph-populated-placeholders.pptx",
+      "sha256": "b08599276b4d708757951f2d45ac74cb4e81e94463d575e4d857690d0d231a60",
+      "json_sha256": "2f5523021ac6fc1ae945bb698a6bc4a48c5ab4cf344d57632b2226f9d6a2a8cb",
+      "markdown_sha256": "e8bd894d698c2e79599cce5aed4f2ee0c09a088c150e8fa942f7e6026dfb2eec",
+      "coverage": [
+        "placeholder object types",
+        "table",
+        "chart",
+        "unlabeled SmartArt"
+      ],
+      "assets": {
+        "media/image1.png": "10b7f419d1870f268b69320e43dd8e9630d002b26376de5d9c337beeab09ab22",
+        "media/image2.png": "b60f709965eb54e1400cba53617ae2c02f8028f5399cafa32d8ef18bfc803915"
+      }
+    },
+    {
+      "file": "python-pptx_txt-text.pptx",
+      "source": "python-pptx",
+      "repository_path": "features/steps/test_files/txt-text.pptx",
+      "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/txt-text.pptx",
+      "sha256": "cef8bba88769e3799cab29299860bffdf598bab178d3efb8666ac83686614c68",
+      "json_sha256": "db664ef94cf6e6f0d0e6006983c3815a6bbc3a70592ae06312ed7610acd6a965",
+      "markdown_sha256": "9024cdf7cb8cf76651f45d5fe2ac6f7b665a5b4bbfab14046306aa5e2e4f69a2",
+      "coverage": [
+        "text runs",
+        "hyperlinks",
+        "line breaks",
+        "slide-number fields"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "shapecrawler_date-footer.pptx",
+      "source": "shapecrawler",
+      "repository_path": "tests/ShapeCrawler.DevTests/Assets/008.pptx",
+      "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/008.pptx",
+      "sha256": "e3b0d245ed825d882855faacdcc738a4d63d3b4da7cb563b5671a507c68777d0",
+      "json_sha256": "b641353ea731e09b5a664c83e00ba50e7043f53bbfa0cf882015672a06755f6d",
+      "markdown_sha256": "9783e43319ce460efabf92d30efe9ba0e73ade918803a48a4b8a65e0086292c3",
+      "coverage": [
+        "date footer filtering",
+        "shape text",
+        "bullets"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "shapecrawler_grouped-cjk.pptx",
+      "source": "shapecrawler",
+      "repository_path": "tests/ShapeCrawler.DevTests/Assets/autoshapes/autoshape-grouping.pptx",
+      "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/autoshapes/autoshape-grouping.pptx",
+      "sha256": "7c84322eded5e556c94a9f4b01323cea3a684e26a73575f7c41458ea0a2a759b",
+      "json_sha256": "0fc78935988b32560d42ba83af48f61509f5d07a2b11dbac9f69ac54b59d6bc7",
+      "markdown_sha256": "fff8f29ab937fa59a8cf037ded42ad1088186114612770d4be978236e27a21d3",
+      "coverage": [
+        "nested groups",
+        "column order",
+        "CJK text"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "shapecrawler_table-chart-ole.pptx",
+      "source": "shapecrawler",
+      "repository_path": "tests/ShapeCrawler.DevTests/Assets/tables/009_table.pptx",
+      "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/tables/009_table.pptx",
+      "sha256": "dcc65bfb7ceb71e54769cd3f62fa827ae2f87c8f1393036fcaa45d2c37f859de",
+      "json_sha256": "4134dd6f4616931c60029ea6555881cff1b2f99d9849e39d56702fbfe7a3e96e",
+      "markdown_sha256": "65593d1202c04d918565996261c69ae636b59324f909f1a73d8981a6c5ee4864",
+      "coverage": [
+        "image-filled shape",
+        "tables",
+        "lists",
+        "charts",
+        "OLE and package attachments"
+      ],
+      "assets": {
+        "attachments/Microsoft_Word_Document.docx": "331f7b22d73e4df109cc04a461102c8a47626b383a5963959065b50a1975575b",
+        "attachments/Result.json": "d49a439653fab878d8bfefe64db7f059f10d0caeb5ce0494683e63e10dc00740",
+        "media/image2.png": "e952d5efb078ed49ccb60f90b7db66b517aada96f4d4d1e21b40c3ff1e79cb83",
+        "media/image3.png": "81b04f6b00a5ae2a159cd04f13b6b893500fd5e767ae3ea561d1a81aaed7eb6a"
+      }
+    },
+    {
+      "file": "shapecrawler_video.pptx",
+      "source": "shapecrawler",
+      "repository_path": "tests/ShapeCrawler.DevTests/Assets/video/video-case001.pptx",
+      "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/video/video-case001.pptx",
+      "sha256": "7062761c2e07ba0c81b34f50e4ab3f9192b49ac3d252d4ec594c1f5cafbd3c56",
+      "json_sha256": "738f85d0ed15edaf8e2f4af9c92c60238075ec4a36af89863b22c2bcf89656b7",
+      "markdown_sha256": "e5b5fd18e0ec848d3361f9169f1ecb9a9c2e6e632814b0f98b900866c93f2655",
+      "coverage": [
+        "video poster",
+        "MP4 attachment"
+      ],
+      "assets": {
+        "attachments/media1.mp4": "63bcb544afb9e43b694dd54d82edc08f109ad24cd1e52fc1fbf544b5c5189eac",
+        "media/image1.png": "77565ef5835599422cb99e32ba5134525c9e3c323cd4c221ebe40e8d9d05f534"
+      }
+    },
+    {
+      "file": "synthetic_reading_order.pptx",
+      "source": "project",
+      "repository_path": "tests/fixtures/golden/synthetic_reading_order.pptx",
+      "source_url": null,
+      "sha256": "e484e4b271006f468d17343f06875eebfd0f33eb294185da27bf656214404517",
+      "json_sha256": "74d65b7a824a9b0fc242817079891538a5b23a07a48394c9ca04e1a6c13ec6e2",
+      "markdown_sha256": "4cd4f22cf47fa84e5542d7fe6cbacabc140979b88b17657612341655d90ad5fc",
+      "coverage": [
+        "1–3px row jitter",
+        "1–3px column jitter",
+        "1px overlap",
+        "large overlap",
+        "subpixel gutter",
+        "mixed box heights",
+        "full-width regions",
+        "empty shapes"
+      ],
+      "assets": {}
+    },
+    {
+      "file": "synthetic_text_objects.pptx",
+      "source": "project",
+      "repository_path": "tests/fixtures/golden/synthetic_text_objects.pptx",
+      "source_url": null,
+      "sha256": "1a50a0e87af9fcfddd4c1c092b9ffd3fcf5751130f16b1976ef327724a69006b",
+      "json_sha256": "7ac2cb89e6c2968151d8bbc649cadfcc1f4df45105f701bf03513ca1d6c0932a",
+      "markdown_sha256": "97cca903f5578f1094a25048c04d0627ed8d5978edbf921802b2e8c64409610e",
+      "coverage": [
+        "rich text",
+        "bullets",
+        "hyperlinks",
+        "numeric labels",
+        "Unicode variants",
+        "merged table",
+        "chart",
+        "absolute-target speaker notes",
+        "rotation",
+        "mixed font sizes"
+      ],
+      "assets": {}
+    }
+  ]
+}

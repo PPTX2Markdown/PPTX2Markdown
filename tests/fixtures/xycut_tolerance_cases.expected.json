@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "coordinate_unit": "PowerPoint EMU",
+  "pixels_per_inch": 96,
+  "cases": [
+    {
+      "slide": 1,
+      "policy": "same row with 3 px vertical jitter",
+      "expected_order": [
+        "CASE 1 — same row, 3 px y jitter",
+        "C1 LEFT — y=240",
+        "C1 RIGHT — y=243"
+      ]
+    },
+    {
+      "slide": 2,
+      "policy": "same column with 1–3 px horizontal jitter",
+      "expected_order": [
+        "CASE 2 — same column, 1–3 px x jitter",
+        "C2 TOP — x=400",
+        "C2 MIDDLE — x=403",
+        "C2 BOTTOM — x=401"
+      ]
+    },
+    {
+      "slide": 3,
+      "policy": "1 px overlap remains a valid vertical cut",
+      "expected_order": [
+        "CASE 3 — column boundary overlaps by 1 px",
+        "C3 LEFT TOP",
+        "C3 LEFT BOTTOM",
+        "C3 RIGHT TOP",
+        "C3 RIGHT BOTTOM"
+      ]
+    },
+    {
+      "slide": 4,
+      "policy": "2 px overlap exceeds cut tolerance and falls back to rows",
+      "expected_order": [
+        "CASE 4 — column boundary overlaps by 2 px",
+        "C4 LEFT TOP",
+        "C4 RIGHT TOP",
+        "C4 LEFT BOTTOM",
+        "C4 RIGHT BOTTOM"
+      ]
+    },
+    {
+      "slide": 5,
+      "policy": "a positive 0.25 px gap remains a valid vertical cut",
+      "expected_order": [
+        "CASE 5 — positive column gap of 0.25 px",
+        "C5 LEFT TOP",
+        "C5 LEFT BOTTOM",
+        "C5 RIGHT TOP",
+        "C5 RIGHT BOTTOM"
+      ]
+    },
+    {
+      "slide": 6,
+      "policy": "different textbox heights do not break column flow",
+      "expected_order": [
+        "CASE 6 — different textbox heights on the same rows",
+        "C6 LEFT TOP — h=180",
+        "C6 LEFT BOTTOM — h=70",
+        "C6 RIGHT TOP — h=70",
+        "C6 RIGHT BOTTOM — h=180"
+      ]
+    }
+  ]
+}

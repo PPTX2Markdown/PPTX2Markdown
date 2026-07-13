@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "shapecrawler_video.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image1.png\")]",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 4064000,
+            "y": 2286000,
+            "width": 4064000,
+            "height": 2286000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "attachment",
+          "content": "[attachment: media1.mp4](attachments/media1.mp4)",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 4064000,
+            "y": 2286000,
+            "width": 4064000,
+            "height": 2286000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

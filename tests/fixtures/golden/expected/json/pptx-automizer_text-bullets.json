@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "pptx-automizer_text-bullets.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "list",
+          "content": "Static Text\n1. {{bullet1}}\nNext Line with static text.\n- {{bullet2}}\n  - {{bullet2-1}}\nFinal Line",
+          "shape_id": "15",
+          "heading_level": null,
+          "bbox": {
+            "x": 969171,
+            "y": 1249789,
+            "width": 4998720,
+            "height": 5008771,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "list",
+          "content": "- Placeholder\n  - Test Level 2\n    - Test Level 3",
+          "shape_id": "15",
+          "heading_level": null,
+          "bbox": {
+            "x": 969171,
+            "y": 1249789,
+            "width": 4998720,
+            "height": 5008771,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

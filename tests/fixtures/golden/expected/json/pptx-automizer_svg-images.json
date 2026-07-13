@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "pptx-automizer_svg-images.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image1.png\")]",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 3488661,
+            "y": 1470464,
+            "width": 540000,
+            "height": 540000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image3.png\")]",
+          "shape_id": "11",
+          "heading_level": null,
+          "bbox": {
+            "x": 4141572,
+            "y": 1470464,
+            "width": 563478,
+            "height": 540000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image5.png\")]",
+          "shape_id": "13",
+          "heading_level": null,
+          "bbox": {
+            "x": 4930873,
+            "y": 1470464,
+            "width": 540000,
+            "height": 540000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

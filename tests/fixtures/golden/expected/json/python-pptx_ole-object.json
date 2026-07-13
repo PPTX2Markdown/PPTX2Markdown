@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "python-pptx_ole-object.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "attachment",
+          "content": "[attachment: Microsoft_Excel_Worksheet.xlsx](attachments/Microsoft_Excel_Worksheet.xlsx)",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 4089400,
+            "y": 3124200,
+            "width": 965200,
+            "height": 609600,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

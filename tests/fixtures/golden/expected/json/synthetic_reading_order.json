@@ -1,0 +1,569 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "synthetic_reading_order.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Same row: y differs by 1–3 px",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "row-y0",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 2095500,
+            "width": 3238500,
+            "height": 876300,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "row-y1",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 4476750,
+            "y": 2105025,
+            "width": 3238500,
+            "height": 876300,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "row-y3",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 8286750,
+            "y": 2124075,
+            "width": 3238500,
+            "height": 876300,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Same column: x differs by 1–3 px",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "column-x0",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 2095500,
+            "y": 1524000,
+            "width": 7239000,
+            "height": 819150,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "column-x1",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2105025,
+            "y": 2857500,
+            "width": 7239000,
+            "height": 819150,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "column-x3",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 2124075,
+            "y": 4191000,
+            "width": 7239000,
+            "height": 819150,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 3,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Columns separated despite a 1 px overlap",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap1-left-top",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 1619250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap1-left-bottom",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 3524250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap1-right-top",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 6086475,
+            "y": 1619250,
+            "width": 5438775,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap1-right-bottom",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 6086475,
+            "y": 3524250,
+            "width": 5438775,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 4,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "A 24 px overlap forces row-major reading",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap24-left-top",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 1619250,
+            "width": 5657850,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap24-right-top",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 6096000,
+            "y": 1619250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap24-left-bottom",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 3524250,
+            "width": 5657850,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "overlap24-right-bottom",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 6096000,
+            "y": 3524250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 5,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "A 0.5 px positive gutter still defines columns",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "gutter-left-top",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 1619250,
+            "width": 5424488,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "gutter-left-bottom",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 3524250,
+            "width": 5424488,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "gutter-right-top",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 6096000,
+            "y": 1619250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "gutter-right-bottom",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 6096000,
+            "y": 3524250,
+            "width": 5429250,
+            "height": 857250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 6,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Different heights remain on the same visual row",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "height-short",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 2190750,
+            "width": 3238500,
+            "height": 666750,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "height-tall",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 4476750,
+            "y": 2190750,
+            "width": 3238500,
+            "height": 1619250,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "height-medium",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 8286750,
+            "y": 2190750,
+            "width": 3238500,
+            "height": 1047750,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 7,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Full-width regions wrap two independent columns",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-intro",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 1143000,
+            "width": 10858500,
+            "height": 628650,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-left-1",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 2190750,
+            "width": 5048250,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-right-1",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 6477000,
+            "y": 2190750,
+            "width": 5048250,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-left-2",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 3333750,
+            "width": 5048250,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-right-2",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 6477000,
+            "y": 3333750,
+            "width": 5048250,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "region-conclusion",
+          "shape_id": "7",
+          "heading_level": null,
+          "bbox": {
+            "x": 666750,
+            "y": 4762500,
+            "width": 10858500,
+            "height": 628650,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 8,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Empty and whitespace-only shapes do not create blocks",
+          "shape_id": "1",
+          "heading_level": 1,
+          "bbox": {
+            "x": 400050,
+            "y": 285750,
+            "width": 11391900,
+            "height": 685800,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "visible-after-noise",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 2381250,
+            "y": 3429000,
+            "width": 7429500,
+            "height": 952500,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

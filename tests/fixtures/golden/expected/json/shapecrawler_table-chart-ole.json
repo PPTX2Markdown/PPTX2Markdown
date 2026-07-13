@@ -1,0 +1,380 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "shapecrawler_table-chart-ole.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "chart",
+          "content": "**Chart type:** Column Chart\n\n|             | Ряд 1 | Ряд 2 | Ряд 3 |\n| ----------- | ----- | ----- | ----- |\n| Категория 1 | 4.3   | 2.4   | 2     |\n| Категория 2 | 2.5   | 4.4   | 2     |\n| Категория 3 | 3.5   | 1.8   | 3     |\n| Категория 4 | 4.5   | 2.8   | 5     |",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 453241,
+            "y": 752401,
+            "width": 2672732,
+            "height": 1819349,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image2.png\")]",
+          "shape_id": "37",
+          "heading_level": null,
+          "bbox": {
+            "x": 4663440,
+            "y": 1005840,
+            "width": 2315880,
+            "height": 2315880,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "table",
+          "content": "| col_1 | col_2 | col_3 | col_4 | col_5 |\n|---|---|---|---|---|\n|  |  |  |  |  |",
+          "shape_id": "38",
+          "heading_level": null,
+          "bbox": {
+            "x": 453240,
+            "y": 3417120,
+            "width": 5075640,
+            "height": 1439640,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "test",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 7749886,
+            "y": 1810950,
+            "width": 766901,
+            "height": 398550,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "ch1",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 7749886,
+            "y": 2372475,
+            "width": 766901,
+            "height": 398550,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "ch2",
+          "shape_id": "7",
+          "heading_level": null,
+          "bbox": {
+            "x": 7547759,
+            "y": 2968426,
+            "width": 1143000,
+            "height": 448694,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "text",
+          "content": "el1",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 1581846,
+            "y": 300348,
+            "width": 1181377,
+            "height": 654096,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "el2",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 507259,
+            "y": 1214749,
+            "width": 2255965,
+            "height": 654096,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "el3",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 1581846,
+            "y": 2037793,
+            "width": 1181377,
+            "height": 654096,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image3.png\")]",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 3125410,
+            "y": 178900,
+            "width": 2071697,
+            "height": 2071697,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "attachment",
+          "content": "[attachment: Result.json](attachments/Result.json)",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 699323,
+            "y": 3463288,
+            "width": 485775,
+            "height": 373062,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "attachment",
+          "content": "[attachment: Microsoft_Word_Document.docx](attachments/Microsoft_Word_Document.docx)",
+          "shape_id": "8",
+          "heading_level": null,
+          "bbox": {
+            "x": 784248,
+            "y": 4209355,
+            "width": 5940425,
+            "height": 323850,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 3,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image3.png\")]",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 620724,
+            "y": 440514,
+            "width": 2436176,
+            "height": 1021191,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Ph1pn1 ph1pn1",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 727515,
+            "y": 1882196,
+            "width": 2282663,
+            "height": 567328,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "table",
+          "content": "| - 0:0_p1_lvl1<br>  - 0:0_p2_lvl2 | col_2 | col_3 |\n|---|---|---|\n|  |  |  |\n|  |  |  |",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 3159241,
+            "y": 394849,
+            "width": 5597640,
+            "height": 1645920,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "chart",
+          "content": "**Sales2**\n\n**Chart type:** Pie Chart\n\n|    | Series 1 |\n| -- | -------- |\n| A1 | 10       |\n| A2 | 10       |\n| A3 | 10       |\n| A4 | 10       |\n| A5 | 60       |",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 3861173,
+            "y": 2449523,
+            "width": 2839977,
+            "height": 2152511,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "chart",
+          "content": "**Chart type:** Pie Chart\n\n|    | Sales |\n| -- | ----- |\n| Q1 | 8.2   |\n| Q2 | 3.2   |\n| Q3 | 1.4   |\n| Q4 | 1.2   |",
+          "shape_id": "7",
+          "heading_level": null,
+          "bbox": {
+            "x": 703042,
+            "y": 2693977,
+            "width": 3188164,
+            "height": 2083310,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 4,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image3.png\")]",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 3075358,
+            "y": 223529,
+            "width": 1720007,
+            "height": 1720007,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image3.png\")]",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 5020895,
+            "y": 223529,
+            "width": 1720007,
+            "height": 1720007,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "heading",
+          "content": "Title text",
+          "shape_id": "2",
+          "heading_level": 1,
+          "bbox": {
+            "x": 457200,
+            "y": 329801,
+            "width": 8229240,
+            "height": 609398,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "heading",
+          "content": "Subtitle text",
+          "shape_id": "3",
+          "heading_level": 2,
+          "bbox": {
+            "x": 457200,
+            "y": 2501061,
+            "width": 8229240,
+            "height": 387798,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 5,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "chart",
+          "content": "**Sales3**\n\n**Chart type:** Pie Chart\n\n|       | Продажи |\n| ----- | ------- |\n| Кв. 1 | 8.2     |\n| Кв. 2 | 3.2     |\n| Кв. 3 | 1.4     |\n| Кв. 4 | 1.2     |",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 429390,
+            "y": 274858,
+            "width": 2307136,
+            "height": 1807571,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "chart",
+          "content": "**Chart type:** Pie Chart\n\n|    | Sales4 |\n| -- | ------ |\n| A1 | 10     |\n| A2 | 10     |\n| A3 | 10     |\n| A4 | 10     |\n| A5 | 60     |",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 3005729,
+            "y": 274858,
+            "width": 2307136,
+            "height": 1807571,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "chart",
+          "content": "**Sales5**\n\n**Chart type:** Column Chart\n\n|             | Ряд 1 | Ряд 2 | Ряд 3 |\n| ----------- | ----- | ----- | ----- |\n| Категория 1 | 4.3   | 2.4   | 2     |\n| Категория 2 | 2.5   | 4.4   | 2     |\n| Категория 3 | 3.5   | 1.8   | 3     |\n| Категория 4 | 4.5   | 2.8   | 5     |",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 429390,
+            "y": 2571750,
+            "width": 4883475,
+            "height": 2149172,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

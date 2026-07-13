@@ -1,22 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pptx2markdown"
 version = "0.1.0"
-description = "pptx2markdown for RAG systems"
+description = "Convert PPTX/PPT presentations to clean, RAG-ready Markdown (text, tables, charts, SmartArt, formulas, images)"
 readme = "README.md"
-requires-python = ">=3.11"
-dependencies = [
-    "chart2md",
-    "smartart2md",
-    "omml2latex @ git+ssh://git@github.com/PPTX2Markdown/OMML2Latex.git@main",
-    "surya-ocr==0.17.1",
-    "torch==2.10.0",
-    "torchvision==0.25.0",
-    "transformers==4.57.6",
-    "accelerate>=1.0.0,<2",
-    "pydantic>=2.10.0,<3",
-    "python-dotenv>=1.0.1,<2",
-    "pillow==10.4.0",
-    "opencv-python-headless==4.11.0.86",
-    "pypdfium2==4.30.0",
-    "numpy==2.2.6",
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "MoonYoung02", email = "happy518596@gmail.com" }]
+# NOTE: omml2latex 0.1.0 uses 3.12+ f-string syntax, so 3.11 is not supported yet.
+requires-python = ">=3.12"
+keywords = ["pptx", "powerpoint", "markdown", "converter", "rag", "document-parsing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Office/Business :: Office Suites",
 ]
+dependencies = [
+    "chart2md>=0.1.0",
+    "smartart2md>=0.1.1",
+    "omml2latex>=0.1.0",
+    "pydantic>=2.10.0,<3",
+    "pywin32>=306; platform_system == 'Windows'",
+    "olefile>=0.47",
+]
+
+[project.scripts]
+pptx2markdown = "pptx2markdown.main_converter.run_pptx_to_markdown:main"
+
+[project.urls]
+Homepage = "https://github.com/PPTX2Markdown/PPTX2Markdown"
+Repository = "https://github.com/PPTX2Markdown/PPTX2Markdown"
+Issues = "https://github.com/PPTX2Markdown/PPTX2Markdown/issues"
+
+[tool.hatch.build]
+ignore-vcs = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pptx2markdown"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "/src",
+    "/LICENSE",
+    "/README.md",
+    "/README.ko.md",
+    "/pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "E501", "F", "I"]
