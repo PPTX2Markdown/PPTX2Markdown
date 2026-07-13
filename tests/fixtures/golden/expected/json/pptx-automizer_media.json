@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "pptx-automizer_media.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image1.png\")]",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 5791200,
+            "y": 3124200,
+            "width": 609600,
+            "height": 609600,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "attachment",
+          "content": "[attachment: media1.mp3](attachments/media1.mp3)",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 5791200,
+            "y": 3124200,
+            "width": 609600,
+            "height": 609600,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image2.png\")]",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 5238750,
+            "y": 3228974,
+            "width": 1202267,
+            "height": 676275,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "attachment",
+          "content": "[attachment: media2.mp4](attachments/media2.mp4)",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 5238750,
+            "y": 3228974,
+            "width": 1202267,
+            "height": 676275,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

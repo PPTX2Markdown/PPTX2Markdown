@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "pptx-automizer_empty-template.pptx",
+    "format": "pptx"
+  },
+  "slides": []
+}

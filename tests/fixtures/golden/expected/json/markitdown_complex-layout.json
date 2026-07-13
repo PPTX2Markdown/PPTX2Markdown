@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "markitdown_complex-layout.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Product Comparison",
+          "shape_id": "2",
+          "heading_level": 1,
+          "bbox": {
+            "x": 457200,
+            "y": 274638,
+            "width": 8229600,
+            "height": 1143000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Our products lead the market",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 914400,
+            "y": 1828800,
+            "width": 2743200,
+            "height": 914400,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image1.png\")]",
+          "shape_id": "5",
+          "heading_level": null,
+          "bbox": {
+            "x": 3657600,
+            "y": 2286000,
+            "width": 2743200,
+            "height": 914400,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

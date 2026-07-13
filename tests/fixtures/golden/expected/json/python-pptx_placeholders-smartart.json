@@ -1,0 +1,183 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "python-pptx_placeholders-smartart.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image1.png\")]",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "image",
+          "content": "[img(src=\"media/image2.png\")]",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 3,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "table",
+          "content": "| col_1 | col_2 |\n|---|---|\n|  |  |\n|  |  |",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 1112520,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 4,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "chart",
+          "content": "**Chart type:** Pie Chart\n\n|         | Sales |\n| ------- | ----- |\n| 1st Qtr | 8.2   |\n| 2nd Qtr | 3.2   |\n| 3rd Qtr | 1.4   |\n| 4th Qtr | 1.2   |",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 5,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Title Text",
+          "shape_id": "2",
+          "heading_level": 1,
+          "bbox": {
+            "x": 457200,
+            "y": 274638,
+            "width": 8229600,
+            "height": 1143000,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 6,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "text",
+          "content": "Content",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 7,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Body text",
+          "shape_id": "2",
+          "heading_level": 1,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 8,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "smartart",
+          "content": "[smartart: 6 unlabeled nodes]",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2743200,
+            "y": 2057400,
+            "width": 3657600,
+            "height": 2743200,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 9,
+      "hidden": false,
+      "blocks": [],
+      "notes": null
+    }
+  ]
+}

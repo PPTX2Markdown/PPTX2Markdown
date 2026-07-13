@@ -1,0 +1,184 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "shapecrawler_grouped-cjk.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": true,
+      "blocks": [
+        {
+          "kind": "heading",
+          "content": "Title 1",
+          "shape_id": "2",
+          "heading_level": 1,
+          "bbox": {
+            "x": 655551,
+            "y": 334797,
+            "width": 10880897,
+            "height": 1075908,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Text Box 1",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 655552,
+            "y": 2080940,
+            "width": 1261949,
+            "height": 369332,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Text Box 2",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 655551,
+            "y": 2653262,
+            "width": 1261949,
+            "height": 369332,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Shape 1",
+          "shape_id": "10",
+          "heading_level": null,
+          "bbox": {
+            "x": 758583,
+            "y": 4036883,
+            "width": 996409,
+            "height": 456535,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "Shape 2",
+          "shape_id": "14",
+          "heading_level": null,
+          "bbox": {
+            "x": 758583,
+            "y": 4609205,
+            "width": 996409,
+            "height": 456535,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "TextBox 3",
+          "shape_id": "6",
+          "heading_level": null,
+          "bbox": {
+            "x": 2557670,
+            "y": 2080940,
+            "width": 1197828,
+            "height": 560410,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "TextBox 4",
+          "shape_id": "7",
+          "heading_level": null,
+          "bbox": {
+            "x": 2557670,
+            "y": 2653262,
+            "width": 1197828,
+            "height": 456535,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "TEMP",
+          "shape_id": "16",
+          "heading_level": null,
+          "bbox": {
+            "x": 1917501,
+            "y": 4036883,
+            "width": 1077948,
+            "height": 1028857,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "TextBox 5\nTextBox 5",
+          "shape_id": "8",
+          "heading_level": null,
+          "bbox": {
+            "x": 4395667,
+            "y": 2080940,
+            "width": 1197828,
+            "height": 646331,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "TextBox 6",
+          "shape_id": "9",
+          "heading_level": null,
+          "bbox": {
+            "x": 5999593,
+            "y": 2080940,
+            "width": 1197828,
+            "height": 356508,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "世界",
+          "shape_id": "11",
+          "heading_level": null,
+          "bbox": {
+            "x": 5999593,
+            "y": 2667576,
+            "width": 646331,
+            "height": 348365,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "AutoShape 1",
+          "shape_id": "13",
+          "heading_level": null,
+          "bbox": {
+            "x": 7770253,
+            "y": 2092357,
+            "width": 1022401,
+            "height": 560905,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": "Presentation Title Slide - Required"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "python-pptx_txt-text.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "text",
+          "content": "Foo Bar\nBaz Zoo\n[yahoo.com](http://yahoo.com)",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 899592,
+            "y": 1124744,
+            "width": 1226455,
+            "height": 1200329,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "text",
+          "content": "abc\na\nb\nc",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 3995936,
+            "y": 1124744,
+            "width": 514885,
+            "height": 1200329,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "table",
+          "content": "| Text run in table cell | col_2 |\n|---|---|\n|  |  |",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 1524000,
+            "y": 1397000,
+            "width": 6096000,
+            "height": 741680,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

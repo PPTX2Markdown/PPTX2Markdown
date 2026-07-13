@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "pptx-automizer_smartart.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "smartart",
+          "content": "- Left top\n- Right top\n- Left bottom\n- Right bottom",
+          "shape_id": "3",
+          "heading_level": null,
+          "bbox": {
+            "x": 2738436,
+            "y": 1228397,
+            "width": 6715125,
+            "height": 4401205,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 2,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "smartart",
+          "content": "- top\n- top2\n- center\n- bottom\n- bottom2",
+          "shape_id": "4",
+          "heading_level": null,
+          "bbox": {
+            "x": 2738436,
+            "y": 1228397,
+            "width": 6715125,
+            "height": 4401205,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    },
+    {
+      "page": 3,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "smartart",
+          "content": "[smartart: 6 unlabeled nodes]",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 4056184,
+            "y": 1583133,
+            "width": 4618893,
+            "height": 3328836,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": null
+    }
+  ]
+}

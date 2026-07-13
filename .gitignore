@@ -24,6 +24,9 @@ pptx_samples/
 *.ppt
 *.pdf
 !tests/fixtures/*.pptx
+!tests/fixtures/golden/
+!tests/fixtures/golden/*.pptx
+tests/fixtures/golden/~$*.pptx
 
 # Claude Code local settings
 .claude/settings.local.json

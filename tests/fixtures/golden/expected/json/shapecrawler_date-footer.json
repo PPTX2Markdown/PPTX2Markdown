@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "source": {
+    "name": "shapecrawler_date-footer.pptx",
+    "format": "pptx"
+  },
+  "slides": [
+    {
+      "page": 1,
+      "hidden": false,
+      "blocks": [
+        {
+          "kind": "text",
+          "content": "AutoShape 1",
+          "shape_id": "2",
+          "heading_level": null,
+          "bbox": {
+            "x": 1433383,
+            "y": 308919,
+            "width": 920579,
+            "height": 512805,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        },
+        {
+          "kind": "list",
+          "content": "- P1t1 P1t2\n- p2",
+          "shape_id": "37",
+          "heading_level": null,
+          "bbox": {
+            "x": 3383280,
+            "y": 1737360,
+            "width": 2011680,
+            "height": 1144080,
+            "unit": "emu"
+          },
+          "source_part": "slide"
+        }
+      ],
+      "notes": "Test note"
+    }
+  ]
+}
