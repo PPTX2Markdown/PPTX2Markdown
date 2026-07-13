@@ -13,7 +13,8 @@ available to the test suite. It complements the much larger optional corpus in
   package-absolute speaker-note relationships, rotation, and mixed font sizes.
 - The other 15 files are compact, high-value fixtures selected from MIT-licensed
   upstream projects. Their exact source, revision, license, input hash, output
-  hashes, and extracted asset hashes are recorded in `manifest.json`.
+  hashes, and extracted asset hashes are recorded in `manifest.json`. Required
+  attribution and license terms are preserved in `THIRD_PARTY_NOTICES.md`.
 
 The suite stores the original PPTX files and the reviewed parser snapshots:
 

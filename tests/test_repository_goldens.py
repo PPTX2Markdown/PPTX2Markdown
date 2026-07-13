@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import io
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -112,6 +113,25 @@ class RepositoryGoldenTests(unittest.TestCase):
                     expected_assets,
                     f"{case['file']} assets ({output_format})",
                 )
+
+    def test_third_party_provenance_is_immutable_and_notices_are_present(self) -> None:
+        notices = self.fixture_dir / "THIRD_PARTY_NOTICES.md"
+        self.assertTrue(notices.is_file())
+        notice_text = notices.read_text(encoding="utf-8")
+        for source_name, source in self.manifest["sources"].items():
+            if source_name == "project":
+                continue
+            revision = source["revision"]
+            self.assertRegex(revision, r"^[0-9a-f]{40}$")
+            self.assertIn(revision, source["license_url"])
+            self.assertIn(revision, notice_text)
+
+        for case in self.cases:
+            if case["source"] == "project":
+                continue
+            revision = self.manifest["sources"][case["source"]]["revision"]
+            self.assertIn(revision, case["source_url"])
+            self.assertIsNotNone(re.fullmatch(r"[0-9a-f]{64}", case["sha256"]))
 
     def test_batch_conversion_summary_is_stable_in_both_formats(self) -> None:
         for output_format, output_dir in self.outputs.items():
