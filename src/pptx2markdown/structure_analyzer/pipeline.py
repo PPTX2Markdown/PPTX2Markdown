@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from pptx2markdown.ooxml_security import resolve_relationship_target
+
 from .constants import NS, REL_NS, REORDERABLE
 from .extractor import extract_slide_objects_xml
 from .structure import (
@@ -283,7 +285,9 @@ def materialize_tree_by_objects(
             target = rel.get("Target")
             if not target:
                 continue
-            abs_target = (part_rels.parent.parent / target).resolve()
+            abs_target = resolve_relationship_target(part_rels, target)
+            if abs_target is None:
+                continue
             inherited_targets[rid] = _relative_uri(abs_target, output_dir)
     rel_counter = [0]
 
@@ -327,7 +331,9 @@ def materialize_tree_by_objects(
         current = dict(rel)
         target = current.get("Target")
         if target and current.get("TargetMode") != "External":
-            abs_target = (_rels_path_for_part(source_slide_xml).parent.parent / target).resolve()
+            abs_target = resolve_relationship_target(_rels_path_for_part(source_slide_xml), target)
+            if abs_target is None:
+                continue
             current["Target"] = _relative_uri(abs_target, output_dir)
         rels.append(current)
     for rid, target in inherited_targets.items():

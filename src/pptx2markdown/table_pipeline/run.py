@@ -17,9 +17,9 @@ import re
 import shutil
 import sys
 import xml.etree.ElementTree as ET
-import zipfile
 from pathlib import Path
 
+from pptx2markdown.ooxml_security import safe_extract_ooxml_archive
 from pptx2markdown.table_pipeline import parse as table_parse
 from pptx2markdown.table_pipeline import render as table_render
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
@@ -81,12 +81,7 @@ def _resolve_pptx_input(raw: str, base_dir: Path) -> Path | None:
 
 
 def _safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
-    with zipfile.ZipFile(pptx_path) as zf:
-        for member in zf.infolist():
-            member_path = Path(member.filename)
-            if member_path.is_absolute() or ".." in member_path.parts:
-                raise ValueError(f"unsafe archive entry: {member.filename}")
-        zf.extractall(dest_dir)
+    safe_extract_ooxml_archive(pptx_path, dest_dir)
 
 
 def _stage_pptx_packages(base_dir: Path, pptx_paths: list[Path]) -> list[tuple[Path, Path]]:

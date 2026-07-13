@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from pptx2markdown.ooxml_security import safe_extract_ooxml_archive
 from pptx2markdown.workspace_paths import WorkspacePaths
 
 from .converter_models import PreparedPackage
@@ -112,7 +113,7 @@ def package_marker_matches(pkg_dir: Path, pptx_path: Path) -> bool:
 
 
 def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
-    """Extract a PPTX zip after rejecting path traversal entries."""
+    """Extract a PPTX after rejecting encrypted and unsafe OOXML containers."""
     with pptx_path.open("rb") as stream:
         signature = stream.read(len(OLE_COMPOUND_FILE_SIGNATURE))
     if signature == OLE_COMPOUND_FILE_SIGNATURE:
@@ -120,12 +121,7 @@ def safe_extract_pptx(pptx_path: Path, dest_dir: Path) -> None:
             "password-protected or encrypted PPTX is not supported; "
             "remove the password in PowerPoint or LibreOffice and try again"
         )
-    with zipfile.ZipFile(pptx_path) as archive:
-        for member in archive.infolist():
-            member_path = Path(member.filename)
-            if member_path.is_absolute() or ".." in member_path.parts:
-                raise ValueError(f"Unsafe archive entry: {member.filename}")
-        archive.extractall(dest_dir)
+    safe_extract_ooxml_archive(pptx_path, dest_dir)
 
 
 def normalize_strict_ooxml_package(package_dir: Path) -> int:

@@ -33,6 +33,7 @@ from omml2latex import convert_omml
 from smartart2md import ZipContext as SmartArtZipContext
 from smartart2md import convert_smartart
 
+from pptx2markdown.ooxml_security import resolve_relationship_target
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
 from .asset_utils import copy_media_asset
@@ -389,7 +390,9 @@ def resolve_image_path(
     if not target:
         return f"[unresolved-image:{r_embed}]", f"relationship not found: {r_embed}"
 
-    abs_path = (rels_path.parent.parent / target).resolve()
+    abs_path = resolve_relationship_target(rels_path, target)
+    if abs_path is None:
+        return f"[unresolved-image:{r_embed}]", "unsafe or missing image relationship target"
     pkg_name: Optional[str] = None
     try:
         if rels_path.parents[2].name == "ppt":
@@ -967,10 +970,7 @@ def diagram_data_path(
     target = rels_map.get(dm_rid)
     if not target:
         return None
-    data_path = (rels_path.parent.parent / target).resolve()
-    if data_path.exists() and data_path.is_file():
-        return data_path
-    return None
+    return resolve_relationship_target(rels_path, target)
 
 
 # 삼각형 기호로 시작하는 가짜 불릿 텍스트를 표준 Markdown 불릿 형태로 바꾼다.

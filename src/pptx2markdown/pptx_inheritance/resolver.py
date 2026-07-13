@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from pptx2markdown.ooxml_security import resolve_package_part
 from pptx2markdown.structure_analyzer.constants import (
     FOOTER_TYPES,
     LARGE_INT,
@@ -125,16 +125,8 @@ class PlaceholderChain:
     idx: Optional[str]
 
 
-def _resolve_related_part(source_xml: Path, rel_target: str) -> Path:
-    if rel_target.startswith("/"):
-        parts = source_xml.resolve().parts
-        try:
-            ppt_idx = parts.index("ppt")
-        except ValueError:
-            return Path(rel_target).resolve()
-        package_root = Path(*parts[:ppt_idx])
-        return (package_root / rel_target.lstrip("/")).resolve()
-    return Path(os.path.normpath(str(source_xml.parent / rel_target))).resolve()
+def _resolve_related_part(source_xml: Path, rel_target: str) -> Optional[Path]:
+    return resolve_package_part(source_xml, rel_target)
 
 
 def _relationship_target(source_xml: Path, rel_type: str) -> Optional[Path]:
@@ -152,7 +144,7 @@ def _relationship_target(source_xml: Path, rel_type: str) -> Optional[Path]:
         if not target:
             continue
         resolved = _resolve_related_part(source_xml, target)
-        if resolved.exists():
+        if resolved is not None:
             return resolved
     return None
 

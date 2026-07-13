@@ -4,13 +4,14 @@ import io
 import re
 import shutil
 import struct
-import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import olefile
+
+from pptx2markdown.ooxml_security import resolve_relationship_target
 
 OLE10_NATIVE_STREAM = "\x01Ole10Native"
 
@@ -93,38 +94,8 @@ def _sanitize_filename(filename: str, fallback: str) -> str:
     return name or fallback
 
 
-def _package_root(rels_path: Path) -> Optional[Path]:
-    for parent in rels_path.parents:
-        if (parent / "[Content_Types].xml").exists():
-            return parent
-    return None
-
-
 def _relationship_part_path(rels_path: Path, target: str) -> Optional[Path]:
-    parsed = urllib.parse.urlparse(target)
-    if parsed.scheme or not target.strip():
-        return None
-    decoded = urllib.parse.unquote(target)
-    package_root = _package_root(rels_path)
-    rels_are_inside_package = package_root is not None
-    if decoded.startswith("/"):
-        if package_root is None:
-            return None
-        candidate = (package_root / decoded.lstrip("/")).resolve()
-    else:
-        source_part_dir = rels_path.parent.parent
-        candidate = (source_part_dir / decoded).resolve()
-    if package_root is None:
-        package_root = _package_root(candidate)
-    if package_root is None:
-        return None
-    if not rels_are_inside_package and package_root.name != rels_path.parent.parent.name:
-        return None
-    try:
-        candidate.relative_to(package_root.resolve())
-    except ValueError:
-        return None
-    return candidate if candidate.is_file() else None
+    return resolve_relationship_target(rels_path, target)
 
 
 def _ole_payload(source: Path, prog_id: str, display_name: str) -> Tuple[str, bytes, str]:

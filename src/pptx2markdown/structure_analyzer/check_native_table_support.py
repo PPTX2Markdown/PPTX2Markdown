@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import tempfile
 import xml.etree.ElementTree as ET
-import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from pptx2markdown.ooxml_security import resolve_package_part, safe_extract_ooxml_archive
 
 from .constants import NS, REL_NS, REORDERABLE
 from .xml_primitives import (
@@ -58,8 +58,7 @@ def extract_pptx_to_temp_root(pptx_path: Path) -> Tuple[Path, Path]:
     temp_dir = Path(tempfile.mkdtemp(prefix="pptx_native_probe_"))
     extracted_root = temp_dir / pptx_path.stem
     extracted_root.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(pptx_path, "r") as zf:
-        zf.extractall(extracted_root)
+    safe_extract_ooxml_archive(pptx_path, extracted_root)
     return temp_dir, extracted_root
 
 
@@ -82,10 +81,7 @@ def load_rels_map(slide_xml: Path) -> Dict[str, str]:
 def resolve_media_target(slide_xml: Path, rel_target: Optional[str]) -> Optional[Path]:
     if not rel_target:
         return None
-    resolved = Path(os.path.normpath(str(slide_xml.parent / rel_target)))
-    if resolved.exists() and resolved.is_file():
-        return resolved
-    return None
+    return resolve_package_part(slide_xml, rel_target)
 
 
 def inspect_slide(slide_xml: Path) -> Dict[str, Any]:
