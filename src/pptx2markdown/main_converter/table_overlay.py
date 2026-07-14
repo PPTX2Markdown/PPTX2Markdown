@@ -228,7 +228,6 @@ def inject_table_overlay_links(
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
-    convert_vector_images: bool = False,
 ) -> Tuple[Dict[str, object], List[str]]:
     if not overlays:
         return parsed_table, []
@@ -243,7 +242,6 @@ def inject_table_overlay_links(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
 
 
@@ -397,7 +395,6 @@ def _inject_table_images(
     output_dir: Optional[Path],
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]],
-    convert_vector_images: bool = False,
 ) -> Tuple[Dict[str, object], List[str]]:
     bounds = compute_table_cell_bounds(graphic_frame, ns)
     if bounds is None:
@@ -455,7 +452,6 @@ def _inject_table_images(
             output_dir,
             media_dir=media_dir,
             copied_media=copied_media,
-            convert_vector_images=convert_vector_images,
         )
         _append_cell_content(cell, _table_cell_text(rendered), normalize_text_fn)
     return parsed_table, warnings
@@ -467,7 +463,6 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    convert_vector_images: bool = False,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
     *,
@@ -496,7 +491,6 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
     cell_fill_items, cell_fill_warnings, _, _ = collect_table_cell_fill_images(
         graphic_frame,
@@ -515,7 +509,6 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
     parsed = inject_table_run_hyperlinks(parsed, tbl, rels_map or {}, ns=ns)
     md = table_render.render_parsed_table_to_markdown(

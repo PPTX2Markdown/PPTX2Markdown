@@ -141,9 +141,12 @@ pptx2markdown deck.pptx --convert-vector-images
 - LibreOffice를 headless로 실행하여 `media/` 아래에 `.png` 파일을 생성합니다.
 - Markdown/JSON 이미지 블록은 원본 벡터 파일 대신 생성된 PNG를 가리킵니다.
 - PNG, JPEG, GIF, SVG, WebP 등 다른 이미지 형식은 변환하지 않고 그대로 복사합니다.
+- 모든 슬라이드 처리가 끝난 뒤 고유 EMF/WMF asset 전체를 한 번의
+  headless LibreOffice 프로세스에 전달해 일괄 변환합니다.
 - 같은 벡터 asset이 여러 번 참조되면 한 번 변환한 파일을 재사용합니다.
 - LibreOffice를 찾지 못하거나 변환이 실패하면 경고를 남기고 원본
-  EMF/WMF 파일과 링크를 보존합니다. 전체 프레젠테이션 변환은 실패하지 않습니다.
+  EMF/WMF 파일과 링크를 파일별로 보존합니다. 성공한 변환은 유지하며
+  전체 프레젠테이션 변환도 실패하지 않습니다.
 
 LibreOffice는 `SOFFICE_PATH`, 표준 설치 경로, 실행 파일 검색 경로 순으로
 찾습니다. 변환에 성공하면 출력 패키지에 원본 벡터 파일은 복사하지

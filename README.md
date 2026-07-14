@@ -143,10 +143,12 @@ With `--convert-vector-images` enabled:
 - the Markdown/JSON image block points to the generated PNG instead of the
   original vector file;
 - PNG, JPEG, GIF, SVG, WebP, and other image formats are copied unchanged;
+- conversion is deferred until all slides are processed, then all unique
+  EMF/WMF assets are sent to one headless LibreOffice process in a batch;
 - repeated references to the same vector asset reuse one converted file; and
 - if LibreOffice is unavailable or conversion fails, a warning is logged and
-  the original EMF/WMF file and link are preserved instead of failing the
-  entire presentation.
+  each unconverted EMF/WMF file and link is preserved instead of failing the
+  entire presentation or discarding successful conversions.
 
 LibreOffice is discovered through `SOFFICE_PATH`, standard installation
 locations, or the executable search path. Successful conversion does not copy

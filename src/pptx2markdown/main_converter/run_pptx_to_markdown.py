@@ -36,7 +36,7 @@ from smartart2md import convert_smartart
 from pptx2markdown.ooxml_security import resolve_relationship_target
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
-from .asset_utils import copy_media_asset
+from .asset_utils import convert_vector_assets_to_png, copy_media_asset
 from .converter_models import (
     ConversionManifest,
     ConverterConfig,
@@ -437,7 +437,6 @@ def format_markdown_image(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    convert_vector_images: bool = False,
 ) -> str:
     if path.startswith("[unresolved-image"):
         return path
@@ -446,10 +445,32 @@ def format_markdown_image(
         path,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
     relative_path = relativize_markdown_path(copied_path, output_dir)
     return render_image_tag(relative_path)
+
+
+def _rewrite_converted_vector_links(
+    document: PresentationDocument,
+    output_dir: Path,
+    converted_vectors: Dict[Path, Path],
+) -> PresentationDocument:
+    replacements = {
+        render_image_tag(relativize_markdown_path(str(source), output_dir)): render_image_tag(
+            relativize_markdown_path(str(converted), output_dir)
+        )
+        for source, converted in converted_vectors.items()
+    }
+    rewritten_slides: list[SlideDocument] = []
+    for slide in document.slides:
+        rewritten_blocks = []
+        for block in slide.blocks:
+            content = block.content
+            for source_tag, converted_tag in replacements.items():
+                content = content.replace(source_tag, converted_tag)
+            rewritten_blocks.append(block.model_copy(update={"content": content}))
+        rewritten_slides.append(slide.model_copy(update={"blocks": rewritten_blocks}))
+    return document.model_copy(update={"slides": rewritten_slides})
 
 
 def _sanitize_inline_latex(latex: str) -> str:
@@ -1033,7 +1054,6 @@ def overlay_link_text(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    convert_vector_images: bool = False,
 ) -> str:
     if path.startswith("[unresolved-image"):
         return path
@@ -1041,7 +1061,6 @@ def overlay_link_text(
         path,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
     path = relativize_markdown_path(path, output_dir)
     return render_image_tag(path)
@@ -1053,14 +1072,12 @@ def overlay_content_text(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    convert_vector_images: bool = False,
 ) -> str:
     return overlay_link_text(
         path,
         output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
     )
 
 
@@ -1092,7 +1109,6 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
-    convert_vector_images: bool = False,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
@@ -1102,7 +1118,6 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
-        convert_vector_images=convert_vector_images,
         rels_path=rels_path,
         rels_map=rels_map,
         ns=NS,
@@ -1531,7 +1546,6 @@ def _convert_package(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
-                convert_vector_images=config.convert_vector_images,
                 attachments_dir=attachments_dir,
                 copied_attachments=copied_attachments,
             )
@@ -1576,6 +1590,12 @@ def _convert_package(
         ),
         slides=slides,
     )
+    if config.convert_vector_images:
+        converted_vectors = convert_vector_assets_to_png(copied_media.values(), media_dir)
+        if converted_vectors:
+            document = _rewrite_converted_vector_links(document, pkg_out, converted_vectors)
+            for original_path in converted_vectors:
+                original_path.unlink(missing_ok=True)
     if config.output_format == "json":
         output_text = json.dumps(document.model_dump(mode="json"), ensure_ascii=False, indent=2)
         output_text += "\n"
