@@ -126,7 +126,6 @@ class SlideRenderAssets:
     output_dir: Optional[Path] = None
     media_dir: Optional[Path] = None
     copied_media: Optional[Dict[str, Path]] = None
-    convert_vector_images: bool = False
     attachments_dir: Optional[Path] = None
     copied_attachments: Optional[Dict[str, Path]] = None
 
@@ -797,7 +796,6 @@ def _handle_picture_block(
             output_dir=assets.output_dir,
             media_dir=assets.media_dir,
             copied_media=assets.copied_media,
-            convert_vector_images=assets.convert_vector_images,
         )
 
         blocks.append(ContentBlock(kind="image", content=rendered_image, shape_id=sid or None))
@@ -934,7 +932,6 @@ def _handle_graphic_frame_block(
                     output_dir=assets.output_dir,
                     media_dir=assets.media_dir,
                     copied_media=assets.copied_media,
-                    convert_vector_images=assets.convert_vector_images,
                 )
                 blocks.append(
                     ContentBlock(
@@ -983,7 +980,6 @@ def _handle_graphic_frame_block(
         output_dir=assets.output_dir,
         media_dir=assets.media_dir,
         copied_media=assets.copied_media,
-        convert_vector_images=assets.convert_vector_images,
         rels_path=context.rels_path,
         rels_map=context.rels_map,
     )
