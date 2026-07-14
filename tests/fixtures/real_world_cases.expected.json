@@ -414,7 +414,7 @@
       "path": "libreoffice/sd__qa__unit__data__pptx__ole-emf_min.pptx",
       "sha256": "99d27ff56b7c2f2568bac1fb4fb4d5ece7c6a97aeb7e949db4e0a9c541f027d0",
       "page": 1,
-      "ordered_content": ["![image](media/image1.png)"],
+      "ordered_content": ["![image](media/image1.emf)"],
       "require_bbox": true
     },
     {

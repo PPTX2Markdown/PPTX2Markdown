@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 import filecmp
-import os
 import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Dict, Optional
-
-from .ppt_to_pptx import _resolve_soffice_cmd
-
-_NON_WEB_VECTOR_SUFFIXES = {".emf", ".wmf"}
 
 
 def _same_content(path_a: Path, path_b: Path) -> bool:
@@ -89,76 +82,11 @@ def _copy_asset_to_dir(
     return str(dest)
 
 
-def _copy_vector_as_png(src: Path, dest_dir: Path) -> Optional[str]:
-    candidates = [_resolve_soffice_cmd()]
-    candidates.extend(shutil.which(name) for name in ("soffice", "libreoffice", "soffice.exe"))
-    soffice_commands = list(dict.fromkeys(candidate for candidate in candidates if candidate))
-    if not soffice_commands:
-        return None
-
-    with tempfile.TemporaryDirectory(prefix="pptx2markdown-vector-") as temporary:
-        temporary_root = Path(temporary)
-        for attempt, soffice_cmd in enumerate(soffice_commands):
-            profile_dir = temporary_root / f"profile-{attempt}"
-            output_dir = temporary_root / f"output-{attempt}"
-            cache_dir = temporary_root / f"cache-{attempt}"
-            profile_dir.mkdir()
-            output_dir.mkdir()
-            cache_dir.mkdir()
-            command = [
-                soffice_cmd,
-                f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
-                "--headless",
-                "--invisible",
-                "--nodefault",
-                "--nologo",
-                "--nolockcheck",
-                "--norestore",
-                "--convert-to",
-                "png",
-                "--outdir",
-                str(output_dir),
-                str(src),
-            ]
-            environment = os.environ.copy()
-            environment["XDG_CACHE_HOME"] = str(cache_dir)
-            try:
-                completed = subprocess.run(
-                    command,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    env=environment,
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-            converted = output_dir / f"{src.stem}.png"
-            if completed.returncode == 0 and converted.is_file():
-                return _copy_asset_to_dir(str(converted), dest_dir)
-    return None
-
-
 def copy_media_asset(
     path: str,
     media_dir: Optional[Path],
     copied_media: Optional[Dict[str, Path]] = None,
 ) -> str:
-    src = Path(path)
-    if media_dir is not None and src.suffix.casefold() in _NON_WEB_VECTOR_SUFFIXES:
-        try:
-            src_key = str(src.resolve())
-        except OSError:
-            src_key = str(src)
-        if copied_media is not None and src_key in copied_media:
-            return str(copied_media[src_key])
-        if src.is_file():
-            converted = _copy_vector_as_png(src, media_dir)
-            if converted is not None:
-                if copied_media is not None:
-                    copied_media[src_key] = Path(converted)
-                return converted
-
     copied = _copy_asset_to_dir(path, dest_dir=media_dir, copied_assets=copied_media)
     if copied is None:
         return path

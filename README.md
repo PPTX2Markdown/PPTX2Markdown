@@ -35,7 +35,7 @@ service is used.
 | Charts | Converts native charts through [chart2md](https://pypi.org/project/chart2md/) |
 | SmartArt | Converts diagram content through [smartart2md](https://pypi.org/project/smartart2md/) |
 | Formulas | Converts OMML equations to LaTeX through [omml2latex](https://pypi.org/project/omml2latex/) |
-| Images | Writes standard Markdown image links; converts EMF/WMF to PNG when LibreOffice is available |
+| Images | Copies original image assets and writes standard Markdown image links |
 | Speaker notes | Keeps notes separate from visible slide content |
 | Attachments | Preserves recoverable PDF, audio, video, Office, ZIP, 3D, and OLE payloads as linked files |
 
@@ -48,7 +48,6 @@ pixel-for-pixel. PowerPoint review comments are intentionally excluded.
 - Python 3.12 or newer
 - `.pptx`: no Microsoft Office or LibreOffice required
 - legacy `.ppt`: Microsoft PowerPoint on Windows or LibreOffice
-- EMF/WMF conversion: LibreOffice when conversion is needed
 
 ## Installation
 
@@ -207,8 +206,7 @@ Normal `.pptx` conversion is local and makes no network or model calls. OOXML
 extraction rejects path traversal, links, encrypted entries, relationship
 escapes, and packages that exceed configured archive limits. Extracted
 attachments are data from the input presentation; inspect them before opening.
-Legacy `.ppt` and some vector-image conversions invoke the selected external
-Office converter.
+Legacy `.ppt` conversion invokes the selected external Office converter.
 
 ## Documentation
 
