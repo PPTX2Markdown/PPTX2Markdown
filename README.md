@@ -48,6 +48,7 @@ pixel-for-pixel. PowerPoint review comments are intentionally excluded.
 - Python 3.12 or newer
 - `.pptx`: no Microsoft Office or LibreOffice required
 - legacy `.ppt`: Microsoft PowerPoint on Windows or LibreOffice
+- optional EMF/WMF-to-PNG conversion: LibreOffice
 
 ## Installation
 
@@ -121,6 +122,37 @@ pptx2markdown deck.pptx --output-format json
 Temporary Office lock files matching `~$*.pptx` are silently skipped during
 batch conversion.
 
+### Optional EMF/WMF conversion
+
+By default, embedded EMF and WMF files are copied unchanged and linked with
+standard Markdown, for example `![image](media/diagram.wmf)`. This preserves
+the original presentation asset and does not start LibreOffice. Many browsers
+and Markdown previewers cannot display these Windows vector formats directly.
+
+Use the opt-in flag when the generated Markdown must display those images in a
+typical browser or previewer:
+
+```bash
+pptx2markdown deck.pptx --convert-vector-images
+```
+
+With `--convert-vector-images` enabled:
+
+- only embedded `.emf` and `.wmf` image assets are converted;
+- LibreOffice runs headlessly and writes a `.png` file under `media/`;
+- the Markdown/JSON image block points to the generated PNG instead of the
+  original vector file;
+- PNG, JPEG, GIF, SVG, WebP, and other image formats are copied unchanged;
+- repeated references to the same vector asset reuse one converted file; and
+- if LibreOffice is unavailable or conversion fails, a warning is logged and
+  the original EMF/WMF file and link are preserved instead of failing the
+  entire presentation.
+
+LibreOffice is discovered through `SOFFICE_PATH`, standard installation
+locations, or the executable search path. Successful conversion does not copy
+the original vector file into the output package. Set `SOFFICE_PATH` when a
+specific LibreOffice installation must be used.
+
 From Python:
 
 ```python
@@ -130,6 +162,7 @@ exit_code = pptx2markdown.convert(
     "deck.pptx",
     output_dir="converted",
     output_format="markdown",
+    convert_vector_images=True,
 )
 if exit_code != 0:
     raise RuntimeError("conversion failed")
@@ -163,6 +196,7 @@ Example Markdown:
 | `--placeholder-inheritance` | `style` | `none`, `geometry`, or `style` inheritance |
 | `--inherited-shapes` | `visible` | `none`, `visible`, or `all` layout/master shapes |
 | `--ppt-converter` | `auto` | `auto`, `powerpoint`, or `libreoffice` for `.ppt` |
+| `--convert-vector-images` | off | Convert embedded EMF/WMF images to PNG with LibreOffice |
 | `--verbose` | off | Debug logging |
 
 Run `pptx2markdown --help` for the authoritative CLI reference.
@@ -207,6 +241,7 @@ extraction rejects path traversal, links, encrypted entries, relationship
 escapes, and packages that exceed configured archive limits. Extracted
 attachments are data from the input presentation; inspect them before opening.
 Legacy `.ppt` conversion invokes the selected external Office converter.
+`--convert-vector-images` also invokes LibreOffice for embedded EMF/WMF assets.
 
 ## Documentation
 

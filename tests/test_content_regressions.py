@@ -10,6 +10,7 @@ from pptx2markdown.main_converter.run_pptx_to_markdown import (
     _ooxml_part_from_relationship,
     extract_shape_blocks,
     extract_speaker_notes,
+    format_markdown_image,
     graphic_frame_kind,
     load_effective_properties,
     load_heading_hints,
@@ -96,6 +97,66 @@ class ContentRegressionTests(unittest.TestCase):
             render_image_tag("media/diagram (final).png"),
             "![image](<media/diagram (final).png>)",
         )
+
+    def test_vector_image_conversion_is_opt_in(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "image9.wmf"
+            source.write_bytes(b"wmf")
+
+            with patch("pptx2markdown.main_converter.asset_utils._copy_vector_as_png") as convert:
+                rendered = format_markdown_image(
+                    str(source),
+                    output_dir=root / "default-output",
+                    media_dir=root / "default-output" / "media",
+                )
+
+            convert.assert_not_called()
+            self.assertEqual(rendered, "![image](media/image9.wmf)")
+
+            def convert_to_png(_source: Path, destination: Path) -> str:
+                destination.mkdir(parents=True, exist_ok=True)
+                converted = destination / "image9.png"
+                converted.write_bytes(b"png")
+                return str(converted)
+
+            with patch(
+                "pptx2markdown.main_converter.asset_utils._copy_vector_as_png",
+                side_effect=convert_to_png,
+            ):
+                rendered = format_markdown_image(
+                    str(source),
+                    output_dir=root / "converted-output",
+                    media_dir=root / "converted-output" / "media",
+                    convert_vector_images=True,
+                )
+
+        self.assertEqual(rendered, "![image](media/image9.png)")
+
+    def test_failed_vector_conversion_preserves_original_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "image1.emf"
+            source.write_bytes(b"emf")
+            output_dir = root / "output"
+
+            with (
+                patch(
+                    "pptx2markdown.main_converter.asset_utils._copy_vector_as_png",
+                    return_value=None,
+                ),
+                self.assertLogs("pptx2markdown.main_converter.asset_utils", level="WARNING"),
+            ):
+                rendered = format_markdown_image(
+                    str(source),
+                    output_dir=output_dir,
+                    media_dir=output_dir / "media",
+                    convert_vector_images=True,
+                )
+
+            self.assertTrue((output_dir / "media" / "image1.emf").is_file())
+
+        self.assertEqual(rendered, "![image](media/image1.emf)")
 
     def test_markdown_asset_paths_always_use_uri_separators(self) -> None:
         with patch(

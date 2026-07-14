@@ -22,6 +22,7 @@ PUBLIC_FLAGS = (
     "--placeholder-inheritance",
     "--inherited-shapes",
     "--ppt-converter",
+    "--convert-vector-images",
     "--verbose",
 )
 
