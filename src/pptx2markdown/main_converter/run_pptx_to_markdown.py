@@ -437,11 +437,17 @@ def format_markdown_image(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    convert_vector_images: bool = False,
 ) -> str:
     if path.startswith("[unresolved-image"):
         return path
 
-    copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    copied_path = copy_media_asset(
+        path,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        convert_vector_images=convert_vector_images,
+    )
     relative_path = relativize_markdown_path(copied_path, output_dir)
     return render_image_tag(relative_path)
 
@@ -1027,10 +1033,16 @@ def overlay_link_text(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    convert_vector_images: bool = False,
 ) -> str:
     if path.startswith("[unresolved-image"):
         return path
-    path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    path = copy_media_asset(
+        path,
+        media_dir=media_dir,
+        copied_media=copied_media,
+        convert_vector_images=convert_vector_images,
+    )
     path = relativize_markdown_path(path, output_dir)
     return render_image_tag(path)
 
@@ -1041,12 +1053,14 @@ def overlay_content_text(
     output_dir: Optional[Path],
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    convert_vector_images: bool = False,
 ) -> str:
     return overlay_link_text(
         path,
         output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        convert_vector_images=convert_vector_images,
     )
 
 
@@ -1078,6 +1092,7 @@ def convert_table_to_markdown(
     output_dir: Optional[Path] = None,
     media_dir: Optional[Path] = None,
     copied_media: Optional[Dict[str, Path]] = None,
+    convert_vector_images: bool = False,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
@@ -1087,6 +1102,7 @@ def convert_table_to_markdown(
         output_dir=output_dir,
         media_dir=media_dir,
         copied_media=copied_media,
+        convert_vector_images=convert_vector_images,
         rels_path=rels_path,
         rels_map=rels_map,
         ns=NS,
@@ -1276,6 +1292,14 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--convert-vector-images",
+        action="store_true",
+        help=(
+            "Convert embedded EMF/WMF images to PNG with LibreOffice. "
+            "By default, original vector files are copied unchanged."
+        ),
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose debug logging.",
@@ -1311,6 +1335,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         pptx_inheritance=pptx_inheritance,
         inherited_shapes=inherited_shapes,
         ppt_converter=str(args.ppt_converter),
+        convert_vector_images=bool(getattr(args, "convert_vector_images", False)),
     )
 
 
@@ -1506,6 +1531,7 @@ def _convert_package(
                 output_dir=pkg_out,
                 media_dir=media_dir,
                 copied_media=copied_media,
+                convert_vector_images=config.convert_vector_images,
                 attachments_dir=attachments_dir,
                 copied_attachments=copied_attachments,
             )

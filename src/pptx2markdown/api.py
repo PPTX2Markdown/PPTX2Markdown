@@ -25,6 +25,7 @@ def convert(
     placeholder_inheritance: str = "style",
     inherited_shapes: str = "visible",
     ppt_converter: str = "auto",
+    convert_vector_images: bool = False,
     verbose: bool = False,
 ) -> int:
     """Convert PPTX/PPT file(s) to Markdown or JSON.
@@ -37,6 +38,8 @@ def convert(
         work_dir: Where intermediate artifacts and caches live
             (default: ``./.pptx2markdown``).
         output_format: ``"markdown"`` (default) or ``"json"``.
+        convert_vector_images: Convert embedded EMF/WMF images to PNG with
+            LibreOffice. The default preserves original vector assets.
     Returns:
         Process-style exit code: ``0`` on success, ``1`` if any slide failed.
     """
@@ -62,6 +65,7 @@ def convert(
         pptx_inheritance=placeholder_inheritance,
         inherited_shapes=inherited_shapes,
         ppt_converter=ppt_converter,
+        convert_vector_images=bool(convert_vector_images),
         verbose=bool(verbose),
     )
     _configure_logging(verbose=bool(verbose))

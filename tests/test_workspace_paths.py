@@ -63,6 +63,7 @@ class WorkspacePathTests(unittest.TestCase):
 
             self.assertEqual(config.cwd, paths.work_dir)
             self.assertEqual(config.output_dir, paths.output_dir)
+            self.assertFalse(config.convert_vector_images)
             self.assertEqual(default_target_dir(config.cwd), paths.target_slides)
             self.assertEqual(default_pptx_input_dir(config.cwd), paths.target_pptx)
             self.assertEqual(
