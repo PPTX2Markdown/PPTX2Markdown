@@ -112,7 +112,7 @@
       "ordered_content": [
         "Product Comparison",
         "Our products lead the market",
-        "[img(src=\"media/image1.png\")]"
+        "![image](media/image1.png)"
       ],
       "require_bbox": true
     },
@@ -166,7 +166,7 @@
           "WordArt1",
           "WordArt2",
           "Text box4",
-          "[img(src=\"media/image1.jpg\")]"
+          "![image](media/image1.jpg)"
         ]
       },
       "require_all_bbox": true
@@ -206,7 +206,7 @@
       "page": 1,
       "ordered_content_prefixes": [
         "[attachment: Acrobat_Document.pdf]",
-        "[img(src=\"media/image3.jpg\")]",
+        "![image](media/image3.jpg)",
         "[attachment: Acrobat_Document-2.pdf]"
       ],
       "attachments": {
@@ -221,7 +221,7 @@
       "sha256": "375f54146ddecfc4172a03920262b946900ebd1559eadbee5ffc133f01168ead",
       "page": 1,
       "ordered_content_prefixes": [
-        "[img(src=\"media/image1.png\")]",
+        "![image](media/image1.png)",
         "[attachment: media1.mp3]"
       ],
       "attachments": {
@@ -236,11 +236,11 @@
       "page": 1,
       "ordered_content_prefixes": [
         "[attachment: Microsoft_Office_Word_97_-_2003_Document1.doc]",
-        "[img(src=\"media/image4.png\")]",
-        "[img(src=\"media/image5.gif\")]",
+        "![image](media/image4.png)",
+        "![image](media/image5.gif)",
         "The quick brown fox jumps over the lazy dog",
         "[attachment: Microsoft_Office_Word_Document2.docx]",
-        "[img(src=\"media/image6.png\")]",
+        "![image](media/image6.png)",
         "[attachment: Microsoft_Office_Excel_Worksheet1.xlsx]"
       ],
       "attachments": {
@@ -299,7 +299,7 @@
       "slide_count": 3,
       "ordered_content_prefixes_by_page": {
         "2": [
-          "[img(src=\"media/image1.png\")]",
+          "![image](media/image1.png)",
           "Java Dump",
           "- Easiest way to see what’s going on",
           "[attachment: SendSignal64.zip]"
@@ -327,7 +327,7 @@
         "3": [
           "Les établissements de l’Enseignement Supérieur",
           "- Ecole Supérieure",
-          "[img(src=\"media/image3.png\")]"
+          "![image](media/image3.png)"
         ]
       },
       "forbidden_document_substrings": ["[unsupported:"],
@@ -414,7 +414,7 @@
       "path": "libreoffice/sd__qa__unit__data__pptx__ole-emf_min.pptx",
       "sha256": "99d27ff56b7c2f2568bac1fb4fb4d5ece7c6a97aeb7e949db4e0a9c541f027d0",
       "page": 1,
-      "ordered_content": ["[img(src=\"media/image1.emf\")]"],
+      "ordered_content": ["![image](media/image1.png)"],
       "require_bbox": true
     },
     {
@@ -456,9 +456,9 @@
       "sha256": "bd75d46992a2939e7b2bd9ef26249038dd07ff530eb1df7e0fbad50700894932",
       "page": 1,
       "ordered_content": [
-        "[img(src=\"media/image1.png\")]",
-        "[img(src=\"media/image3.png\")]",
-        "[img(src=\"media/image5.png\")]"
+        "![image](media/image1.png)",
+        "![image](media/image3.png)",
+        "![image](media/image5.png)"
       ],
       "require_bbox": true
     },
@@ -478,8 +478,8 @@
       "path": "pptx-automizer/__tests__/pptx-templates/SlideWithMedia.pptx",
       "sha256": "4d8b0c309cf8fba6ba06f1a63fa703f8800704fa3fca4d4e23d5e6b9941dbd29",
       "ordered_content_prefixes_by_page": {
-        "1": ["[img(src=\"media/image1.png\")]", "[attachment: media1.mp3]"],
-        "2": ["[img(src=\"media/image2.png\")]", "[attachment: media2.mp4]"]
+        "1": ["![image](media/image1.png)", "[attachment: media1.mp3]"],
+        "2": ["![image](media/image2.png)", "[attachment: media2.mp4]"]
       },
       "attachments": {
         "media1.mp3": "2e09b4c962bd41cd63c999e0ec76e1bbf437e20bc3488459a55eaa16f5ada0da",
@@ -563,7 +563,7 @@
       "slide_count": 5,
       "ordered_content_prefixes_by_page": {
         "3": [
-          "[img(src=\"media/image3.png\")]",
+          "![image](media/image3.png)",
           "Ph1pn1 ph1pn1",
           "| - 0:0_p1_lvl1<br>  - 0:0_p2_lvl2 |",
           "**Sales2**",
@@ -581,7 +581,7 @@
       "path": "shapecrawler/tests/ShapeCrawler.DevTests/Assets/audio/audio-case001.pptx",
       "sha256": "2a55ff16890c5225d92f757dfb1097f8413de33da0bc7b44fefba9115097c886",
       "required_content_substrings": [
-        "[img(src=\"media/image2.png\")]",
+        "![image](media/image2.png)",
         "[attachment: media1.mp3]",
         "I am ShapeCrawler!"
       ],
@@ -596,7 +596,7 @@
       "sha256": "7062761c2e07ba0c81b34f50e4ab3f9192b49ac3d252d4ec594c1f5cafbd3c56",
       "page": 1,
       "ordered_content": [
-        "[img(src=\"media/image1.png\")]",
+        "![image](media/image1.png)",
         "[attachment: media1.mp4](attachments/media1.mp4)"
       ],
       "attachments": {
@@ -610,7 +610,7 @@
       "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67",
       "page": 1,
       "ordered_content": [
-        "[img(src=\"media/image1.png\")]",
+        "![image](media/image1.png)",
         "[attachment: model3d1.glb](attachments/model3d1.glb)"
       ],
       "attachments": {

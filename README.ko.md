@@ -34,7 +34,7 @@
 | 차트 | [chart2md](https://pypi.org/project/chart2md/)를 통해 네이티브 차트를 변환 |
 | SmartArt | [smartart2md](https://pypi.org/project/smartart2md/)를 통해 다이어그램 콘텐츠를 변환 |
 | 수식 | [omml2latex](https://pypi.org/project/omml2latex/)를 통해 OMML 수식을 LaTeX로 변환 |
-| 이미지 | 내장 이미지 part를 결정론적인 로컬 asset 경로로 복사 |
+| 이미지 | 표준 Markdown 이미지 링크를 생성하고 LibreOffice가 있으면 EMF/WMF를 PNG로 변환 |
 | 발표자 노트 | 화면에 보이는 슬라이드 콘텐츠와 분리해 보존 |
 | 첨부파일 | 복구 가능한 PDF, 오디오, 비디오, Office, ZIP, 3D, OLE payload를 링크 파일로 보존 |
 
@@ -147,6 +147,8 @@ Markdown 출력 예시:
 | 지역 | 매출 |
 | --- | ---: |
 | APAC | $12.4M |
+
+![image](media/image1.png)
 ```
 
 ## CLI 옵션
@@ -226,6 +228,8 @@ ruff format --check src tests scripts
 Markdown과 JSON diff를 직접 검토해야 합니다.
 
 ## 라이선스
+
+Copyright 2026 한국타이어앤테크놀로지 주식회사
 
 이 프로젝트는 [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)으로 배포합니다.
 외부 골든 fixture의 저작권 표시는

@@ -35,7 +35,7 @@ service is used.
 | Charts | Converts native charts through [chart2md](https://pypi.org/project/chart2md/) |
 | SmartArt | Converts diagram content through [smartart2md](https://pypi.org/project/smartart2md/) |
 | Formulas | Converts OMML equations to LaTeX through [omml2latex](https://pypi.org/project/omml2latex/) |
-| Images | Copies embedded image parts to deterministic local asset paths |
+| Images | Writes standard Markdown image links; converts EMF/WMF to PNG when LibreOffice is available |
 | Speaker notes | Keeps notes separate from visible slide content |
 | Attachments | Preserves recoverable PDF, audio, video, Office, ZIP, 3D, and OLE payloads as linked files |
 
@@ -149,6 +149,8 @@ Example Markdown:
 | Region | Revenue |
 | --- | ---: |
 | APAC | $12.4M |
+
+![image](media/image1.png)
 ```
 
 ## CLI options
@@ -229,6 +231,8 @@ When parser behavior changes intentionally, review the generated Markdown and
 JSON diffs before accepting new golden snapshots.
 
 ## License
+
+Copyright 2026 HANKOOK TIRE & TECHNOLOGY CO., LTD.
 
 The project is distributed under the [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE).
 Third-party golden fixture attribution is recorded in
