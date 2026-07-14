@@ -10,7 +10,6 @@ from pptx2markdown.main_converter.run_pptx_to_markdown import (
     _ooxml_part_from_relationship,
     extract_shape_blocks,
     extract_speaker_notes,
-    format_markdown_image,
     graphic_frame_kind,
     load_effective_properties,
     load_heading_hints,
@@ -97,32 +96,6 @@ class ContentRegressionTests(unittest.TestCase):
             render_image_tag("media/diagram (final).png"),
             "![image](<media/diagram (final).png>)",
         )
-
-    def test_wmf_images_are_linked_to_a_renderable_png_when_conversion_succeeds(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source = root / "image9.wmf"
-            source.write_bytes(b"wmf")
-            output_dir = root / "output"
-            media_dir = output_dir / "media"
-
-            def convert_to_png(_source: Path, destination: Path) -> str:
-                destination.mkdir(parents=True, exist_ok=True)
-                converted = destination / "image9.png"
-                converted.write_bytes(b"png")
-                return str(converted)
-
-            with patch(
-                "pptx2markdown.main_converter.asset_utils._copy_vector_as_png",
-                side_effect=convert_to_png,
-            ):
-                rendered = format_markdown_image(
-                    str(source),
-                    output_dir=output_dir,
-                    media_dir=media_dir,
-                )
-
-        self.assertEqual(rendered, "![image](media/image9.png)")
 
     def test_markdown_asset_paths_always_use_uri_separators(self) -> None:
         with patch(

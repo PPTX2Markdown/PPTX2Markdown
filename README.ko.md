@@ -34,7 +34,7 @@
 | 차트 | [chart2md](https://pypi.org/project/chart2md/)를 통해 네이티브 차트를 변환 |
 | SmartArt | [smartart2md](https://pypi.org/project/smartart2md/)를 통해 다이어그램 콘텐츠를 변환 |
 | 수식 | [omml2latex](https://pypi.org/project/omml2latex/)를 통해 OMML 수식을 LaTeX로 변환 |
-| 이미지 | 표준 Markdown 이미지 링크를 생성하고 LibreOffice가 있으면 EMF/WMF를 PNG로 변환 |
+| 이미지 | 원본 이미지 asset을 복사하고 표준 Markdown 이미지 링크를 생성 |
 | 발표자 노트 | 화면에 보이는 슬라이드 콘텐츠와 분리해 보존 |
 | 첨부파일 | 복구 가능한 PDF, 오디오, 비디오, Office, ZIP, 3D, OLE payload를 링크 파일로 보존 |
 
@@ -47,7 +47,6 @@
 - Python 3.12 이상
 - `.pptx`: Microsoft Office 또는 LibreOffice 불필요
 - 구형 `.ppt`: Windows의 Microsoft PowerPoint 또는 LibreOffice
-- EMF/WMF 변환: 변환이 필요할 때 LibreOffice 사용
 
 ## 설치
 
@@ -204,8 +203,8 @@ output/
 일반 `.pptx` 변환은 로컬에서 동작하며 네트워크나 모델을 호출하지 않습니다.
 OOXML 압축 해제 단계에서는 경로 탈출, 링크, 암호화된 entry, relationship 탈출,
 설정된 압축 한도를 넘는 패키지를 거부합니다. 추출된 첨부파일은 입력
-프레젠테이션의 데이터이므로 열기 전에 직접 확인하세요. 구형 `.ppt`와 일부 벡터
-이미지 변환은 선택한 외부 Office 변환기를 실행합니다.
+프레젠테이션의 데이터이므로 열기 전에 직접 확인하세요. 구형 `.ppt`
+변환은 선택한 외부 Office 변환기를 실행합니다.
 
 ## 문서
 
