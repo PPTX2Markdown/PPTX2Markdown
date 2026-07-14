@@ -1,10 +1,10 @@
 [Page_1]
 
-[img(src="media/image1.png")]
+![image](media/image1.png)
 
 [Page_2]
 
-[img(src="media/image2.png")]
+![image](media/image2.png)
 
 [Page_3]
 

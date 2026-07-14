@@ -424,13 +424,14 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
-# 이미지 경로를 커스텀 이미지 태그 문자열로 렌더링한다.
-# downstream 파서가 기대하는 [img(src="...")] 포맷으로 통일한다.
+# 이미지 경로를 표준 Markdown 이미지 문법으로 렌더링한다.
+# 공백이나 괄호가 있는 경로는 angle-bracket destination으로 감싼다.
 def render_image_tag(path: str) -> str:
-    return f'[img(src="{path}")]'
+    destination = f"<{path}>" if any(char.isspace() or char in "()" for char in path) else path
+    return f"![image]({destination})"
 
 
-# 이미지를 media 디렉터리로 복사하고 정적 Markdown 태그로 렌더링한다.
+# 이미지를 media 디렉터리로 복사하고 표준 Markdown 태그로 렌더링한다.
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],

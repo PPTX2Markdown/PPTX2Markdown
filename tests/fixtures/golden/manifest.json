@@ -66,8 +66,8 @@
       "repository_path": "packages/markitdown-ocr/tests/ocr_test_data/pptx_complex_layout.pptx",
       "source_url": "https://raw.githubusercontent.com/microsoft/markitdown/e144e0a2be95b34df17433bac904e635f2c5e551/packages/markitdown-ocr/tests/ocr_test_data/pptx_complex_layout.pptx",
       "sha256": "2a60e9203bb6a7692d987e1e128525f79a7de5dd85b43cc1d976cef8367cd458",
-      "json_sha256": "f002e9c0f588c9441045a72591caf44464cb884009c130b2956085a0e63c5e17",
-      "markdown_sha256": "a1d89aa0bc78b4085ce0eaca2ba361d9809c2f2930dc606e9d80044ad1328ab3",
+      "json_sha256": "c96d0401f5d6ea7e006973a2f3365e127f65395a36a5292ece21b15f448e540c",
+      "markdown_sha256": "8ff395e1d607bc39709e10aded9f62090950b3aba5d33724220c18ed6faf8b08",
       "coverage": [
         "complex layout",
         "text-image ordering",
@@ -83,8 +83,8 @@
       "repository_path": "test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
       "source_url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/00967dc871f06776ae969762c6703d062308a6c9/test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
       "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67",
-      "json_sha256": "865a6a345e3a751e1f0d1544f0c84bc2dc4caf225fec9610bc18c6ccb2723a4b",
-      "markdown_sha256": "912c83e109ef37f4d688458f1334d0334f1af2b9ec216b10d728bd071998bbf3",
+      "json_sha256": "9e688f1bd62a1c2bbb36715bc56f8ddff5a45507019e56fbce5e84294d6c2eeb",
+      "markdown_sha256": "2ce4b70c2811252d0b7a501027a226aaded45cd4b55893450039b26868cab8ea",
       "coverage": [
         "3D model",
         "poster image",
@@ -114,8 +114,8 @@
       "repository_path": "__tests__/pptx-templates/SlideWithMedia.pptx",
       "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/SlideWithMedia.pptx",
       "sha256": "4d8b0c309cf8fba6ba06f1a63fa703f8800704fa3fca4d4e23d5e6b9941dbd29",
-      "json_sha256": "e3eb14e4fe3b23b798c5a52ed9fe3cb85ca69cde1e15b47684660783ee717b3c",
-      "markdown_sha256": "51a471caef54e3fd015cfab0e2e3e2c16509ecf631d8a9bf0a621141bfb32d65",
+      "json_sha256": "b5e33364f329cbcb0c8c7655c6bcd333156da6e5242d1c15a6fb6ec1f2a14a0d",
+      "markdown_sha256": "90d8e6ef93c629ff843feaae988cdeb20f3027be86ef9ec29ecb3978929e62a0",
       "coverage": [
         "audio",
         "video",
@@ -164,8 +164,8 @@
       "repository_path": "__tests__/pptx-templates/SVGImages.pptx",
       "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/SVGImages.pptx",
       "sha256": "bd75d46992a2939e7b2bd9ef26249038dd07ff530eb1df7e0fbad50700894932",
-      "json_sha256": "74353a32bee59146433ee26ff512901a9b87be87cf3fad14099a1aafd051bce0",
-      "markdown_sha256": "ac50f32100eb3fcaa589f613465de9ca6e8dc4fb7c0ef54d5c26adb39f47a89b",
+      "json_sha256": "02ad9b88c001c30b820f9ef1aa191fb049b5373d2c8915fc7e9ddd1a2e16e9bd",
+      "markdown_sha256": "0a4724711da7bb2b5f1c473e31184c1c95858112316396fb3c41cc5953a5e96a",
       "coverage": [
         "SVG fallback images",
         "image ordering"
@@ -213,8 +213,8 @@
       "repository_path": "features/steps/test_files/ph-populated-placeholders.pptx",
       "source_url": "https://raw.githubusercontent.com/scanny/python-pptx/278b47b1dedd5b46ee84c286e77cdfb0bf4594be/features/steps/test_files/ph-populated-placeholders.pptx",
       "sha256": "b08599276b4d708757951f2d45ac74cb4e81e94463d575e4d857690d0d231a60",
-      "json_sha256": "2f5523021ac6fc1ae945bb698a6bc4a48c5ab4cf344d57632b2226f9d6a2a8cb",
-      "markdown_sha256": "e8bd894d698c2e79599cce5aed4f2ee0c09a088c150e8fa942f7e6026dfb2eec",
+      "json_sha256": "c46b702707b7f97ad5ab7ba92f170a1cac559b526bfb1373df21b6e0d47ae3d6",
+      "markdown_sha256": "5c9c5526849370a45f7458eeaf60ec426af39e6e93a72656117e95c0309c73c9",
       "coverage": [
         "placeholder object types",
         "table",
@@ -278,8 +278,8 @@
       "repository_path": "tests/ShapeCrawler.DevTests/Assets/tables/009_table.pptx",
       "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/tables/009_table.pptx",
       "sha256": "dcc65bfb7ceb71e54769cd3f62fa827ae2f87c8f1393036fcaa45d2c37f859de",
-      "json_sha256": "4134dd6f4616931c60029ea6555881cff1b2f99d9849e39d56702fbfe7a3e96e",
-      "markdown_sha256": "65593d1202c04d918565996261c69ae636b59324f909f1a73d8981a6c5ee4864",
+      "json_sha256": "ac1f9976e1eb2e0e77d4060e94bd21f456b82559ead04beb7493dc23ac358adc",
+      "markdown_sha256": "694962df3bbd57749c8dfa9c3cabed81a2020dcfa4d782f259aa9e84c3da1594",
       "coverage": [
         "image-filled shape",
         "tables",
@@ -300,8 +300,8 @@
       "repository_path": "tests/ShapeCrawler.DevTests/Assets/video/video-case001.pptx",
       "source_url": "https://raw.githubusercontent.com/ShapeCrawler/ShapeCrawler/58fe5d187e5c68e3d91fb58e4217b5000c5a6cb7/tests/ShapeCrawler.DevTests/Assets/video/video-case001.pptx",
       "sha256": "7062761c2e07ba0c81b34f50e4ab3f9192b49ac3d252d4ec594c1f5cafbd3c56",
-      "json_sha256": "738f85d0ed15edaf8e2f4af9c92c60238075ec4a36af89863b22c2bcf89656b7",
-      "markdown_sha256": "e5b5fd18e0ec848d3361f9169f1ecb9a9c2e6e632814b0f98b900866c93f2655",
+      "json_sha256": "8c54bd5cf8920633dae6549929a51144d470e4b99932412c55227227fbdab358",
+      "markdown_sha256": "bd3342275175a3f7a1f1c10881f6c9b317ee4962c79fafc95c315af2a7912899",
       "coverage": [
         "video poster",
         "MP4 attachment"

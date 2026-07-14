@@ -1,7 +1,7 @@
 [Page_1]
 
-[img(src="media/image1.png")]
+![image](media/image1.png)
 
-[img(src="media/image3.png")]
+![image](media/image3.png)
 
-[img(src="media/image5.png")]
+![image](media/image5.png)
