@@ -9,7 +9,7 @@
 | Категория 3 | 3.5   | 1.8   | 3     |
 | Категория 4 | 4.5   | 2.8   | 5     |
 
-[img(src="media/image2.png")]
+![image](media/image2.png)
 
 | col_1 | col_2 | col_3 | col_4 | col_5 |
 |---|---|---|---|---|
@@ -29,7 +29,7 @@ el2
 
 el3
 
-[img(src="media/image3.png")]
+![image](media/image3.png)
 
 [attachment: Result.json](attachments/Result.json)
 
@@ -37,7 +37,7 @@ el3
 
 [Page_3]
 
-[img(src="media/image3.png")]
+![image](media/image3.png)
 
 Ph1pn1 ph1pn1
 
@@ -69,9 +69,9 @@ Ph1pn1 ph1pn1
 
 [Page_4]
 
-[img(src="media/image3.png")]
+![image](media/image3.png)
 
-[img(src="media/image3.png")]
+![image](media/image3.png)
 
 # Title text
 

@@ -11,7 +11,7 @@
       "blocks": [
         {
           "kind": "image",
-          "content": "[img(src=\"media/image1.png\")]",
+          "content": "![image](media/image1.png)",
           "shape_id": "9",
           "heading_level": null,
           "bbox": {
@@ -46,7 +46,7 @@
       "blocks": [
         {
           "kind": "image",
-          "content": "[img(src=\"media/image2.png\")]",
+          "content": "![image](media/image2.png)",
           "shape_id": "4",
           "heading_level": null,
           "bbox": {

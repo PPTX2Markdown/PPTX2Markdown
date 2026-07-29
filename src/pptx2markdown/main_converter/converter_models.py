@@ -321,3 +321,4 @@ class ConverterConfig(BaseModel):
     pptx_inheritance: str = "style"
     inherited_shapes: str = "visible"
     ppt_converter: str = "auto"
+    convert_vector_images: bool = False

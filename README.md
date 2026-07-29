@@ -35,7 +35,7 @@ service is used.
 | Charts | Converts native charts through [chart2md](https://pypi.org/project/chart2md/) |
 | SmartArt | Converts diagram content through [smartart2md](https://pypi.org/project/smartart2md/) |
 | Formulas | Converts OMML equations to LaTeX through [omml2latex](https://pypi.org/project/omml2latex/) |
-| Images | Copies embedded image parts to deterministic local asset paths |
+| Images | Copies original image assets and writes standard Markdown image links |
 | Speaker notes | Keeps notes separate from visible slide content |
 | Attachments | Preserves recoverable PDF, audio, video, Office, ZIP, 3D, and OLE payloads as linked files |
 
@@ -48,7 +48,7 @@ pixel-for-pixel. PowerPoint review comments are intentionally excluded.
 - Python 3.12 or newer
 - `.pptx`: no Microsoft Office or LibreOffice required
 - legacy `.ppt`: Microsoft PowerPoint on Windows or LibreOffice
-- EMF/WMF conversion: LibreOffice when conversion is needed
+- optional EMF/WMF-to-PNG conversion: LibreOffice
 
 ## Installation
 
@@ -122,6 +122,39 @@ pptx2markdown deck.pptx --output-format json
 Temporary Office lock files matching `~$*.pptx` are silently skipped during
 batch conversion.
 
+### Optional EMF/WMF conversion
+
+By default, embedded EMF and WMF files are copied unchanged and linked with
+standard Markdown, for example `![image](media/diagram.wmf)`. This preserves
+the original presentation asset and does not start LibreOffice. Many browsers
+and Markdown previewers cannot display these Windows vector formats directly.
+
+Use the opt-in flag when the generated Markdown must display those images in a
+typical browser or previewer:
+
+```bash
+pptx2markdown deck.pptx --convert-vector-images
+```
+
+With `--convert-vector-images` enabled:
+
+- only embedded `.emf` and `.wmf` image assets are converted;
+- LibreOffice runs headlessly and writes a `.png` file under `media/`;
+- the Markdown/JSON image block points to the generated PNG instead of the
+  original vector file;
+- PNG, JPEG, GIF, SVG, WebP, and other image formats are copied unchanged;
+- conversion is deferred until all slides are processed, then all unique
+  EMF/WMF assets are sent to one headless LibreOffice process in a batch;
+- repeated references to the same vector asset reuse one converted file; and
+- if LibreOffice is unavailable or conversion fails, a warning is logged and
+  each unconverted EMF/WMF file and link is preserved instead of failing the
+  entire presentation or discarding successful conversions.
+
+LibreOffice is discovered through `SOFFICE_PATH`, standard installation
+locations, or the executable search path. Successful conversion does not copy
+the original vector file into the output package. Set `SOFFICE_PATH` when a
+specific LibreOffice installation must be used.
+
 From Python:
 
 ```python
@@ -131,6 +164,7 @@ exit_code = pptx2markdown.convert(
     "deck.pptx",
     output_dir="converted",
     output_format="markdown",
+    convert_vector_images=True,
 )
 if exit_code != 0:
     raise RuntimeError("conversion failed")
@@ -149,6 +183,8 @@ Example Markdown:
 | Region | Revenue |
 | --- | ---: |
 | APAC | $12.4M |
+
+![image](media/image1.png)
 ```
 
 ## CLI options
@@ -162,6 +198,7 @@ Example Markdown:
 | `--placeholder-inheritance` | `style` | `none`, `geometry`, or `style` inheritance |
 | `--inherited-shapes` | `visible` | `none`, `visible`, or `all` layout/master shapes |
 | `--ppt-converter` | `auto` | `auto`, `powerpoint`, or `libreoffice` for `.ppt` |
+| `--convert-vector-images` | off | Convert embedded EMF/WMF images to PNG with LibreOffice |
 | `--verbose` | off | Debug logging |
 
 Run `pptx2markdown --help` for the authoritative CLI reference.
@@ -205,8 +242,8 @@ Normal `.pptx` conversion is local and makes no network or model calls. OOXML
 extraction rejects path traversal, links, encrypted entries, relationship
 escapes, and packages that exceed configured archive limits. Extracted
 attachments are data from the input presentation; inspect them before opening.
-Legacy `.ppt` and some vector-image conversions invoke the selected external
-Office converter.
+Legacy `.ppt` conversion invokes the selected external Office converter.
+`--convert-vector-images` also invokes LibreOffice for embedded EMF/WMF assets.
 
 ## Documentation
 
@@ -229,6 +266,8 @@ When parser behavior changes intentionally, review the generated Markdown and
 JSON diffs before accepting new golden snapshots.
 
 ## License
+
+Copyright 2026 HANKOOK TIRE & TECHNOLOGY CO., LTD.
 
 The project is distributed under the [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE).
 Third-party golden fixture attribution is recorded in

@@ -4,6 +4,7 @@ import inspect
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from pydantic import ValidationError
 
@@ -23,8 +24,27 @@ SCHEMA_PATH = (
 
 
 class IntermediateDocumentTests(unittest.TestCase):
+    def test_public_convert_api_passes_vector_conversion_option(self) -> None:
+        with (
+            patch(
+                "pptx2markdown.main_converter.run_pptx_to_markdown._build_config",
+                side_effect=lambda args: args,
+            ),
+            patch("pptx2markdown.main_converter.run_pptx_to_markdown._configure_logging"),
+            patch(
+                "pptx2markdown.main_converter.run_pptx_to_markdown.run",
+                return_value=0,
+            ) as run,
+        ):
+            status = pptx2markdown.convert([], convert_vector_images=True)
+
+        self.assertEqual(status, 0)
+        self.assertTrue(run.call_args.args[0].convert_vector_images)
+
     def test_public_convert_api_exposes_static_pipeline_only(self) -> None:
         parameters = inspect.signature(pptx2markdown.convert).parameters
+
+        self.assertIn("convert_vector_images", parameters)
 
         self.assertNotIn("reading_order", parameters)
         self.assertNotIn("reuse_surya_cache", parameters)

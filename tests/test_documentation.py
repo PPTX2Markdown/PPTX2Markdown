@@ -22,6 +22,7 @@ PUBLIC_FLAGS = (
     "--placeholder-inheritance",
     "--inherited-shapes",
     "--ppt-converter",
+    "--convert-vector-images",
     "--verbose",
 )
 
@@ -44,6 +45,13 @@ def korean_path(path: Path) -> Path:
 
 
 class DocumentationPolicyTests(unittest.TestCase):
+    def test_copyright_owner_is_present_in_notice_and_package_metadata(self) -> None:
+        notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
+        self.assertIn("HANKOOK TIRE & TECHNOLOGY CO., LTD.", notice)
+
+        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertIn('authors = [{ name = "HANKOOK TIRE & TECHNOLOGY CO., LTD." }]', pyproject)
+
     def test_every_authored_document_has_an_english_and_korean_pair(self) -> None:
         documents = authored_documents()
         self.assertTrue(documents)

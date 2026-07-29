@@ -1,20 +1,31 @@
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
+from pptx2markdown.main_converter.asset_utils import convert_vector_assets_to_png
+from pptx2markdown.main_converter.converter_models import (
+    ContentBlock,
+    PresentationDocument,
+    SlideDocument,
+    SourceDocument,
+)
 from pptx2markdown.main_converter.run_pptx_to_markdown import (
     _ooxml_part_from_relationship,
+    _rewrite_converted_vector_links,
     extract_shape_blocks,
     extract_speaker_notes,
+    format_markdown_image,
     graphic_frame_kind,
     load_effective_properties,
     load_heading_hints,
     paragraph_has_list_semantics,
     relativize_markdown_path,
+    render_image_tag,
     render_shape_blocks,
 )
 from pptx2markdown.main_converter.slide_converter import (
@@ -89,6 +100,108 @@ def _empty_slide_tree() -> ET.ElementTree:
 
 
 class ContentRegressionTests(unittest.TestCase):
+    def test_images_use_standard_markdown_syntax(self) -> None:
+        self.assertEqual(render_image_tag("media/image9.wmf"), "![image](media/image9.wmf)")
+        self.assertEqual(
+            render_image_tag("media/diagram (final).png"),
+            "![image](<media/diagram (final).png>)",
+        )
+
+    def test_vector_image_conversion_is_deferred_until_postprocessing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "image9.wmf"
+            source.write_bytes(b"wmf")
+            output_dir = root / "output"
+
+            rendered = format_markdown_image(
+                str(source),
+                output_dir=output_dir,
+                media_dir=output_dir / "media",
+            )
+
+            self.assertTrue((output_dir / "media" / "image9.wmf").is_file())
+            self.assertEqual(rendered, "![image](media/image9.wmf)")
+
+    def test_vector_assets_are_converted_in_one_libreoffice_process(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            media_dir = root / "media"
+            media_dir.mkdir()
+            emf = media_dir / "image1.emf"
+            wmf = media_dir / "image2.wmf"
+            emf.write_bytes(b"emf")
+            wmf.write_bytes(b"wmf")
+
+            def create_converted_files(command: list[str], **_kwargs: object) -> None:
+                output_index = command.index("--outdir") + 1
+                output_dir = Path(command[output_index])
+                for staged_path in command[output_index + 1 :]:
+                    staged = Path(staged_path)
+                    (output_dir / f"{staged.stem}.png").write_bytes(b"png")
+
+            with (
+                patch(
+                    "pptx2markdown.main_converter.asset_utils._resolve_soffice_cmd",
+                    return_value="/test/soffice",
+                ),
+                patch("pptx2markdown.main_converter.asset_utils.shutil.which", return_value=None),
+                patch(
+                    "pptx2markdown.main_converter.asset_utils.subprocess.run",
+                    side_effect=create_converted_files,
+                ) as run,
+            ):
+                converted = convert_vector_assets_to_png([emf, wmf, emf], media_dir)
+
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(set(converted), {emf.resolve(), wmf.resolve()})
+            self.assertEqual({path.suffix for path in converted.values()}, {".png"})
+
+    def test_failed_vector_batch_preserves_original_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            media_dir = Path(temporary)
+            source = media_dir / "image1.emf"
+            source.write_bytes(b"emf")
+
+            with (
+                patch(
+                    "pptx2markdown.main_converter.asset_utils._resolve_soffice_cmd",
+                    return_value="/test/soffice",
+                ),
+                patch("pptx2markdown.main_converter.asset_utils.shutil.which", return_value=None),
+                patch(
+                    "pptx2markdown.main_converter.asset_utils.subprocess.run",
+                    side_effect=subprocess.TimeoutExpired("soffice", 60),
+                ),
+                self.assertLogs("pptx2markdown.main_converter.asset_utils", level="WARNING"),
+            ):
+                converted = convert_vector_assets_to_png([source], media_dir)
+
+            self.assertEqual(converted, {})
+            self.assertTrue(source.is_file())
+
+    def test_converted_vector_links_are_rewritten_after_batch(self) -> None:
+        output_dir = Path("/output/deck")
+        source = output_dir / "media" / "image1.wmf"
+        converted = output_dir / "media" / "image1.png"
+        document = PresentationDocument(
+            source=SourceDocument(name="deck.pptx", format="pptx"),
+            slides=[
+                SlideDocument(
+                    page=1,
+                    blocks=[ContentBlock(kind="image", content="![image](media/image1.wmf)")],
+                )
+            ],
+        )
+
+        rewritten = _rewrite_converted_vector_links(
+            document,
+            output_dir,
+            {source: converted},
+        )
+
+        self.assertEqual(rewritten.slides[0].blocks[0].content, "![image](media/image1.png)")
+
     def test_markdown_asset_paths_always_use_uri_separators(self) -> None:
         with patch(
             "pptx2markdown.main_converter.run_pptx_to_markdown.os.path.relpath",

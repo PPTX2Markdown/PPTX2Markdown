@@ -36,7 +36,7 @@ from smartart2md import convert_smartart
 from pptx2markdown.ooxml_security import resolve_relationship_target
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
-from .asset_utils import copy_media_asset
+from .asset_utils import convert_vector_assets_to_png, copy_media_asset
 from .converter_models import (
     ConversionManifest,
     ConverterConfig,
@@ -424,13 +424,14 @@ def relativize_markdown_path(path: str, output_dir: Optional[Path]) -> str:
         return path
 
 
-# 이미지 경로를 커스텀 이미지 태그 문자열로 렌더링한다.
-# downstream 파서가 기대하는 [img(src="...")] 포맷으로 통일한다.
+# 이미지 경로를 표준 Markdown 이미지 문법으로 렌더링한다.
+# 공백이나 괄호가 있는 경로는 angle-bracket destination으로 감싼다.
 def render_image_tag(path: str) -> str:
-    return f'[img(src="{path}")]'
+    destination = f"<{path}>" if any(char.isspace() or char in "()" for char in path) else path
+    return f"![image]({destination})"
 
 
-# 이미지를 media 디렉터리로 복사하고 정적 Markdown 태그로 렌더링한다.
+# 이미지를 media 디렉터리로 복사하고 표준 Markdown 태그로 렌더링한다.
 def format_markdown_image(
     path: str,
     output_dir: Optional[Path],
@@ -440,9 +441,36 @@ def format_markdown_image(
     if path.startswith("[unresolved-image"):
         return path
 
-    copied_path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    copied_path = copy_media_asset(
+        path,
+        media_dir=media_dir,
+        copied_media=copied_media,
+    )
     relative_path = relativize_markdown_path(copied_path, output_dir)
     return render_image_tag(relative_path)
+
+
+def _rewrite_converted_vector_links(
+    document: PresentationDocument,
+    output_dir: Path,
+    converted_vectors: Dict[Path, Path],
+) -> PresentationDocument:
+    replacements = {
+        render_image_tag(relativize_markdown_path(str(source), output_dir)): render_image_tag(
+            relativize_markdown_path(str(converted), output_dir)
+        )
+        for source, converted in converted_vectors.items()
+    }
+    rewritten_slides: list[SlideDocument] = []
+    for slide in document.slides:
+        rewritten_blocks = []
+        for block in slide.blocks:
+            content = block.content
+            for source_tag, converted_tag in replacements.items():
+                content = content.replace(source_tag, converted_tag)
+            rewritten_blocks.append(block.model_copy(update={"content": content}))
+        rewritten_slides.append(slide.model_copy(update={"blocks": rewritten_blocks}))
+    return document.model_copy(update={"slides": rewritten_slides})
 
 
 def _sanitize_inline_latex(latex: str) -> str:
@@ -1029,7 +1057,11 @@ def overlay_link_text(
 ) -> str:
     if path.startswith("[unresolved-image"):
         return path
-    path = copy_media_asset(path, media_dir=media_dir, copied_media=copied_media)
+    path = copy_media_asset(
+        path,
+        media_dir=media_dir,
+        copied_media=copied_media,
+    )
     path = relativize_markdown_path(path, output_dir)
     return render_image_tag(path)
 
@@ -1275,6 +1307,14 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--convert-vector-images",
+        action="store_true",
+        help=(
+            "Convert embedded EMF/WMF images to PNG with LibreOffice. "
+            "By default, original vector files are copied unchanged."
+        ),
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose debug logging.",
@@ -1310,6 +1350,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         pptx_inheritance=pptx_inheritance,
         inherited_shapes=inherited_shapes,
         ppt_converter=str(args.ppt_converter),
+        convert_vector_images=bool(getattr(args, "convert_vector_images", False)),
     )
 
 
@@ -1549,6 +1590,12 @@ def _convert_package(
         ),
         slides=slides,
     )
+    if config.convert_vector_images:
+        converted_vectors = convert_vector_assets_to_png(copied_media.values(), media_dir)
+        if converted_vectors:
+            document = _rewrite_converted_vector_links(document, pkg_out, converted_vectors)
+            for original_path in converted_vectors:
+                original_path.unlink(missing_ok=True)
     if config.output_format == "json":
         output_text = json.dumps(document.model_dump(mode="json"), ensure_ascii=False, indent=2)
         output_text += "\n"

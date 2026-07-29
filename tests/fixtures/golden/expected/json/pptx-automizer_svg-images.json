@@ -11,7 +11,7 @@
       "blocks": [
         {
           "kind": "image",
-          "content": "[img(src=\"media/image1.png\")]",
+          "content": "![image](media/image1.png)",
           "shape_id": "9",
           "heading_level": null,
           "bbox": {
@@ -25,7 +25,7 @@
         },
         {
           "kind": "image",
-          "content": "[img(src=\"media/image3.png\")]",
+          "content": "![image](media/image3.png)",
           "shape_id": "11",
           "heading_level": null,
           "bbox": {
@@ -39,7 +39,7 @@
         },
         {
           "kind": "image",
-          "content": "[img(src=\"media/image5.png\")]",
+          "content": "![image](media/image5.png)",
           "shape_id": "13",
           "heading_level": null,
           "bbox": {
