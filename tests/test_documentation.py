@@ -47,7 +47,7 @@ def korean_path(path: Path) -> Path:
 class DocumentationPolicyTests(unittest.TestCase):
     def test_copyright_owner_is_present_in_notice_and_package_metadata(self) -> None:
         notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
-        self.assertIn("HANKOOK TIRE & TECHNOLOGY CO., LTD.", notice)
+        self.assertIn("Moonyoung Lee, Inseong Lee, Seung-Woo Jeong", notice)
 
         pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('authors = [{ name = "HANKOOK TIRE & TECHNOLOGY CO., LTD." }]', pyproject)
