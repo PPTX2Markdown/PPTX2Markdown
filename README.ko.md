@@ -265,7 +265,7 @@ Markdown과 JSON diff를 직접 검토해야 합니다.
 
 ## 라이선스
 
-Copyright 2026 한국타이어앤테크놀로지 주식회사
+Copyright 2026 Moonyoung Lee, Inseong Lee, Seung-Woo Jeong
 
 이 프로젝트는 [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)으로 배포합니다.
 외부 골든 fixture의 저작권 표시는

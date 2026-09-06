@@ -9,8 +9,16 @@ description = "Convert PPTX/PPT presentations to clean, RAG-ready Markdown (text
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-authors = [{ name = "HANKOOK TIRE & TECHNOLOGY CO., LTD." }]
-maintainers = [{ name = "MoonYoung02", email = "happy518596@gmail.com" }]
+authors = [
+    { name = "Moonyoung Lee", email = "happy518596@gmail.com" },
+    { name = "Inseong Lee", email = "sossos5989@naver.com" },
+    { name = "Seung-Woo Jeong", email = "zzs6348@gmail.com" },
+]
+maintainers = [
+    { name = "Moonyoung Lee", email = "happy518596@gmail.com" },
+    { name = "Inseong Lee", email = "sossos5989@naver.com" },
+    { name = "Seung-Woo Jeong", email = "zzs6348@gmail.com" },
+]
 # NOTE: omml2latex 0.1.0 uses 3.12+ f-string syntax, so 3.11 is not supported yet.
 requires-python = ">=3.12"
 keywords = ["pptx", "powerpoint", "markdown", "converter", "rag", "document-parsing"]
