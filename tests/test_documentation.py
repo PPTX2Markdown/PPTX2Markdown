@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -25,6 +26,11 @@ PUBLIC_FLAGS = (
     "--convert-vector-images",
     "--verbose",
 )
+PROJECT_PEOPLE = [
+    {"name": "Moonyoung Lee", "email": "happy518596@gmail.com"},
+    {"name": "Inseong Lee", "email": "sossos5989@naver.com"},
+    {"name": "Seung-Woo Jeong", "email": "zzs6348@gmail.com"},
+]
 
 
 def authored_documents() -> list[Path]:
@@ -45,12 +51,16 @@ def korean_path(path: Path) -> Path:
 
 
 class DocumentationPolicyTests(unittest.TestCase):
-    def test_copyright_owner_is_present_in_notice_and_package_metadata(self) -> None:
+    def test_copyright_owners_are_present_in_notice(self) -> None:
         notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
         self.assertIn("Moonyoung Lee, Inseong Lee, Seung-Woo Jeong", notice)
 
-        pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('authors = [{ name = "HANKOOK TIRE & TECHNOLOGY CO., LTD." }]', pyproject)
+    def test_project_authors_and_maintainers_are_declared(self) -> None:
+        with (REPO_ROOT / "pyproject.toml").open("rb") as pyproject_file:
+            project = tomllib.load(pyproject_file)["project"]
+
+        self.assertEqual(PROJECT_PEOPLE, project["authors"])
+        self.assertEqual(PROJECT_PEOPLE, project["maintainers"])
 
     def test_every_authored_document_has_an_english_and_korean_pair(self) -> None:
         documents = authored_documents()

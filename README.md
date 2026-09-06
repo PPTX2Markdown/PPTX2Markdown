@@ -267,7 +267,7 @@ JSON diffs before accepting new golden snapshots.
 
 ## License
 
-Copyright 2026 HANKOOK TIRE & TECHNOLOGY CO., LTD.
+Copyright 2026 Moonyoung Lee, Inseong Lee, Seung-Woo Jeong
 
 The project is distributed under the [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE).
 Third-party golden fixture attribution is recorded in
