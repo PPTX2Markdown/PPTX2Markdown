@@ -388,6 +388,8 @@ class _Paragraph:
     # The typed text starts with whitespace, i.e. it is indented by hand.
     indented: bool = False
     rich: str = ""
+    # Every run carries the same bold/italic: formatting of the whole paragraph.
+    uniform_emphasis: bool = False
 
     @property
     def is_math_only(self) -> bool:
@@ -421,6 +423,7 @@ def _parse_paragraph(
     # Consecutive runs with the same link and emphasis, merged before markup is added.
     group: list[str] = []
     group_style: tuple[str | None, bool, bool] | None = None
+    emphasis_styles: set[tuple[bool, bool]] = set()
 
     def flush_group() -> None:
         nonlocal group_style
@@ -428,6 +431,8 @@ def _parse_paragraph(
             return
         text = "".join(group)
         link, bold, italic = group_style
+        if text.strip():
+            emphasis_styles.add((bold, italic))
         plain_markdown = _link_markdown(text, link) if link and text else text
         parts.append(plain_markdown)
         rich_parts.append(emphasis(plain_markdown, bold=bold, italic=italic) if text else "")
@@ -445,6 +450,7 @@ def _parse_paragraph(
                 has_rich_content = True
                 latex = omml_to_latex(child)
                 if latex:
+                    emphasis_styles.add((False, False))
                     math.append(latex)
                     parts.append(markup(f"${latex}$"))
                     rich_parts.append(markup(f"${latex}$"))
@@ -503,6 +509,7 @@ def _parse_paragraph(
             ),
             indented=bool(_INDENT.match("".join(parts))),
             rich=_normalize_breaks("".join(rich_parts)),
+            uniform_emphasis=len(emphasis_styles) == 1 and emphasis_styles != {(False, False)},
         ),
         unconverted_math,
     )
@@ -729,7 +736,9 @@ def _table_cell_lines(
         unconverted += missing
         # A line break inside a cell paragraph wraps a label to fit a narrow column
         # ("전자제품 / 사업부"); only paragraphs become separate lines.
-        text = re.sub(r"\s+", " ", paragraph.rich).strip()
+        # Bold over a whole cell is the table's styling, not emphasis.
+        source = paragraph.text if paragraph.uniform_emphasis else paragraph.rich
+        text = re.sub(r"\s+", " ", source).strip()
         if not text:
             continue
         text = finalize(text, line_start=False)
@@ -974,6 +983,12 @@ class _PresentationParser:
             return []
 
         paragraphs = _apply_inherited_lists(paragraphs, shape.style)
+        if all(p.uniform_emphasis for p in paragraphs) and (
+            len(paragraphs) > 1 or sum(len(p.plain) for p in paragraphs) > 60
+        ):
+            # A whole text box set in bold is styled, not emphasised; a short bold
+            # label on its own keeps its emphasis as a hint that it is a subheading.
+            paragraphs = [replace(p, rich=p.text) for p in paragraphs]
         heading = detector.classify(
             TextShape(
                 markdown=_shape_markdown(paragraphs),
