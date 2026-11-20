@@ -59,6 +59,8 @@ _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _TABLE_RULE = re.compile(r"^[\s|:-]*-{3,}[\s|:-]*$", re.MULTILINE)
 _WORD = re.compile(r"\w+")
 _SPACES = re.compile(r"[ \t]+")
+_EMPHASIS = re.compile(r"(?<!\\)\*+")
+_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +76,10 @@ def tokens(text: str | None) -> list[str]:
     text = _IMAGE.sub(" ", text)
     text = _LINK.sub(r"\1", text)
     text = _TABLE_RULE.sub(" ", text)
+    # Emphasis markers and backslash escapes are formatting, not content: "**도구**의"
+    # is the same word as "도구의".
+    text = _EMPHASIS.sub("", text)
+    text = _ESCAPE.sub(r"\1", text)
     return _WORD.findall(text)
 
 
@@ -749,6 +755,15 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--rewrite-args", default="", help="Extra rewrite CLI arguments")
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1))
     parser.add_argument("--timeout", type=float, default=300.0, help="Seconds per engine run")
+    parser.add_argument(
+        "--baseline",
+        help="JSON baseline; exit 1 when the rewrite does worse on any of its numbers",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Write the current numbers to --baseline instead of checking them",
+    )
     return parser.parse_args(argv)
 
 
@@ -823,7 +838,61 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(summary)
     print(f"Details: {report_dir / 'report.md'}")
+
+    if args.baseline:
+        baseline_path = Path(args.baseline)
+        current = baseline_metrics(report)
+        if args.update_baseline:
+            baseline_path.write_text(
+                json.dumps(current, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(f"Baseline written: {baseline_path}")
+            return 0
+        regressions = compare_baseline(
+            json.loads(baseline_path.read_text(encoding="utf-8")), current
+        )
+        if regressions:
+            print("\nParity regressed against the baseline:", file=sys.stderr)
+            for line in regressions:
+                print(f"- {line}", file=sys.stderr)
+            return 1
+        print("\nNo parity regression against the baseline.")
     return 0
+
+
+def baseline_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    """The numbers a change must not make worse."""
+    totals = report["totals"]
+    return {
+        "slides_passed": totals["slides_passed"],
+        "slides_compared": totals["slides_compared"],
+        "recall": round(totals["recall"], 4),
+        "precision": round(totals["precision"], 4),
+        "same_shapes": {kind: value["same"] for kind, value in totals["shape_parity"].items()},
+        "failed_runs": sorted(
+            f"{deck['name']}:{engine}"
+            for deck in report["decks"]
+            for engine, run in deck["engines"].items()
+            if run["status"] != "ok"
+        ),
+    }
+
+
+def compare_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> list[str]:
+    """Regressions only; improvements pass and can be recorded with --update-baseline."""
+    regressions = []
+    for key in ("slides_passed", "recall", "precision"):
+        if current[key] < baseline[key]:
+            regressions.append(f"{key}: {baseline[key]} -> {current[key]}")
+    for kind, same in baseline["same_shapes"].items():
+        now = current["same_shapes"].get(kind, 0)
+        if now < same:
+            regressions.append(f"identical {kind} shapes: {same} -> {now}")
+    new_failures = sorted(set(current["failed_runs"]) - set(baseline["failed_runs"]))
+    if new_failures:
+        regressions.append("runs that now fail: " + ", ".join(new_failures))
+    return regressions
 
 
 if __name__ == "__main__":

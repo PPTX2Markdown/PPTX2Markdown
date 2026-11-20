@@ -1,0 +1,17 @@
+{
+  "failed_runs": [],
+  "precision": 0.9895,
+  "recall": 0.9793,
+  "same_shapes": {
+    "attachment": 0,
+    "chart": 8,
+    "heading": 28,
+    "image": 10,
+    "list": 2,
+    "smartart": 2,
+    "table": 10,
+    "text": 119
+  },
+  "slides_compared": 62,
+  "slides_passed": 41
+}
