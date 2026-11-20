@@ -215,12 +215,53 @@ def _counter_preview(counter: Counter[str]) -> list[str]:
     return list(counter.elements())[:TOKEN_PREVIEW]
 
 
+_TEMPLATE_PARTS = ("layout:", "master:")
+
+
+def _pair_template_shapes(
+    legacy_groups: dict[str, list[dict[str, Any]]],
+    rewrite_groups: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Give rewrite layout/master shapes the key of the legacy shape they match.
+
+    The engines number shapes drawn from a layout or master differently (legacy
+    uses synthetic ids), so they are paired by part and content instead: first
+    identical shapes, then shapes of the same kinds.
+    """
+    unmatched_legacy = [
+        key
+        for key in legacy_groups
+        if key.startswith(_TEMPLATE_PARTS) and key not in rewrite_groups
+    ]
+    unmatched_rewrite = [
+        key
+        for key in rewrite_groups
+        if key.startswith(_TEMPLATE_PARTS) and key not in legacy_groups
+    ]
+    renamed: dict[str, str] = {}
+    for compare in (
+        lambda a, b: _group_signature(a) == _group_signature(b),
+        lambda a, b: _group_signature(a)[0] == _group_signature(b)[0],
+    ):
+        for legacy_key in list(unmatched_legacy):
+            part = legacy_key.split(":", 1)[0]
+            for rewrite_key in unmatched_rewrite:
+                if rewrite_key.split(":", 1)[0] == part and compare(
+                    legacy_groups[legacy_key], rewrite_groups[rewrite_key]
+                ):
+                    renamed[rewrite_key] = legacy_key
+                    unmatched_legacy.remove(legacy_key)
+                    unmatched_rewrite.remove(rewrite_key)
+                    break
+    return {renamed.get(key, key): blocks for key, blocks in rewrite_groups.items()}
+
+
 def compare_shapes(
     legacy_blocks: Sequence[dict[str, Any]], rewrite_blocks: Sequence[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Per-shape comparison. Returns one row per shape in either engine."""
     legacy_groups = _group_by_shape(legacy_blocks)
-    rewrite_groups = _group_by_shape(rewrite_blocks)
+    rewrite_groups = _pair_template_shapes(legacy_groups, _group_by_shape(rewrite_blocks))
     keys = list(legacy_groups) + [k for k in rewrite_groups if k not in legacy_groups]
     rows = []
     for key in keys:

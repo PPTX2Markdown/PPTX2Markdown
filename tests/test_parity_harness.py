@@ -139,6 +139,31 @@ class CompareSlideTests(unittest.TestCase):
         statuses = {row["key"]: row["status"] for row in result["shapes"]}
         self.assertEqual(statuses, {"slide:1": "same", "slide:2": "missing", "slide:3": "extra"})
 
+    def test_layout_and_master_shapes_are_paired_by_content(self) -> None:
+        result = parity.compare_slide(
+            slide(
+                1,
+                [
+                    block("image", "", "master:2000006"),
+                    block("text", "Confidential", "layout:1000003"),
+                    block("text", "Footer note", "layout:1000004"),
+                ],
+            ),
+            slide(
+                1,
+                [
+                    block("image", "", "master:14"),
+                    block("text", "Footer notes", "layout:9"),
+                    block("text", "Confidential", "layout:5"),
+                ],
+            ),
+        )
+        statuses = {row["key"]: row["status"] for row in result["shapes"]}
+        self.assertEqual(
+            statuses,
+            {"master:2000006": "same", "layout:1000003": "same", "layout:1000004": "differs"},
+        )
+
     def test_reordered_shapes_lower_the_order_score(self) -> None:
         a, b, c = (block("text", t, f"slide:{t}") for t in "abc")
         result = parity.compare_slide(slide(1, [a, b, c]), slide(1, [c, a, b]))
