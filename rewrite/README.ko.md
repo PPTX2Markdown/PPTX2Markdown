@@ -102,6 +102,10 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 | `table[0]`, `table[-1]` | 슬라이드마다 해당 종류의 첫 번째·마지막 블록 |
 | `slide[3]/table[0]` | 3번 슬라이드의 첫 번째 표 |
 
+설정: `merged_cells`, `include_notes`, `include_hidden`, 그리고 `headings`
+(`placeholder`는 제목 placeholder에서 나온 제목만 남기며, legacy의
+`--headings strict`에 해당합니다).
+
 규칙 동작: `exclude`, `merged_cells`, `header_rows`, `caption_rows`(표), `heading_level`(제목 수준
 변경 또는 텍스트를 제목으로), `as_text`(제목·목록), `description`(이미지 대체
 텍스트), `notes`(슬라이드 selector), 그리고 검토용으로만 남는 `reason`. 뒤의
@@ -115,7 +119,8 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 각 대안을 바로 쓸 수 있는 레시피 규칙으로 함께 내놓습니다. 병합된 그룹이 있는
 머리글 아래 행이 라벨처럼 보이는 경우(머리글 두 줄?), 첫 행이 모두 숫자인
 경우(머리글 없음?), 병합된 첫 행을 표 제목으로 본 경우, 설명이 없는 이미지,
-목록이나 표를 이끄는 짧은 굵은 줄(소제목?)이 그 대상입니다. 사람이나 UI, 언어
+글꼴 크기만으로 판정한 제목(제목이 맞나?), 목록이나 표를 이끄는 짧은 굵은
+줄(소제목?)이 그 대상입니다. 사람이나 UI, 언어
 모델은 선택지만 고르면 되고, 고른 결과가 곧 레시피가 됩니다.
 
 ```python
@@ -198,7 +203,9 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
   읽고, 전체 폭 제목이나 구분선은 그 아래 열보다 먼저 읽으며, 조금씩 어긋나게
   쌓인 상자는 위에서 아래로 읽습니다. 1px까지 겹쳐도 공백으로 보고, 배경 틀과
   바닥글은 열 경계를 막지 않습니다.
-- title/subtitle placeholder, 절 번호, 글꼴 크기에 따른 제목 판정
+- title/subtitle placeholder, 절 번호, 글꼴 크기에 따른 제목 판정. 각 제목은 판정
+  근거를 `source`(`placeholder`, `position`, `numbering`, `text`, `font`)로 남기므로
+  가장 약한 판정만 골라 검토하거나 뺄 수 있습니다.
 - slide layout/master에서 상속한 placeholder 종류, 위치, 글꼴 크기, 글머리 기호
   (바닥글 placeholder는 제외)
 - slide layout/master에 그려진 텍스트 shape

@@ -18,6 +18,9 @@ from typing import Literal, Sequence
 
 TITLE_TYPES = frozenset({"title", "ctrTitle", "subTitle"})
 _PLACEHOLDER_DEPTHS = {"title": 1, "ctrTitle": 1, "subTitle": 2}
+# Why a block became a heading: a title placeholder, a placeholder in the layout's
+# title band, section numbering, heading-like text, or font size alone.
+HeadingSource = Literal["placeholder", "position", "numbering", "text", "font"]
 _THRESHOLD = 0.7
 _MIN_FALLBACK_FONT_PT = 24.0
 _MIN_TITLE_BAND_EMU = 600_000
@@ -84,6 +87,7 @@ class ShapeSignals:
 class HeadingHint:
     depth: int | None = None
     score: float = 0.0
+    source: HeadingSource | None = None
 
     @property
     def candidate(self) -> bool:
@@ -156,11 +160,14 @@ def heading_hints(shapes: Sequence[ShapeSignals]) -> list[HeadingHint]:
 
     for shape, heading in zip(shapes, is_heading):
         depth: int | None = None
+        source: HeadingSource | None = None
         if _is_top_title(shape, title_band_bottom):
+            source = "placeholder" if shape.placeholder_type in TITLE_TYPES else "position"
             depth = 2 if h1_assigned else 1
             seen_title = True
             last_section_depth = 1
         elif heading:
+            source = "numbering" if is_numbered_heading(shape.text) else "text"
             font_depth = depth_from_font(shape.font_pt)
             if (
                 font_depth is not None
@@ -196,7 +203,7 @@ def heading_hints(shapes: Sequence[ShapeSignals]) -> list[HeadingHint]:
             score = 0.95 if is_numbered_heading(shape.text) else 0.75
         else:
             score = 0.0
-        hints.append(HeadingHint(depth=depth, score=score))
+        hints.append(HeadingHint(depth=depth, score=score, source=source))
     return hints
 
 
@@ -218,6 +225,7 @@ class Heading:
     level: int
     text: str
     trailing: str | None = None
+    source: HeadingSource = "text"
 
 
 def _fallback_depth(text: str, text_shape_index: int, font_pt: float | None) -> int | None:
@@ -256,6 +264,7 @@ class HeadingDetector:
         can_split = len(sections) > 1 and title_like and not shape.has_list and not shape.has_math
 
         depth, score, candidate = hint.depth, hint.score, hint.candidate
+        heading_source: HeadingSource = hint.source or "text"
         strong = candidate and depth is not None and 1 <= depth <= 6
         if shape.has_math:
             depth, score, candidate = None, 0.0, False
@@ -263,6 +272,7 @@ class HeadingDetector:
             placeholder_depth = _PLACEHOLDER_DEPTHS.get(shape.placeholder_type or "")
             if placeholder_depth is not None:
                 depth, score, candidate, strong = placeholder_depth, max(score, 0.9), True, True
+                heading_source = "placeholder"
             if not candidate:
                 fallback = None
                 if shape.has_list:
@@ -276,6 +286,10 @@ class HeadingDetector:
                     fallback = _fallback_depth(shape.plain, self._text_shapes, shape.font_pt)
                 if fallback is not None:
                     depth, score, candidate, strong = fallback, max(score, 0.8), True, True
+                    numbered = _ANY_NUMBER_PREFIX.match(rendered) or _ANY_NUMBER_PREFIX.match(
+                        _collapse(shape.plain)
+                    )
+                    heading_source = "numbering" if numbered else "font"
 
         if not title_like:
             plain = _collapse(shape.plain)
@@ -298,4 +312,4 @@ class HeadingDetector:
         self._used.add(key)
         self._text_shapes += 1
         trailing = "\n\n".join(sections[1:]) if can_split else None
-        return Heading(level=depth, text=text, trailing=trailing)
+        return Heading(level=depth, text=text, trailing=trailing, source=heading_source)

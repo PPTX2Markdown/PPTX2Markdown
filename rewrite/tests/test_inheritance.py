@@ -123,6 +123,7 @@ class InheritanceTests(unittest.TestCase):
                 id="s1.b1",
                 text="Agenda",
                 level=1,
+                source="font",
                 shape_id="10",
                 bbox=BoundingBox(x=100, y=50, width=3_000_000, height=100),
             ),

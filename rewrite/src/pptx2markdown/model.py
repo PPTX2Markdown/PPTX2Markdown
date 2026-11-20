@@ -101,9 +101,14 @@ class TextBlock(BlockBase):
 
 
 class HeadingBlock(BlockBase):
+    """A heading; ``source`` says why: a title ``placeholder``, a placeholder at the
+    layout's title ``position``, section ``numbering``, heading-like ``text``, or
+    ``font`` size alone (the weakest signal)."""
+
     kind: Literal["heading"] = "heading"
     text: str = Field(min_length=1)
     level: int = Field(ge=1, le=6)
+    source: Literal["placeholder", "position", "numbering", "text", "font"] | None = None
 
 
 class ListItem(BaseModel):
