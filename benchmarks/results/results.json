@@ -1,0 +1,123 @@
+{
+  "python": "3.14.7",
+  "platform": "macOS-26.5.2",
+  "versions": {
+    "pptx2markdown (rewrite)": "0.2.0.dev0",
+    "markitdown": "0.1.9",
+    "anydoc": "0.2.5"
+  },
+  "cases": {
+    "slide-boundaries": "Each slide is delimited",
+    "title": "Title placeholder becomes a heading",
+    "font-size-heading": "Large first text box becomes a heading",
+    "two-columns": "Two-column reading order",
+    "nested-list": "Nested bullet levels",
+    "hyperlink": "Hyperlinks",
+    "bold": "Bold runs",
+    "escaping": "Typed Markdown/HTML stays literal",
+    "table": "Tables (incl. a pipe in a cell)",
+    "merged-cells": "Merged cells keep row meaning",
+    "math": "Equations (OMML) as LaTeX",
+    "notes": "Speaker notes",
+    "hidden": "Hidden slides are marked",
+    "image-alt": "Image alt text",
+    "chart": "Chart data",
+    "group": "Text inside grouped shapes",
+    "empty": "Deck without slides"
+  },
+  "results": {
+    "slide-boundaries": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "fail"
+    },
+    "title": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "font-size-heading": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "fail"
+    },
+    "two-columns": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "fail"
+    },
+    "nested-list": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "hyperlink": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "bold": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "escaping": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "table": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "merged-cells": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "fail"
+    },
+    "math": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "pass"
+    },
+    "notes": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "hidden": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "fail"
+    },
+    "image-alt": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "chart": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "group": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "empty": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "error"
+    }
+  },
+  "timings": {
+    "slides": 300,
+    "seconds": {
+      "pptx2markdown (rewrite)": 0.231,
+      "markitdown": 0.382,
+      "anydoc": 0.013
+    }
+  }
+}
