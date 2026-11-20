@@ -891,6 +891,9 @@ class _PresentationParser:
                     if shape.template_part is not None
                     else relationships
                 )
+                if shape.element.find("./p:spPr/a:blipFill/a:blip", NS) is not None:
+                    # A shape filled with a picture shows that picture.
+                    blocks.extend(self._picture_blocks(package, entry, shape, shape_relationships))
                 blocks.extend(
                     self._text_shape_blocks(entry, shape, shape_relationships, hint, detector)
                 )

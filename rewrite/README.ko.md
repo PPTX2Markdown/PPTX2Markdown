@@ -179,7 +179,7 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
   이스케이프된 inline Markdown이라, 직접 입력한 `# x`, `- x`, `<tag>`, `[x](y)`가
   제목·목록·HTML·링크로 바뀌지 않고 글자 그대로 보입니다.
 - 수식(OMML)을 omml2latex로 LaTeX 변환
-- 내장 이미지
+- 내장 이미지(그림으로 채운 도형 포함)
 - 내장 audio/video payload
 - OLE, 3D model, 오디오·비디오 첨부. 라벨은 파일 이름이고, OLE 복합 파일은 그 안의
   실제 파일(Packager의 원본 파일이나 프로그램의 문서 stream)로 풀어서 저장하며

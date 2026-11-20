@@ -182,7 +182,7 @@ moved without breaking embedded assets.
   is escaped inline Markdown, so typed `# x`, `- x`, `<tag>` or `[x](y)` render
   literally instead of becoming a heading, list, HTML or link
 - equations (OMML) as LaTeX via omml2latex
-- embedded images
+- embedded images, including shapes filled with a picture
 - embedded audio/video payloads
 - OLE, 3D model, audio and video attachments, labelled by file name; an OLE
   compound file is unpacked to the file inside it (the Packager's original file
