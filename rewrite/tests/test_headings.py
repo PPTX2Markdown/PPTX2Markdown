@@ -63,6 +63,17 @@ class HeadingDetectorTests(unittest.TestCase):
         heading = HeadingDetector().classify(text_shape("Agenda", font_pt=28.0), HeadingHint())
         self.assertEqual(heading, Heading(level=1, text="Agenda", source="font"))
 
+    def test_a_list_of_several_numbered_items_is_not_a_heading(self) -> None:
+        shape = TextShape(
+            markdown="1. PDF parsing\n2. Table loss\n3. Formula errors",
+            plain="PDF parsing Table loss Formula errors",
+            placeholder_type=None,
+            font_pt=28.0,
+            has_list=True,
+            has_math=False,
+        )
+        self.assertIsNone(HeadingDetector().classify(shape, HeadingHint()))
+
     def test_numbered_fallback_is_numbering_not_font(self) -> None:
         heading = HeadingDetector().classify(text_shape("2. Results", font_pt=28.0), HeadingHint())
         self.assertEqual(heading.source, "numbering")
