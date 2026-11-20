@@ -5,6 +5,9 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Literal
+
+from .model import TableCell
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS = {"a": A_NS}
@@ -124,32 +127,86 @@ def cell_in(grid: Sequence[Sequence[GridCell]], row: int | None, column: int | N
     return grid[origin_row][origin_column]
 
 
-def _escape(text: str) -> str:
-    return text.replace("|", r"\|")
+MergedCells = Literal["fill", "header", "blank"]
+MERGED_CELL_POLICIES: tuple[MergedCells, ...] = ("fill", "header", "blank")
 
 
-def grid_markdown(grid: Sequence[Sequence[GridCell]]) -> str:
-    """Render the grid with its first row as the header.
+def grid_rows(grid: Sequence[Sequence[GridCell]]) -> tuple[tuple[TableCell, ...], ...]:
+    """The grid as model cells: merge starts carry text and spans, covered cells point back."""
 
-    A header cell covered by a merge repeats the merged text, so every column has a
-    name, and an empty header is named ``col_N``. Covered body cells stay empty, so a
-    merged value is not repeated in the data.
+    spans: dict[tuple[int, int], list[int]] = {}
+    for row_index, row in enumerate(grid):
+        for column, cell in enumerate(row):
+            origin = cell.origin
+            span = spans.setdefault(origin, [1, 1])
+            span[0] = max(span[0], row_index - origin[0] + 1)
+            span[1] = max(span[1], column - origin[1] + 1)
+    return tuple(
+        tuple(
+            TableCell(merged_from=cell.origin)
+            if cell.origin != (row_index, column)
+            else TableCell(
+                text="\n".join(cell.lines),
+                row_span=spans[cell.origin][0],
+                col_span=spans[cell.origin][1],
+            )
+            for column, cell in enumerate(row)
+        )
+        for row_index, row in enumerate(grid)
+    )
+
+
+def _cell_markdown(text: str) -> str:
+    return "<br>".join(line for line in text.split("\n") if line).replace("|", r"\|")
+
+
+def rows_markdown(
+    rows: Sequence[Sequence[TableCell]],
+    *,
+    header_rows: int = 1,
+    merged_cells: MergedCells = "fill",
+) -> str:
+    """Render model rows as a Markdown table.
+
+    ``merged_cells`` decides what a position covered by a merge shows: ``fill``
+    repeats the merged text everywhere (each row stays self-contained, which suits
+    retrieval), ``header`` repeats it only in the header so every column keeps a
+    name, and ``blank`` leaves every covered position empty. Several header rows
+    are combined per column as ``top / bottom``; an empty header is ``col_N``.
     """
 
-    if not grid:
+    if not rows:
         return ""
+    width = max(len(row) for row in rows)
 
-    def text(cell: GridCell) -> str:
-        row, column = cell.origin
-        return _escape("<br>".join(grid[row][column].lines))
+    def text(row: int, column: int, *, in_header: bool) -> str:
+        if column >= len(rows[row]):
+            return ""
+        cell = rows[row][column]
+        if cell.merged_from is None:
+            return _cell_markdown(cell.text)
+        repeat = merged_cells == "fill" or (merged_cells == "header" and in_header)
+        if not repeat:
+            return ""
+        origin_row, origin_column = cell.merged_from
+        return _cell_markdown(rows[origin_row][origin_column].text)
 
-    header = [text(cell) or f"col_{column + 1}" for column, cell in enumerate(grid[0])]
+    header_count = max(0, min(header_rows, len(rows)))
+    header: list[str] = []
+    for column in range(width):
+        parts: list[str] = []
+        for row in range(header_count):
+            value = text(row, column, in_header=True)
+            if value and (not parts or parts[-1] != value):
+                parts.append(value)
+        header.append(" / ".join(parts) or f"col_{column + 1}")
+
     lines = [
         "| " + " | ".join(header) + " |",
         "| " + " | ".join("---" for _ in header) + " |",
     ]
     lines.extend(
-        "| " + " | ".join("" if cell.merged else text(cell) for cell in row) + " |"
-        for row in grid[1:]
+        "| " + " | ".join(text(row, column, in_header=False) for column in range(width)) + " |"
+        for row in range(header_count, len(rows))
     )
     return "\n".join(lines)

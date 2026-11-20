@@ -66,6 +66,7 @@ result = pptx2markdown.convert(
 pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --merged-cells blank
 ```
 
 기본 출력:
@@ -104,9 +105,13 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
 - OLE, 3D model, 오디오·비디오 첨부. 라벨은 파일 이름이고, OLE 복합 파일은 그 안의
   실제 파일(Packager의 원본 파일이나 프로그램의 문서 stream)로 풀어서 저장하며
   ProgID는 `program`에 남깁니다.
-- 네이티브 표: 첫 행을 머리글로 쓰고, 여러 열에 걸친 머리글은 각 열에 같은
-  텍스트를 반복하며, 빈 머리글은 `col_N`으로 채웁니다. 본문의 병합 셀은 비워
-  둡니다. 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인 그림이나 셀
+- 네이티브 표: JSON에는 렌더링된 `markdown`과 함께 전체 격자(`rows`)를 남깁니다.
+  병합 시작 칸에는 텍스트와 `row_span`/`col_span`이, 병합으로 덮인 칸에는
+  `merged_from`이 들어갑니다. 첫 행을 머리글로 쓰고 빈 머리글은 `col_N`으로
+  채웁니다. 덮인 칸에 무엇을 쓸지는 `merged_cells`로 정합니다. 기본값 `fill`은
+  병합된 값을 모든 칸에 반복해 각 행이 혼자서도 뜻이 통하게 하고(검색·RAG에
+  유리), `header`는 legacy처럼 머리글 행에서만 반복하며, `blank`는 반복하지
+  않습니다. 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인 그림이나 셀
   배경 그림은 그 셀 안에 넣습니다.
 - chart2md를 이용한 차트 변환: 일반 차트는 cache 값으로, Office 2016 chartEx
   차트(깔때기, 폭포 등)는 내장 workbook으로 변환합니다. 내장 workbook도 패키지와

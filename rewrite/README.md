@@ -67,6 +67,7 @@ result = pptx2markdown.convert(
 pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --merged-cells blank
 ```
 
 Default bundle:
@@ -105,9 +106,13 @@ moved without breaking embedded assets.
 - OLE, 3D model, audio and video attachments, labelled by file name; an OLE
   compound file is unpacked to the file inside it (the Packager's original file
   or the server's document stream) and its ProgID is kept as `program`
-- native tables: the first row is the header, a header merged across columns
-  repeats its text and an empty header becomes `col_N`; merged body cells stay
-  empty; bullets, numbering and links inside cells are kept, and pictures lying
+- native tables: JSON keeps the full grid (`rows`, with each merge's text,
+  `row_span`/`col_span`, and `merged_from` on the cells it covers) next to the
+  rendered `markdown`; the first row is the header and an empty header becomes
+  `col_N`; `merged_cells` decides what a covered cell shows (`fill`, the
+  default, repeats the merged value so every row stands alone for retrieval;
+  `header` repeats it only in the header, as the legacy converter does; `blank`
+  never); bullets, numbering and links inside cells are kept, and pictures lying
   on a cell or filling its background are written into that cell
 - charts via chart2md: classic charts from their cached values, Office 2016
   chartEx charts (funnel, waterfall, ...) from their embedded workbook, which is

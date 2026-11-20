@@ -11,6 +11,7 @@ from .assets import safe_basename
 from .errors import PPTX2MarkdownError
 from .parser import ParseOptions, parse_components
 from .presentation import ParsedPresentation
+from .tables import MergedCells
 from .writer import SaveResult
 
 
@@ -45,8 +46,13 @@ def parse(
     include_notes: bool = True,
     include_hidden: bool = True,
     strict: bool = True,
+    merged_cells: MergedCells = "fill",
 ) -> ParsedPresentation:
-    """Parse one local PPTX without creating persistent output."""
+    """Parse one local PPTX without creating persistent output.
+
+    ``merged_cells`` controls table Markdown: ``fill`` repeats a merged value in
+    every cell it covers, ``header`` only in the header row, ``blank`` nowhere.
+    """
 
     components = parse_components(
         path,
@@ -55,6 +61,7 @@ def parse(
             include_notes=include_notes,
             include_hidden=include_hidden,
             strict=strict,
+            merged_cells=merged_cells,
         ),
     )
     return ParsedPresentation(
@@ -73,6 +80,7 @@ def convert(
     assets: Literal["copy", "omit"] = "copy",
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
+    merged_cells: MergedCells = "fill",
 ) -> SaveResult:
     """Parse and save one presentation as a portable bundle."""
 
@@ -82,7 +90,9 @@ def convert(
         fallback="presentation",
     )
     bundle_dir = Path(output_dir).expanduser() / resolved_bundle_name
-    with parse(source, include_assets=assets == "copy", strict=strict) as presentation:
+    with parse(
+        source, include_assets=assets == "copy", strict=strict, merged_cells=merged_cells
+    ) as presentation:
         return presentation.save(
             bundle_dir,
             output_format=output_format,
@@ -99,6 +109,7 @@ def convert_many(
     assets: Literal["copy", "omit"] = "copy",
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
+    merged_cells: MergedCells = "fill",
 ) -> BatchConversionResult:
     """Convert inputs independently and preserve successful bundles."""
 
@@ -129,6 +140,7 @@ def convert_many(
                     assets=assets,
                     overwrite=overwrite,
                     strict=strict,
+                    merged_cells=merged_cells,
                 )
             )
         except (PPTX2MarkdownError, OSError, ValueError) as exc:

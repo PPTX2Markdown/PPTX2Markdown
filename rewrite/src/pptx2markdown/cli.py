@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .api import convert_many
+from .tables import MERGED_CELL_POLICIES
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -38,6 +39,15 @@ def _parser() -> argparse.ArgumentParser:
         default="error",
     )
     parser.add_argument(
+        "--merged-cells",
+        choices=MERGED_CELL_POLICIES,
+        default="fill",
+        help=(
+            "What table cells covered by a merge show: fill repeats the merged value "
+            "(default), header repeats it only in the header row, blank leaves them empty"
+        ),
+    )
+    parser.add_argument(
         "--tolerant",
         action="store_true",
         help="Keep other slides when one slide cannot be parsed",
@@ -59,6 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         assets="omit" if args.no_assets else "copy",
         overwrite=args.overwrite,
         strict=not args.tolerant,
+        merged_cells=args.merged_cells,
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

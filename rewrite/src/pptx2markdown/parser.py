@@ -73,7 +73,16 @@ from .ooxml import (
 )
 from .reading_order import LayoutNode, geometry_reading_order
 from .smartart import smartart_markdown
-from .tables import GridCell, cell_at, cell_bounds, cell_in, grid_markdown, table_grid
+from .tables import (
+    GridCell,
+    MergedCells,
+    cell_at,
+    cell_bounds,
+    cell_in,
+    grid_rows,
+    rows_markdown,
+    table_grid,
+)
 
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -105,6 +114,7 @@ class ParseOptions:
     include_notes: bool = True
     include_hidden: bool = True
     strict: bool = True
+    merged_cells: MergedCells = "fill"
     package_limits: PackageLimits = PackageLimits()
     asset_limits: AssetLimits = AssetLimits()
 
@@ -1323,8 +1333,10 @@ class _PresentationParser:
                     rid = blip.attrib.get(f"{{{OFFICE_REL_NS}}}embed", "")
                     add_image(cell_in(grid, row_index, column), rid, "image", shape.shape_id)
 
+        rows = grid_rows(grid)
         return TableBlock(
-            markdown=grid_markdown(grid),
+            markdown=rows_markdown(rows, merged_cells=self.options.merged_cells),
+            rows=rows,
             asset_ids=tuple(dict.fromkeys(asset_ids)),
             shape_id=shape.shape_id,
             bbox=_bbox_model(shape.bbox),
