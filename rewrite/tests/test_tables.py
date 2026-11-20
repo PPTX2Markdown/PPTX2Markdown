@@ -162,6 +162,41 @@ class TableTests(unittest.TestCase):
         self.assertIsInstance(self.blocks["5"], ImageBlock)
 
 
+def _broken(*pieces: str) -> str:
+    return (
+        "<a:p>" + "<a:br/>".join(f"<a:r><a:t>{piece}</a:t></a:r>" for piece in pieces) + "</a:p>"
+    )
+
+
+# Characters stacked one per line in narrow cells, by line breaks or by paragraphs,
+# next to cells whose single-character lines are not words.
+STACKED = _table(
+    [
+        [_tc(_broken("구", "분")), _tc(_p("항") + _p("목")), _tc(_broken("H", "e", "a", "d"))],
+        [_tc(_p("M") + _p("M")), _tc(_p("가", BULLET) + _p("나", BULLET)), _tc(_broken("x", "y"))],
+    ],
+    columns=3,
+)
+
+
+class StackedCellTextTests(unittest.TestCase):
+    def test_characters_stacked_in_a_cell_form_one_word(self) -> None:
+        slide = SLIDE.replace(
+            f"{_frame(2, 0, 0, MERGED, columns=3, rows=3)}",
+            f"{_frame(2, 0, 0, STACKED, columns=3, rows=2)}",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_test_pptx(Path(directory) / "stacked.pptx", slide)
+            with pptx2markdown.parse(source) as presentation:
+                block = next(
+                    b for b in presentation.document.slides[0].blocks if b.shape_id == "2"
+                )
+        self.assertEqual(
+            block.markdown.splitlines(),
+            ["| 구분 | 항목 | Head |", "| --- | --- | --- |", "| M<br>M | - 가<br>- 나 | x y |"],
+        )
+
+
 class GridTests(unittest.TestCase):
     def test_rows_that_omit_span_placeholders_stay_aligned(self) -> None:
         table = ET.fromstring(
