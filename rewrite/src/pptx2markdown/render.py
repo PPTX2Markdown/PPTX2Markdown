@@ -89,9 +89,19 @@ def render_block_markdown(
         return f"{'#' * block.level} {block.text.strip()}"
     if isinstance(block, ListBlock):
         lines: list[str] = []
-        for index, item in enumerate(block.items, 1):
-            marker = f"{index}." if block.ordered else "-"
-            lines.append(f"{'  ' * item.level}{marker} {item.text.strip()}")
+        counters: dict[int, int] = {}
+        # A nested item must be indented past its parent's marker ("1. " is wider
+        # than "- "), or CommonMark does not nest it.
+        indent = "    " if block.ordered else "  "
+        for item in block.items:
+            if block.ordered:
+                counters = {level: n for level, n in counters.items() if level <= item.level}
+                first = block.start if item.level == 0 else 1
+                counters[item.level] = counters.get(item.level, first - 1) + 1
+                marker = f"{counters[item.level]}."
+            else:
+                marker = "-"
+            lines.append(f"{indent * item.level}{marker} {item.text.strip()}")
         return "\n".join(lines)
     if isinstance(block, MathBlock):
         return f"$$\n{block.latex.strip()}\n$$"
