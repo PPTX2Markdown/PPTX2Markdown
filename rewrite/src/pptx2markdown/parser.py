@@ -388,6 +388,8 @@ class _Paragraph:
     # The typed text starts with whitespace, i.e. it is indented by hand.
     indented: bool = False
     rich: str = ""
+    # The number an auto-numbered paragraph starts from (a:buAutoNum startAt).
+    start: int = 1
     # Every run carries the same bold/italic: formatting of the whole paragraph.
     uniform_emphasis: bool = False
 
@@ -488,7 +490,8 @@ def _parse_paragraph(
     flush_group()
     properties = paragraph.find("./a:pPr", NS)
     bullets_disabled = properties is not None and properties.find("./a:buNone", NS) is not None
-    ordered = properties is not None and properties.find("./a:buAutoNum", NS) is not None
+    auto_number = properties.find("./a:buAutoNum", NS) if properties is not None else None
+    ordered = auto_number is not None
     explicit = ordered or (
         properties is not None and properties.find("./a:buChar", NS) is not None
     )
@@ -509,6 +512,7 @@ def _parse_paragraph(
             ),
             indented=bool(_INDENT.match("".join(parts))),
             rich=_normalize_breaks("".join(rich_parts)),
+            start=max(1, _integer(_attr(auto_number, "startAt"), default=1)),
             uniform_emphasis=len(emphasis_styles) == 1 and emphasis_styles != {(False, False)},
         ),
         unconverted_math,
@@ -597,27 +601,43 @@ def _paragraph_blocks(
             blocks.append(TextBlock(text=finalize("\n".join(pending_lines)), **provenance))
         pending_lines.clear()
 
+    pending_start = 1
+
     def flush_list() -> None:
         nonlocal pending_ordered
         if pending_items:
             items = tuple(
                 ListItem(text=finalize(text), level=level) for text, level in pending_items
             )
-            blocks.append(ListBlock(items=items, ordered=pending_ordered, **provenance))
+            blocks.append(
+                ListBlock(
+                    items=items,
+                    ordered=pending_ordered,
+                    start=pending_start if pending_ordered else 1,
+                    **provenance,
+                )
+            )
         pending_items.clear()
         pending_ordered = False
 
-    def add_item(text: str, *, ordered: bool, level: int) -> None:
-        nonlocal pending_ordered
+    def add_item(text: str, *, ordered: bool, level: int, start: int = 1) -> None:
+        nonlocal pending_ordered, pending_start
         flush_text()
         if pending_items and ordered != pending_ordered:
             flush_list()
+        if not pending_items:
+            pending_start = start
         pending_ordered = ordered
         pending_items.append((text, level))
 
     for paragraph in paragraphs:
         if paragraph.is_list:
-            add_item(paragraph.rich, ordered=paragraph.ordered, level=paragraph.level)
+            add_item(
+                paragraph.rich,
+                ordered=paragraph.ordered,
+                level=paragraph.level,
+                start=paragraph.start,
+            )
             continue
         if paragraph.is_math_only:
             flush_text()

@@ -119,9 +119,12 @@ class ListItem(BaseModel):
 
 
 class ListBlock(BlockBase):
+    """``start`` is the number of an ordered list's first top-level item."""
+
     kind: Literal["list"] = "list"
     items: tuple[ListItem, ...] = Field(min_length=1)
     ordered: bool = False
+    start: int = Field(default=1, ge=1)
 
 
 class MathBlock(BlockBase):
