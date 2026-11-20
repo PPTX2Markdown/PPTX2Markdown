@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from pathlib import Path
 from typing import Sequence
 
 from .api import convert_many
+from .recipe import Recipe, recipe_json_schema
 from .tables import MERGED_CELL_POLICIES
 
 
@@ -16,7 +18,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="pptx2markdown",
         description="Convert PPTX presentations into portable Markdown or JSON bundles.",
     )
-    parser.add_argument("inputs", nargs="+", help="Local .pptx files")
+    parser.add_argument("inputs", nargs="*", help="Local .pptx files")
     parser.add_argument(
         "-o",
         "--output-dir",
@@ -48,6 +50,16 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--recipe",
+        type=Path,
+        help="JSON recipe applied after parsing (see --recipe-schema)",
+    )
+    parser.add_argument(
+        "--recipe-schema",
+        action="store_true",
+        help="Print the JSON Schema of a recipe and exit",
+    )
+    parser.add_argument(
         "--tolerant",
         action="store_true",
         help="Keep other slides when one slide cannot be parsed",
@@ -57,7 +69,19 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.recipe_schema:
+        print(json.dumps(recipe_json_schema(), indent=2, ensure_ascii=False))
+        return 0
+    if not args.inputs:
+        parser.error("the following arguments are required: inputs")
+    recipe = None
+    if args.recipe is not None:
+        try:
+            recipe = Recipe.model_validate_json(args.recipe.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            parser.error(f"invalid recipe {args.recipe}: {exc}")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -70,6 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         overwrite=args.overwrite,
         strict=not args.tolerant,
         merged_cells=args.merged_cells,
+        recipe=recipe,
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

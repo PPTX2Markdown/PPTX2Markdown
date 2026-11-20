@@ -5,9 +5,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
 
-from .model import TableCell
+from .model import MergedCells, TableCell
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS = {"a": A_NS}
@@ -127,7 +126,6 @@ def cell_in(grid: Sequence[Sequence[GridCell]], row: int | None, column: int | N
     return grid[origin_row][origin_column]
 
 
-MergedCells = Literal["fill", "header", "blank"]
 MERGED_CELL_POLICIES: tuple[MergedCells, ...] = ("fill", "header", "blank")
 
 
@@ -160,24 +158,60 @@ def _cell_markdown(text: str) -> str:
     return "<br>".join(line for line in text.split("\n") if line).replace("|", r"\|")
 
 
+def caption_rows(rows: Sequence[Sequence[TableCell]]) -> int:
+    """1 when the first row is one cell merged across the whole table, i.e. a title.
+
+    A title row above the column labels ("2024 results") would otherwise become
+    the name of every column. A two-row table keeps it, since it is the only header.
+    """
+
+    if len(rows) < 3:
+        return 0
+    width = max(len(row) for row in rows)
+    first = rows[0][0] if rows[0] else None
+    if (
+        width < 2
+        or first is None
+        or first.merged_from is not None
+        or first.col_span < width
+        or first.row_span != 1
+        or not first.text.strip()
+    ):
+        return 0
+    return 1
+
+
 def rows_markdown(
     rows: Sequence[Sequence[TableCell]],
     *,
     header_rows: int = 1,
     merged_cells: MergedCells = "fill",
+    caption_rows: int = 0,
 ) -> str:
     """Render model rows as a Markdown table.
 
     ``merged_cells`` decides what a position covered by a merge shows: ``fill``
     repeats the merged text everywhere (each row stays self-contained, which suits
     retrieval), ``header`` repeats it only in the header so every column keeps a
-    name, and ``blank`` leaves every covered position empty. Several header rows
-    are combined per column as ``top / bottom``; an empty header is ``col_N``.
+    name, and ``blank`` leaves every covered position empty. A merge across the
+    whole width in the body is a section label and is never repeated across the
+    row. Several header rows are combined per column as ``top / bottom``; an empty
+    header is ``col_N``. The first ``caption_rows`` rows are written as a bold line
+    above the table.
     """
 
     if not rows:
         return ""
     width = max(len(row) for row in rows)
+
+    def origin_of(row: int, column: int) -> TableCell | None:
+        if column >= len(rows[row]):
+            return None
+        cell = rows[row][column]
+        if cell.merged_from is None:
+            return cell
+        origin_row, origin_column = cell.merged_from
+        return rows[origin_row][origin_column]
 
     def text(row: int, column: int, *, in_header: bool) -> str:
         if column >= len(rows[row]):
@@ -185,28 +219,44 @@ def rows_markdown(
         cell = rows[row][column]
         if cell.merged_from is None:
             return _cell_markdown(cell.text)
-        repeat = merged_cells == "fill" or (merged_cells == "header" and in_header)
-        if not repeat:
+        origin = origin_of(row, column)
+        assert origin is not None
+        if not in_header and origin.col_span >= width:
             return ""
-        origin_row, origin_column = cell.merged_from
-        return _cell_markdown(rows[origin_row][origin_column].text)
+        repeat = merged_cells == "fill" or (merged_cells == "header" and in_header)
+        return _cell_markdown(origin.text) if repeat else ""
 
-    header_count = max(0, min(header_rows, len(rows)))
+    caption_count = max(0, min(caption_rows, len(rows)))
+    captions: list[str] = []
+    for row in range(caption_count):
+        for column in range(width):
+            origin = origin_of(row, column)
+            value = " ".join(origin.text.split("\n")).strip() if origin else ""
+            if value and value not in captions:
+                captions.append(value)
+    body_rows = list(range(caption_count, len(rows)))
+    header_count = max(0, min(header_rows, len(body_rows)))
     header: list[str] = []
     for column in range(width):
         parts: list[str] = []
-        for row in range(header_count):
+        for row in body_rows[:header_count]:
             value = text(row, column, in_header=True)
             if value and (not parts or parts[-1] != value):
                 parts.append(value)
         header.append(" / ".join(parts) or f"col_{column + 1}")
 
     lines = [
+        caption if caption.startswith("**") and caption.endswith("**") else f"**{caption}**"
+        for caption in captions
+    ]
+    if lines:
+        lines.append("")
+    lines += [
         "| " + " | ".join(header) + " |",
         "| " + " | ".join("---" for _ in header) + " |",
     ]
     lines.extend(
         "| " + " | ".join(text(row, column, in_header=False) for column in range(width)) + " |"
-        for row in range(header_count, len(rows))
+        for row in body_rows[header_count:]
     )
     return "\n".join(lines)

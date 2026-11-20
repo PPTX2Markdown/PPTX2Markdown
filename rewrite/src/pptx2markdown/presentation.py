@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from .assets import AssetStore
 from .errors import AssetUnavailableError
 from .model import PresentationDocument
 from .render import AssetResolver, render_presentation_json, render_presentation_markdown
+
+if TYPE_CHECKING:
+    from .recipe import Recipe
 
 
 class ParsedPresentation:
@@ -50,6 +54,7 @@ class ParsedPresentation:
         *,
         asset_url: AssetResolver | None = None,
         assets: Literal["error", "omit"] = "error",
+        block_ids: bool = False,
     ) -> str:
         """Render Markdown with explicit asset URL behavior."""
 
@@ -58,7 +63,21 @@ class ParsedPresentation:
             self.document,
             asset_resolver=asset_url,
             asset_mode=assets,
+            block_ids=block_ids,
         )
+
+    def apply(self, recipe: "Recipe | Mapping[str, Any] | str") -> "ParsedPresentation":
+        """Apply a recipe (model, mapping or JSON text) to the document in place."""
+
+        from .recipe import Recipe, apply_recipe
+
+        if isinstance(recipe, str):
+            recipe = Recipe.model_validate_json(recipe)
+        elif not isinstance(recipe, Recipe):
+            recipe = Recipe.model_validate(recipe)
+        self._ensure_open()
+        self.document = apply_recipe(self.document, recipe)
+        return self
 
     def render_json(self) -> str:
         """Render canonical JSON; asset bytes are intentionally excluded."""

@@ -20,6 +20,8 @@ The rewrite separates four responsibilities:
 - Pydantic 2.10 or later
 - omml2latex 0.1.0 or later
 - chart2md 0.1.0 or later
+- smartart2md 0.1.1 or later
+- olefile 0.47 or later
 - local `.pptx` input
 
 There is no OCR, VLM, API key, cloud inference, PowerPoint automation or
@@ -52,6 +54,63 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     )
 ```
 
+### Chunks for retrieval
+
+`slide_chunks()` returns one chunk per slide with citation metadata (source,
+page, slide and deck title, block ids, block kinds). A slide longer than
+`max_chars` is split at block boundaries, never inside a table. Each chunk starts
+with a comment naming the deck and slide, so a retrieved chunk keeps its context.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for chunk in pptx2markdown.slide_chunks(presentation.document, max_chars=2000):
+        index.add(chunk.text, metadata=chunk.metadata)
+```
+
+### Recipes
+
+A recipe adjusts a parsed document without touching the parser: document-wide
+settings plus rules that select blocks or slides and say what to do with them.
+It is plain data, so it can be stored next to a deck, reviewed, shared across a
+team, or written by a language model from a request such as "drop the appendix
+and treat the first two rows of the sales table as its header". Applying it is
+deterministic.
+
+```python
+recipe = pptx2markdown.Recipe(
+    merged_cells="blank",
+    rules=[
+        {"target": "slide[12-]", "exclude": True, "reason": "appendix"},
+        {"target": "slide[3]/table[0]", "header_rows": 2},
+        {"target": "s5.b2", "description": "Revenue by quarter, 2021-2024"},
+        {"target": "s1.b3", "heading_level": 2},
+    ],
+)
+with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
+    ...
+```
+
+Every block has an id `s<page>.b<n>`; `render_markdown(block_ids=True)` shows
+them as `<!-- s3.b2 table -->` comments so a reviewer or a model can point at
+exact blocks, and `explain_recipe()` lists what each rule selects before it is
+applied. Selectors:
+
+| Selector | Selects |
+| --- | --- |
+| `s3.b2` | one block by id |
+| `slide[3]`, `slide[2-5]`, `slide[12-]`, `slide[*]`, `slide[hidden]` | whole slides |
+| `table`, `image`, `heading`, ... or `*` | every block of a kind |
+| `table[0]`, `table[-1]` | the first or last block of a kind on each slide |
+| `slide[3]/table[0]` | the first table on slide 3 |
+
+Rule actions: `exclude`, `merged_cells`, `header_rows`, `caption_rows` (tables),
+`heading_level` (set a heading's level or turn text into a heading), `as_text`
+(headings and lists), `description` (image alt text), `notes` (slide
+selectors), and `reason`, which is kept for review only. Later rules win, and
+every selector sees the document as parsed. `recipe_json_schema()` (or
+`pptx2markdown --recipe-schema`) gives the JSON Schema for forms and structured
+model output.
+
 Use `convert()` for parse-and-save:
 
 ```python
@@ -68,6 +127,8 @@ pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
 pptx2markdown deck.pptx --merged-cells blank
+pptx2markdown deck.pptx --recipe recipe.json
+pptx2markdown --recipe-schema
 ```
 
 Default bundle:
@@ -112,8 +173,11 @@ moved without breaking embedded assets.
   `col_N`; `merged_cells` decides what a covered cell shows (`fill`, the
   default, repeats the merged value so every row stands alone for retrieval;
   `header` repeats it only in the header, as the legacy converter does; `blank`
-  never); bullets, numbering and links inside cells are kept, and pictures lying
-  on a cell or filling its background are written into that cell
+  never); a first row merged across the whole table is a title written once
+  above it (`caption_rows`), and a body row merged across the whole width is a
+  section label that is not repeated; bullets, numbering and links inside cells
+  are kept, and pictures lying on a cell or filling its background are written
+  into that cell
 - charts via chart2md: classic charts from their cached values, Office 2016
   chartEx charts (funnel, waterfall, ...) from their embedded workbook, which is
   checked like the package itself and falls back to cached values when rejected

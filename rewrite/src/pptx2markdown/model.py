@@ -70,11 +70,19 @@ class ConversionWarning(BaseModel):
     asset_id: str | None = None
 
 
+BLOCK_ID_PATTERN = r"^s[1-9][0-9]*\.b[1-9][0-9]*$"
+
+
 class BlockBase(BaseModel):
-    """Fields shared by every block in reading order."""
+    """Fields shared by every block in reading order.
+
+    ``id`` is ``s<page>.b<n>``, the block's position on its slide; recipes and
+    reviews address blocks by it.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    id: str | None = Field(default=None, pattern=BLOCK_ID_PATTERN)
     shape_id: str | None = None
     bbox: BoundingBox | None = None
     source_part: Literal["slide", "layout", "master"] = "slide"
@@ -136,6 +144,9 @@ class SmartArtBlock(MarkdownBlockBase):
     kind: Literal["smartart"] = "smartart"
 
 
+MergedCells = Literal["fill", "header", "blank"]
+
+
 class TableCell(BaseModel):
     """One grid position of a table.
 
@@ -155,13 +166,16 @@ class TableBlock(MarkdownBlockBase):
     """A native table: ``rows`` is the full grid, ``markdown`` its rendering.
 
     Cell ``text`` is inline Markdown with one line per paragraph. ``markdown``
-    renders the grid with the first ``header_rows`` rows as the header and merged
-    cells filled according to the conversion's merged-cell policy.
+    renders the grid: the first ``caption_rows`` rows as a title line, the next
+    ``header_rows`` rows as the header, and merged cells filled according to
+    ``merged_cells``.
     """
 
     kind: Literal["table"] = "table"
     rows: tuple[tuple[TableCell, ...], ...] = ()
     header_rows: int = Field(default=1, ge=0)
+    caption_rows: int = Field(default=0, ge=0)
+    merged_cells: MergedCells = "fill"
 
     @model_validator(mode="after")
     def validate_merges(self) -> "TableBlock":
@@ -238,6 +252,10 @@ class PresentationDocument(BaseModel):
         pages = [slide.page for slide in self.slides]
         if pages != sorted(set(pages)):
             raise ValueError("slide pages must be unique and strictly increasing")
+
+        block_ids = [block.id for slide in self.slides for block in slide.blocks if block.id]
+        if len(block_ids) != len(set(block_ids)):
+            raise ValueError("block ids must be unique")
 
         descriptors = {asset.id: asset for asset in self.assets}
         if len(descriptors) != len(self.assets):

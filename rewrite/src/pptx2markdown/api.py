@@ -11,6 +11,7 @@ from .assets import safe_basename
 from .errors import PPTX2MarkdownError
 from .parser import ParseOptions, parse_components
 from .presentation import ParsedPresentation
+from .recipe import Recipe
 from .tables import MergedCells
 from .writer import SaveResult
 
@@ -47,11 +48,13 @@ def parse(
     include_hidden: bool = True,
     strict: bool = True,
     merged_cells: MergedCells = "fill",
+    recipe: Recipe | None = None,
 ) -> ParsedPresentation:
     """Parse one local PPTX without creating persistent output.
 
     ``merged_cells`` controls table Markdown: ``fill`` repeats a merged value in
     every cell it covers, ``header`` only in the header row, ``blank`` nowhere.
+    ``recipe`` is applied to the parsed document before it is returned.
     """
 
     components = parse_components(
@@ -64,11 +67,14 @@ def parse(
             merged_cells=merged_cells,
         ),
     )
-    return ParsedPresentation(
+    presentation = ParsedPresentation(
         document=components.document,
         assets=components.assets,
         source_path=components.source_path,
     )
+    if recipe is not None:
+        presentation.apply(recipe)
+    return presentation
 
 
 def convert(
@@ -81,6 +87,7 @@ def convert(
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
     merged_cells: MergedCells = "fill",
+    recipe: Recipe | None = None,
 ) -> SaveResult:
     """Parse and save one presentation as a portable bundle."""
 
@@ -91,7 +98,11 @@ def convert(
     )
     bundle_dir = Path(output_dir).expanduser() / resolved_bundle_name
     with parse(
-        source, include_assets=assets == "copy", strict=strict, merged_cells=merged_cells
+        source,
+        include_assets=assets == "copy",
+        strict=strict,
+        merged_cells=merged_cells,
+        recipe=recipe,
     ) as presentation:
         return presentation.save(
             bundle_dir,
@@ -110,6 +121,7 @@ def convert_many(
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
     merged_cells: MergedCells = "fill",
+    recipe: Recipe | None = None,
 ) -> BatchConversionResult:
     """Convert inputs independently and preserve successful bundles."""
 
@@ -141,6 +153,7 @@ def convert_many(
                     overwrite=overwrite,
                     strict=strict,
                     merged_cells=merged_cells,
+                    recipe=recipe,
                 )
             )
         except (PPTX2MarkdownError, OSError, ValueError) as exc:
