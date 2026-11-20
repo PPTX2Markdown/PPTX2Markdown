@@ -1625,7 +1625,8 @@ def parse_components(
             raise TypeError("source must be a path, bytes or a binary stream")
         if len(data) > limit:
             raise PackageSecurityError(f"presentation exceeds {limit} bytes")
-        if not data.startswith(b"PK"):
+        # A compound file goes on to the package, which explains encryption or .ppt.
+        if not data.startswith((b"PK", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")):
             raise UnsupportedPresentationError("input is not a .pptx (ZIP) package")
         payload = data
         label = name or "presentation.pptx"
