@@ -27,6 +27,7 @@ _MIN_TITLE_BAND_EMU = 600_000
 _BULLET_PREFIXES = ("▶", "-", "*", "√")
 _MULTI_LEVEL_NUMBER = re.compile(r"^\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?\s+")
 _SINGLE_NUMBER = re.compile(r"^\d+\s*\.\s+")
+_LIST_LINE = re.compile(r"^\s*(?:\d+\.|[-*+])\s")
 _ANY_NUMBER_PREFIX = re.compile(r"^\d+(?:\s*\.\s*\d+)*\s*\.?\s+")
 _NUMBERED_HEADING = re.compile(r"^(?:\d+\s*\.\s*\d+(?:\s*\.\s*\d+)*\s*\.?|\d+\s*\.)\s+")
 _NUMBER_MARKER = re.compile(r"(?:^|\s)\d+\s*\.\s+")
@@ -291,6 +292,10 @@ class HeadingDetector:
                     )
                     heading_source = "numbering" if numbered else "font"
 
+        list_items = sum(1 for line in shape.markdown.splitlines() if _LIST_LINE.match(line))
+        if shape.has_list and list_items >= 2 and not title_like:
+            # A list of several items is content, even when its first item is numbered.
+            candidate = False
         if not title_like:
             plain = _collapse(shape.plain)
             if len(_NUMBER_MARKER.findall(plain)) >= 2:

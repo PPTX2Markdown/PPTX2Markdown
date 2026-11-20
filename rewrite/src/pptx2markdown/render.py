@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from typing import Literal
 
@@ -64,7 +65,13 @@ def _resolve_embedded_assets(
     for asset_id in asset_ids:
         location = _resolve_asset(asset_id, resolver, asset_mode)
         token = f"asset://{asset_id}"
+        if location is None:
+            # An omitted picture leaves no empty "![alt]()" behind.
+            image = re.compile(r"!\[(?:\\.|[^\]\\])*\]\(" + re.escape(token) + r"\)")
+            rendered = image.sub("", rendered)
         rendered = rendered.replace(token, location or "")
+    rendered = re.sub(r"(?:<br>){2,}", "<br>", rendered)
+    rendered = re.sub(r"(\|\s*)<br>|<br>(\s*\|)", r"\1\2", rendered)
     return rendered.strip()
 
 
