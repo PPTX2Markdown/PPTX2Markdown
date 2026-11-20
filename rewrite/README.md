@@ -260,6 +260,7 @@ result = pptx2markdown.convert(
 ```bash
 pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
+pptx2markdown decks/*.pptx --jobs 0   # one worker process per CPU
 pptx2markdown deck.pptx --output-format json
 pptx2markdown deck.pptx --output-format chunks --max-chunk-chars 2000
 pptx2markdown deck.pptx --merged-cells blank

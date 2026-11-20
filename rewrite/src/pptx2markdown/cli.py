@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Sequence
 
@@ -37,6 +38,13 @@ def _parser() -> argparse.ArgumentParser:
         "--max-chunk-chars",
         type=int,
         help="With --output-format chunks, split slides longer than this at block boundaries",
+    )
+    parser.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=1,
+        help="Convert this many decks at once in worker processes (0: one per CPU)",
     )
     parser.add_argument(
         "--no-assets",
@@ -242,6 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_chunk_chars=args.max_chunk_chars,
         ppt_converter=args.ppt_converter,
         vector_images=args.vector_images,
+        jobs=args.jobs if args.jobs > 0 else (os.cpu_count() or 1),
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

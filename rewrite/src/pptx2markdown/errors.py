@@ -29,8 +29,19 @@ class PresentationParseError(PPTX2MarkdownError):
     ) -> None:
         self.path = Path(path)
         self.slide_number = slide_number
+        self.detail = message
         location = f"slide {slide_number}" if slide_number is not None else "presentation"
         super().__init__(f"{self.path}: {location} parse failed: {message}")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        # Rebuilt from its fields, so it crosses process boundaries (convert_many jobs).
+        return (_rebuild_parse_error, (type(self), self.path, self.detail, self.slide_number))
+
+
+def _rebuild_parse_error(
+    cls: type[PresentationParseError], path: Path, detail: str, slide_number: int | None
+) -> PresentationParseError:
+    return cls(path, detail, slide_number=slide_number)
 
 
 class AssetError(PPTX2MarkdownError):
