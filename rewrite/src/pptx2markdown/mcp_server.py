@@ -17,6 +17,7 @@ from .agent import document_view
 from .api import parse
 from .audit import audit
 from .chunks import slide_chunks
+from .model import ImageBlock
 from .presentation import ParsedPresentation
 from .recipe import Recipe, explain_recipe, recipe_json_schema
 from .review import review, review_data
@@ -28,13 +29,17 @@ Read a deck with convert_presentation: every block is preceded by a comment such
 `<!-- s3.b2 table -->` giving its id and kind. review_presentation lists the
 conversion decisions worth checking; each option carries a ready-made recipe rule.
 audit_presentation reports any text on the slides that the conversion lost.
+presentation_images shows pictures that have no description, so you can write
+description rules for them.
 To change the output (drop slides, set table header rows, turn text into a
 heading, describe an image), write a recipe (see recipe_schema), check it with
 check_recipe so every rule selects something, then pass it to convert_presentation
 or presentation_chunks. Recipes never change the source file."""
 
 
-def _open(path: str, recipe: dict[str, Any] | None) -> ParsedPresentation:
+def _open(
+    path: str, recipe: dict[str, Any] | None, *, include_assets: bool = False
+) -> ParsedPresentation:
     source = Path(path).expanduser()
     if source.suffix.casefold() != ".pptx":
         raise ValueError(f"not a .pptx file: {path}")
@@ -44,7 +49,7 @@ def _open(path: str, recipe: dict[str, Any] | None) -> ParsedPresentation:
         parsed_recipe = Recipe.model_validate(recipe) if recipe else None
     except ValidationError as exc:
         raise ValueError(f"invalid recipe: {exc}") from exc
-    return parse(source, include_assets=False, strict=False, recipe=parsed_recipe)
+    return parse(source, include_assets=include_assets, strict=False, recipe=parsed_recipe)
 
 
 def convert_presentation(path: str, recipe: dict[str, Any] | None = None) -> str:
@@ -129,6 +134,61 @@ def presentation_chunks(
         ]
 
 
+# Image formats a vision model reads; others (EMF/WMF) need --vector-images png first.
+_VIEWABLE = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def presentation_images(
+    path: str, block_ids: list[str] | None = None, max_images: int = 8
+) -> list[Any]:
+    """The pictures that need a description, each after a line with its block id.
+
+    Look at each picture and its slide, then describe it with a recipe rule such as
+    {"target": "s3.b2", "description": "Bar chart: revenue doubled in 2024"}, or
+    {"target": "s3.b2", "exclude": true} for decoration, and pass the recipe to
+    convert_presentation or presentation_chunks.
+
+    Args:
+        path: Local path to the .pptx file.
+        block_ids: Image block ids to show; by default those without a description.
+        max_images: At most this many pictures per call.
+    """
+
+    from mcp.server.mcpserver import Image
+
+    with _open(path, None, include_assets=True) as presentation:
+        document = presentation.document
+        wanted = (
+            set(block_ids)
+            if block_ids is not None
+            else {item.target for item in review(document) if item.topic == "image-description"}
+        )
+        content: list[Any] = []
+        skipped: list[str] = []
+        for slide in document.slides:
+            for block in slide.blocks:
+                if not isinstance(block, ImageBlock) or block.id not in wanted:
+                    continue
+                asset = presentation.assets.descriptor(block.asset_id)
+                if asset.media_type not in _VIEWABLE or asset.size > _MAX_IMAGE_BYTES:
+                    skipped.append(f"{block.id} ({asset.media_type}, {asset.size} bytes)")
+                    continue
+                if len(content) // 2 >= max_images:
+                    skipped.append(f"{block.id} (over max_images)")
+                    continue
+                content.append(f"{block.id} on slide {slide.page}: alt text {block.alt_text!r}")
+                content.append(
+                    Image(
+                        data=presentation.assets.read_bytes(block.asset_id),
+                        format=asset.media_type.split("/", 1)[1],
+                    )
+                )
+        if skipped:
+            content.append("Not shown: " + ", ".join(skipped))
+        return content or ["No picture needs a description."]
+
+
 def recipe_schema() -> dict[str, Any]:
     """The JSON Schema of a recipe, with the selector syntax and every rule action."""
 
@@ -141,6 +201,7 @@ TOOLS = (
     audit_presentation,
     check_recipe,
     presentation_chunks,
+    presentation_images,
     recipe_schema,
 )
 
@@ -156,7 +217,8 @@ def build_server():
         ) from exc
     server = MCPServer("pptx2markdown", instructions=INSTRUCTIONS)
     for tool in TOOLS:
-        server.add_tool(tool)
+        # Pictures go out as image content, which has no JSON form.
+        server.add_tool(tool, structured_output=False if tool is presentation_images else None)
     return server
 
 

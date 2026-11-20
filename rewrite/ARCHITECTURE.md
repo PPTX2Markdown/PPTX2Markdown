@@ -41,6 +41,9 @@ only:
 - `agent` (optional) only produces recipes: a request, review questions or an
   image go in, a validated recipe comes out, and `explain_recipe` checks that
   every rule selects something. The model never edits text or the parser.
+- `images.describe_images_with` is the model-neutral image loop: pictures and
+  their slide go to any describer function, rules come back. `agent` plugs Claude
+  into it; a local model or OCR engine plugs in the same way.
 
 Because tables keep their full grid (`rows`, merge spans, `merged_from`) and
 headings keep the signal that made them headings (`source`), a recipe can

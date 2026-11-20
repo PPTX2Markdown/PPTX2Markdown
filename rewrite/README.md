@@ -206,14 +206,31 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --ask "drop the appendix"` prints the drafted recipe as
 JSON for review; apply it with `--recipe`.
 
+Images can be described by any model, local or not, with no agent extra:
+`describe_images_with` hands each picture that needs a description to a function
+you supply, with the slide's Markdown for context, and returns a recipe. Nothing
+leaves the machine unless that function sends it.
+
+```python
+from pptx2markdown import ImageDescription, describe_images_with
+
+def describe(request):  # request.data, .media_type, .alt_text, .slide_markdown
+    text = my_local_vision_model(request.data, context=request.slide_markdown)
+    return ImageDescription(description=text)
+
+with pptx2markdown.parse("deck.pptx") as presentation:
+    presentation.apply(describe_images_with(presentation, describe))
+```
+
 ### MCP server
 
 `pip install "pptx2markdown[mcp]"` adds `pptx2markdown-mcp`, a Model Context
 Protocol server (stdio) so an agent such as Claude can run the recipe workflow
 itself: `convert_presentation` (Markdown with block ids, optionally with a
 recipe applied), `review_presentation`, `audit_presentation` (text the
-conversion lost), `check_recipe` (what each rule selects), `presentation_chunks`
-and `recipe_schema`. It reads local `.pptx` files and
+conversion lost), `presentation_images` (pictures without a description, as
+images, so the host model can describe them in a recipe), `check_recipe` (what
+each rule selects), `presentation_chunks` and `recipe_schema`. It reads local `.pptx` files and
 writes nothing.
 
 ```bash

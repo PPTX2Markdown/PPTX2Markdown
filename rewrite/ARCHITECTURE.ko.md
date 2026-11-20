@@ -41,6 +41,9 @@ transactional bundle writer
 - `agent`(선택)는 레시피만 만듭니다. 요청·검토 질문·이미지를 받아 검증된 레시피를
   내놓고, `explain_recipe`로 모든 규칙이 무언가를 고르는지 확인합니다. 모델은
   본문이나 parser를 고치지 않습니다.
+- `images.describe_images_with`는 모델에 묶이지 않은 이미지 루프입니다. 그림과
+  슬라이드를 아무 설명 함수에 넘기고 규칙을 받습니다. `agent`는 여기에 Claude를
+  끼우며, 로컬 모델이나 OCR 엔진도 같은 방식으로 끼웁니다.
 
 표는 전체 격자(`rows`, 병합 범위, `merged_from`)를, 제목은 제목이 된 근거
 (`source`)를 남기므로, 레시피는 패키지를 다시 파싱하지 않고 블록을 다시
