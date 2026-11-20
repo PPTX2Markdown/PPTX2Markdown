@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterable, Literal
@@ -154,8 +156,16 @@ def convert_many(
     max_chunk_chars: int | None = None,
     ppt_converter: PptConverter = "none",
     vector_images: VectorImages = "keep",
+    jobs: int = 1,
 ) -> BatchConversionResult:
-    """Convert inputs independently and preserve successful bundles."""
+    """Convert inputs independently and preserve successful bundles.
+
+    ``jobs`` greater than 1 converts that many decks at once in worker processes;
+    bundle names and the order of results are the same as with one job.
+    """
+
+    if jobs < 1:
+        raise ValueError("jobs must be at least 1")
 
     sources = [Path(raw_path).expanduser() for raw_path in paths]
     stem_counts: dict[str, int] = {}
@@ -164,33 +174,54 @@ def convert_many(
         key = stem.casefold()
         stem_counts[key] = stem_counts.get(key, 0) + 1
 
-    succeeded: list[SaveResult] = []
-    failed: list[ConversionFailure] = []
+    options = {
+        "output_dir": output_dir,
+        "output_format": output_format,
+        "assets": assets,
+        "overwrite": overwrite,
+        "strict": strict,
+        "merged_cells": merged_cells,
+        "recipe": recipe,
+        "max_chunk_chars": max_chunk_chars,
+        "ppt_converter": ppt_converter,
+        "vector_images": vector_images,
+    }
+    # Bundle names are settled up front, so they never depend on which job ends first.
+    outcomes: list[SaveResult | ConversionFailure | tuple[Path, str]] = []
     used_bundle_names: dict[str, int] = {}
     for source in sources:
         try:
             stem = safe_basename(source.stem, fallback="presentation")
             if stem_counts[stem.casefold()] > 1:
                 stem = f"{stem}-{_source_hash_prefix(source)}"
-            occurrence = used_bundle_names.get(stem.casefold(), 0) + 1
-            used_bundle_names[stem.casefold()] = occurrence
-            bundle_name = stem if occurrence == 1 else f"{stem}-{occurrence}"
-            succeeded.append(
-                convert(
-                    source,
-                    output_dir=output_dir,
-                    bundle_name=bundle_name,
-                    output_format=output_format,
-                    assets=assets,
-                    overwrite=overwrite,
-                    strict=strict,
-                    merged_cells=merged_cells,
-                    recipe=recipe,
-                    max_chunk_chars=max_chunk_chars,
-                    ppt_converter=ppt_converter,
-                    vector_images=vector_images,
-                )
-            )
-        except (PPTX2MarkdownError, OSError, ValueError) as exc:
-            failed.append(ConversionFailure(source=source, error=exc))
-    return BatchConversionResult(tuple(succeeded), tuple(failed))
+        except OSError as exc:
+            outcomes.append(ConversionFailure(source=source, error=exc))
+            continue
+        occurrence = used_bundle_names.get(stem.casefold(), 0) + 1
+        used_bundle_names[stem.casefold()] = occurrence
+        outcomes.append((source, stem if occurrence == 1 else f"{stem}-{occurrence}"))
+
+    def run(source: Path, bundle_name: str) -> SaveResult:
+        return convert(source, bundle_name=bundle_name, **options)  # type: ignore[arg-type]
+
+    pending = [(index, item) for index, item in enumerate(outcomes) if isinstance(item, tuple)]
+    if jobs == 1 or len(pending) <= 1:
+        for index, (source, bundle_name) in pending:
+            try:
+                outcomes[index] = run(source, bundle_name)
+            except (PPTX2MarkdownError, OSError, ValueError) as exc:
+                outcomes[index] = ConversionFailure(source=source, error=exc)
+    else:
+        with ProcessPoolExecutor(max_workers=min(jobs, len(pending))) as pool:
+            futures = {
+                index: pool.submit(convert, source, bundle_name=bundle_name, **options)
+                for index, (source, bundle_name) in pending
+            }
+            for index, (source, _) in pending:
+                try:
+                    outcomes[index] = futures[index].result()
+                except (PPTX2MarkdownError, OSError, ValueError, BrokenProcessPool) as exc:
+                    outcomes[index] = ConversionFailure(source=source, error=exc)
+    succeeded = tuple(item for item in outcomes if isinstance(item, SaveResult))
+    failed = tuple(item for item in outcomes if isinstance(item, ConversionFailure))
+    return BatchConversionResult(succeeded, failed)
