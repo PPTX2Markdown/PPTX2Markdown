@@ -246,6 +246,25 @@ class _TemplatePart:
         ]
         return matches[0] if len(matches) == 1 else None
 
+    def match_type(self, placeholder_type: str) -> ET.Element | None:
+        """The master placeholder a layout placeholder inherits from: by type, never idx.
+
+        A master has one placeholder per kind (title, body, date, footer, number), and
+        its idx values mean nothing to the layout: a content placeholder with idx 2 on
+        a layout is not the master's date placeholder that happens to have idx 2.
+        """
+
+        wanted = _MASTER_TYPES.get(placeholder_type, placeholder_type)
+        for child in self.placeholders.values():
+            found = _placeholder_type(placeholder_element(child)) or _DEFAULT_TYPE
+            if _MASTER_TYPES.get(found, found) == wanted:
+                return child
+        return None
+
+
+# The master placeholder kind each placeholder type takes its position and style from.
+_MASTER_TYPES = {"ctrTitle": "title", "subTitle": "body", "obj": "body"}
+
 
 def _placeholder_type(placeholder: ET.Element | None) -> str | None:
     if placeholder is None:
@@ -288,7 +307,7 @@ class SlideTemplate:
                 else slide_type
             )
             if self._master is not None:
-                master_shape = self._master.match(idx, master_type)
+                master_shape = self._master.match_type(master_type)
             chain = (placeholder, layout_placeholder, placeholder_element(master_shape))
             placeholder_type = next(
                 (

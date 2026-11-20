@@ -161,5 +161,54 @@ class InheritanceTests(unittest.TestCase):
         self.assertEqual({block.source_part for block in blocks}, {"slide", "layout"})
 
 
+class MasterPlaceholderMatchTests(unittest.TestCase):
+    def test_layout_content_placeholder_does_not_inherit_the_master_date_by_idx(self) -> None:
+        # The layout's second content placeholder has idx 2, as has the master's date.
+        master = part(
+            "sldMaster",
+            sp(2, "", ph='<p:ph type="title"/>', xfrm=xfrm(0, 0, 8_000_000, 900_000))
+            + sp(
+                3,
+                "",
+                ph='<p:ph type="body" idx="1"/>',
+                xfrm=xfrm(0, 1_000_000, 8_000_000, 4_000_000),
+            )
+            + sp(
+                4,
+                "",
+                ph='<p:ph type="dt" sz="half" idx="2"/>',
+                xfrm=xfrm(0, 6_000_000, 2_000_000, 300_000),
+            ),
+        )
+        layout = part(
+            "sldLayout",
+            sp(
+                2,
+                "",
+                ph='<p:ph sz="half" idx="2"/>',
+                xfrm=xfrm(0, 1_000_000, 4_000_000, 4_000_000),
+            ),
+        )
+        slide = part(
+            "sld",
+            sp(
+                5,
+                para("Agenda item"),
+                ph='<p:ph sz="half" idx="2"/>',
+                xfrm=xfrm(0, 1_000_000, 4_000_000, 4_000_000),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_templated_pptx(
+                Path(directory) / "deck.pptx",
+                slide_xml=slide,
+                layout_xml=layout,
+                master_xml=master,
+            )
+            with pptx2markdown.parse(source) as presentation:
+                blocks = presentation.document.slides[0].blocks
+        self.assertEqual([getattr(block, "text", None) for block in blocks], ["Agenda item"])
+
+
 if __name__ == "__main__":
     unittest.main()
