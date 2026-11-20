@@ -6,7 +6,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 import pptx2markdown
-from pptx2markdown.inline import finalize, finalize_heading, markup
+from pptx2markdown.inline import emphasis, finalize, finalize_heading, markup
 from pptx2markdown.model import ListBlock, TextBlock
 from pptx2markdown.render import render_presentation_markdown
 
@@ -48,6 +48,13 @@ class FinalizeTests(unittest.TestCase):
     def test_generated_markup_is_kept_verbatim(self) -> None:
         text = f"{markup('**')}bold *x*{markup('**')} {markup('$a_1$')}"
         self.assertEqual(finalize(text), r"**bold \*x\*** $a_1$")
+
+    def test_emphasis_a_renderer_would_print_literally_is_dropped(self) -> None:
+        bold = lambda text: emphasis(text, bold=True, italic=False)  # noqa: E731
+        self.assertEqual(finalize(bold("중첩된(nested)") + "테이블"), "중첩된(nested)테이블")
+        self.assertEqual(finalize("셀 " + bold("(merged)") + "과"), "셀 (merged)과")
+        self.assertEqual(finalize("(" + bold("x") + ")"), "(**x**)")
+        self.assertEqual(finalize(bold("품질 문제") + "로"), "**품질 문제**로")
 
     def test_each_line_is_checked_for_block_starts(self) -> None:
         self.assertEqual(finalize("intro\n- dash\n1. one"), "intro\n\\- dash\n1\\. one")

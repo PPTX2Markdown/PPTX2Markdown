@@ -244,6 +244,36 @@ OOXML 압축 해제 단계에서는 경로 탈출, 링크, 암호화된 entry, r
 `--convert-vector-images`도 내장 EMF/WMF asset 변환을 위해 LibreOffice를
 실행합니다.
 
+## 차세대 엔진(미리 보기)
+
+[`rewrite/`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/rewrite/README.ko.md)는 이 릴리스와 나란히 개발 중인 다음 엔진으로,
+모든 pull request에서 현재 릴리스와 비교 검사합니다(rewrite가 뒤처지면 CI가
+실패하는 parity 하네스). 아직 배포하지 않았습니다. 정적이고 결정적인 파이프라인은
+그대로 두고 다음을 더합니다.
+
+- **깨끗한 Markdown** — 직접 입력한 `# x`, `<tag>`, `[x](y)`는 글자 그대로 두고,
+  굵게·기울임은 유지하며, 링크와 이미지 텍스트를 이스케이프합니다.
+- **구조화된 표** — JSON에 병합 범위가 포함된 전체 셀 격자를 담고, 병합 값은
+  정책에 따라 채우거나 비우며, 표 제목은 표 위에 씁니다.
+- **레시피** — 모든 블록에 id(`s3.b2`)가 있고, selector와 동작으로 이루어진 JSON
+  레시피(부록 빼기, 이 표는 머리글 두 줄, 저 이미지 설명 붙이기)로 파서를
+  건드리지 않고 변환 결과를 조정합니다.
+- **검토** — 변환기가 가장 확신하지 못한 결정을, 답이 곧 레시피 규칙인 질문으로
+  내놓습니다. 선택 설치하는 에이전트(`pptx2markdown[agent]`)가 질문에 답하고,
+  평범한 요청으로 레시피를 쓰고, 이미지를 설명할 수 있습니다.
+- **검색에 바로 쓰는 출력** — 인용 metadata가 붙은 슬라이드 단위 청크를 API나
+  JSON Lines 번들로 내놓고, bytes나 스트림에서 바로 파싱합니다.
+
+[기능 벤치마크](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/benchmarks/README.ko.md)에서 각 변환기가 덱의 무엇을 보존하는지:
+
+| | pptx2markdown (rewrite) | anydoc 0.2.5 | MarkItDown 0.1.9 |
+| --- | :---: | :---: | :---: |
+| 보존한 기능 (17개 중) | **17** | 11 | 7 |
+| 300장 덱 | 0.23초 | **0.012초** | 0.32초 |
+
+기능 항목은 발표 자료의 구조를 기준으로 골랐습니다. 그 의미는 벤치마크 README를
+참고하세요.
+
 ## 문서
 
 - [출력 스키마](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.ko.md)

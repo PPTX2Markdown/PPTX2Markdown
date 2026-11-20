@@ -7,7 +7,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import BinaryIO, Literal
 
 from .assets import AssetLimits, AssetStore, safe_basename
 from .attachments import unpack_ole
@@ -126,7 +126,7 @@ class ParsedComponents:
 
     document: PresentationDocument
     assets: AssetStore
-    source_path: Path
+    source_path: Path | None
 
 
 @dataclass(frozen=True)
@@ -811,15 +811,19 @@ def _table_overlays(shapes: list[_Shape]) -> dict[int, list[_Shape]]:
 
 
 class _PresentationParser:
-    def __init__(self, source: Path, options: ParseOptions) -> None:
+    def __init__(
+        self, source: Path | bytes, options: ParseOptions, *, name: str | None = None
+    ) -> None:
         self.source = source
+        self.name = name or (source.name if isinstance(source, Path) else "presentation.pptx")
+        self.source_path = source if isinstance(source, Path) else None
         self.options = options
         self.assets = AssetStore(options.asset_limits)
         self.warnings = _WarningCollector()
 
     def parse(self) -> ParsedComponents:
         try:
-            with OOXMLPackage(self.source, self.options.package_limits) as package:
+            with OOXMLPackage(self.source, self.options.package_limits, name=self.name) as package:
                 templates = TemplateResolver(package)
                 slides: list[SlideDocument] = []
                 for entry in package.slide_entries():
@@ -828,7 +832,7 @@ class _PresentationParser:
                     except Exception as exc:
                         if self.options.strict:
                             raise PresentationParseError(
-                                self.source,
+                                self.name,
                                 str(exc),
                                 slide_number=entry.page,
                             ) from exc
@@ -843,14 +847,14 @@ class _PresentationParser:
 
                 document = PresentationDocument(
                     source=SourceDocument(
-                        name=self.source.name,
+                        name=safe_basename(self.name, fallback="presentation.pptx"),
                         sha256=package.source_sha256,
                     ),
                     assets=self.assets.descriptors(),
                     slides=tuple(slides),
                     warnings=self.warnings.values(),
                 )
-                return ParsedComponents(document, self.assets, self.source)
+                return ParsedComponents(document, self.assets, self.source_path)
         except Exception:
             self.assets.close()
             raise
@@ -1568,21 +1572,46 @@ class _PresentationParser:
 
 
 def parse_components(
-    path: str | Path,
+    source: str | Path | bytes | BinaryIO,
     *,
     options: ParseOptions | None = None,
+    name: str | None = None,
 ) -> ParsedComponents:
-    """Parse one local PPTX into canonical components."""
+    """Parse one PPTX, from a local path or in memory, into canonical components.
 
-    source = Path(path).expanduser()
-    if source.suffix.casefold() != ".pptx":
-        raise UnsupportedPresentationError("only local .pptx files are supported")
-    if not source.is_file():
-        raise FileNotFoundError(source)
-    source = source.resolve()
+    ``source`` may be a path, the file's bytes, or a binary stream (read to its end,
+    up to ``PackageLimits.max_package_bytes``). ``name`` is the file name recorded in
+    the document for in-memory input.
+    """
+
+    options = options or ParseOptions()
+    if isinstance(source, (str, Path)):
+        path = Path(source).expanduser()
+        if path.suffix.casefold() != ".pptx":
+            raise UnsupportedPresentationError("only .pptx files are supported")
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        payload: Path | bytes = path.resolve()
+        label = name or path.name
+    else:
+        limit = options.package_limits.max_package_bytes
+        if isinstance(source, (bytes, bytearray, memoryview)):
+            data = bytes(source)
+        elif hasattr(source, "read"):
+            data = source.read(limit + 1)
+            if not isinstance(data, bytes):
+                raise TypeError("the stream must be opened in binary mode")
+        else:
+            raise TypeError("source must be a path, bytes or a binary stream")
+        if len(data) > limit:
+            raise PackageSecurityError(f"presentation exceeds {limit} bytes")
+        if not data.startswith(b"PK"):
+            raise UnsupportedPresentationError("input is not a .pptx (ZIP) package")
+        payload = data
+        label = name or "presentation.pptx"
     try:
-        return _PresentationParser(source, options or ParseOptions()).parse()
+        return _PresentationParser(payload, options, name=label).parse()
     except (PresentationParseError, PackageSecurityError, AssetLimitError):
         raise
     except Exception as exc:
-        raise PresentationParseError(source, str(exc)) from exc
+        raise PresentationParseError(label, str(exc)) from exc
