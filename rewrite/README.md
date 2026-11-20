@@ -178,6 +178,25 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --ask "drop the appendix"` prints the drafted recipe as
 JSON for review; apply it with `--recipe`.
 
+### MCP server
+
+`pip install "pptx2markdown[mcp]"` adds `pptx2markdown-mcp`, a Model Context
+Protocol server (stdio) so an agent such as Claude can run the recipe workflow
+itself: `convert_presentation` (Markdown with block ids, optionally with a
+recipe applied), `review_presentation`, `check_recipe` (what each rule selects),
+`presentation_chunks` and `recipe_schema`. It reads local `.pptx` files and
+writes nothing.
+
+```bash
+claude mcp add pptx2markdown -- pptx2markdown-mcp
+```
+
+or, in an MCP client configuration:
+
+```json
+{"mcpServers": {"pptx2markdown": {"command": "pptx2markdown-mcp"}}}
+```
+
 Use `convert()` for parse-and-save:
 
 ```python
