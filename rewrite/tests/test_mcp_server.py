@@ -71,6 +71,20 @@ class ServerTests(unittest.TestCase):
         text = result.content[0].text
         self.assertIn("rules", json.loads(text)["properties"])
 
+    def test_workflow_prompts_are_registered_with_the_path(self) -> None:
+        server = mcp_server.build_server()
+        prompts = asyncio.run(server.list_prompts())
+        self.assertEqual(
+            sorted(prompt.name for prompt in prompts),
+            sorted(prompt.__name__ for prompt in mcp_server.PROMPTS),
+        )
+        result = asyncio.run(
+            server.get_prompt("prepare_for_retrieval", {"path": "/decks/q3.pptx"})
+        )
+        text = result.messages[0].content.text
+        self.assertIn("/decks/q3.pptx", text)
+        self.assertIn("audit_presentation", text)
+
     def test_pictures_needing_a_description_are_returned_as_images(self) -> None:
         from .pptx_factory import SLIDE
 

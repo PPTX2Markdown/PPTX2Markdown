@@ -230,7 +230,10 @@ itself: `convert_presentation` (Markdown with block ids, optionally with a
 recipe applied), `review_presentation`, `audit_presentation` (text the
 conversion lost), `presentation_images` (pictures without a description, as
 images, so the host model can describe them in a recipe), `check_recipe` (what
-each rule selects), `presentation_chunks` and `recipe_schema`. It reads local `.pptx` files and
+each rule selects), `presentation_chunks` and `recipe_schema`. Two prompts
+walk a host model through the workflow: `prepare_for_retrieval` (audit, answer the
+review, describe pictures, check the recipe, chunk) and `apply_request` (turn a
+plain-language request into a checked recipe). It reads local `.pptx` files and
 writes nothing.
 
 ```bash

@@ -225,7 +225,9 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 적용 가능), `review_presentation`, `audit_presentation`(변환에서 빠진 텍스트),
 `presentation_images`(설명 없는 그림을 이미지로 돌려주어 호스트 모델이 레시피로 설명을
 달 수 있게 함), `check_recipe`(규칙마다 고르는 대상), `presentation_chunks`,
-`recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
+`recipe_schema`입니다. 두 프롬프트가 호스트 모델을 작업 흐름으로 안내합니다.
+`prepare_for_retrieval`(감사, 검토 답하기, 그림 설명, 레시피 확인, 청크)과
+`apply_request`(자연어 요청을 확인된 레시피로)입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
 쓰지 않습니다.
 
 ```bash
