@@ -20,6 +20,7 @@ PUBLIC_FLAGS = (
     "--work-dir",
     "--output-format",
     "--headings",
+    "--merged-cells",
     "--placeholder-inheritance",
     "--inherited-shapes",
     "--ppt-converter",
