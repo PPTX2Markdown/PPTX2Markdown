@@ -22,10 +22,13 @@ The rewrite separates four responsibilities:
 - chart2md 0.1.0 or later
 - smartart2md 0.1.1 or later
 - olefile 0.47 or later
-- local `.pptx` input
+- local `.pptx` input; legacy `.ppt` only when asked for, through LibreOffice
 
-There is no OCR, VLM, API key, cloud inference, PowerPoint automation or
-LibreOffice dependency in the parsing path; the optional agent is a separate layer.
+There is no OCR, VLM, API key, cloud inference or PowerPoint automation in the
+parsing path; the optional agent is a separate layer. A `.ppt` file is converted
+only with `ppt_converter="libreoffice"` (`--ppt-converter libreoffice`), which runs
+LibreOffice headless in temporary directories that are removed afterwards
+(`SOFFICE_PATH` selects the program).
 
 ## Python API
 
@@ -240,6 +243,7 @@ pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
 pptx2markdown deck.pptx --audit
+pptx2markdown old-deck.ppt --ppt-converter libreoffice
 pptx2markdown deck.pptx --ask "drop the appendix" > recipe.json
 ```
 

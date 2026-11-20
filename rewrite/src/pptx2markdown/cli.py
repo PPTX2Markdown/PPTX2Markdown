@@ -18,7 +18,9 @@ def _parser() -> argparse.ArgumentParser:
         prog="pptx2markdown",
         description="Convert PPTX presentations into portable Markdown or JSON bundles.",
     )
-    parser.add_argument("inputs", nargs="*", help="Local .pptx files")
+    parser.add_argument(
+        "inputs", nargs="*", help="Local .pptx files (.ppt with --ppt-converter libreoffice)"
+    )
     parser.add_argument(
         "-o",
         "--output-dir",
@@ -90,6 +92,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Print the JSON Schema of a recipe and exit",
     )
     parser.add_argument(
+        "--ppt-converter",
+        choices=("none", "libreoffice"),
+        default="none",
+        help="libreoffice converts legacy .ppt inputs to .pptx with LibreOffice first",
+    )
+    parser.add_argument(
         "--tolerant",
         action="store_true",
         help="Keep other slides when one slide cannot be parsed",
@@ -113,6 +121,7 @@ def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
                 strict=not args.tolerant,
                 merged_cells=args.merged_cells,
                 recipe=recipe,
+                ppt_converter=args.ppt_converter,
             ) as presentation:
                 report.append(
                     {
@@ -131,19 +140,25 @@ def _print_audit(args: argparse.Namespace) -> int:
     from .api import parse
     from .audit import audit
     from .errors import PPTX2MarkdownError
+    from .ppt import ppt_to_pptx
 
     report: list[dict[str, object]] = []
     failed = False
     for value in args.inputs:
         try:
+            source: str | bytes = value
+            if Path(value).suffix.casefold() == ".ppt" and args.ppt_converter == "libreoffice":
+                source = ppt_to_pptx(Path(value))
             # The converter is audited, not a recipe: recipes drop content on purpose.
             with parse(
-                value,
+                source,
+                name=f"{Path(value).stem}.pptx",
                 include_assets=False,
                 strict=not args.tolerant,
                 merged_cells=args.merged_cells,
+                ppt_converter=args.ppt_converter,
             ) as presentation:
-                result = audit(value, presentation.document)
+                result = audit(source, presentation.document)
             failed = failed or not result.ok
             report.append({"source": Path(value).name, **result.to_data()})
         except (PPTX2MarkdownError, OSError, ValueError) as exc:
@@ -170,6 +185,7 @@ def _print_draft(args: argparse.Namespace, recipe: Recipe | None) -> int:
             strict=not args.tolerant,
             merged_cells=args.merged_cells,
             recipe=recipe,
+            ppt_converter=args.ppt_converter,
         ) as presentation:
             draft = draft_recipe(presentation.document, args.ask)
     except (PPTX2MarkdownError, OSError, ValueError) as exc:
@@ -218,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         merged_cells=args.merged_cells,
         recipe=recipe,
         max_chunk_chars=args.max_chunk_chars,
+        ppt_converter=args.ppt_converter,
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

@@ -941,6 +941,9 @@ class _PresentationParser:
             )
             if placeholder_type in {"hdr", "ftr", "dt", "sldNum"}:
                 continue
+            # LibreOffice writes the page number as a plain text box on the notes page.
+            if placeholder is None and shape_text(shape).strip().isdigit():
+                continue
             for paragraph in shape.findall("./p:txBody/a:p", NS):
                 text = "".join(node.text or "" for node in paragraph.findall(".//a:t", NS))
                 text = re.sub(r"\s+", " ", html.unescape(text)).strip()

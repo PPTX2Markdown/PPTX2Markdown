@@ -16,7 +16,7 @@ rewrite는 같은 패키지 이름 `pptx2markdown`으로 배포되므로, 업그
 | `--work-dir` | 필요 없음: 번들 밖에는 아무것도 쓰지 않음 |
 | `--placeholder-inheritance` | 항상 켜짐(`style`): placeholder가 위치·크기·글머리를 상속 |
 | `--inherited-shapes` | 항상 `visible`: 레이아웃·마스터에 그려진 텍스트와 그림을 그룹 안까지 유지. 슬라이드를 덮는 템플릿 그림은 배경으로 보고 제외(레시피 `template_pictures: false`는 템플릿 그림 전체 제외) |
-| `.ppt` 입력, `--ppt-converter` | 지원하지 않음: 먼저 `.pptx`로 저장 |
+| `.ppt` 입력, `--ppt-converter auto\|powerpoint\|libreoffice` | 명시적으로 켤 때만: `--ppt-converter libreoffice`(기본값 `none`). PowerPoint 자동화는 지원하지 않음 |
 | `--convert-vector-images` | 지원하지 않음: EMF/WMF 이미지는 그대로 유지 |
 | — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--audit`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |
 

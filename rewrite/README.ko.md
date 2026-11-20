@@ -21,10 +21,12 @@
 - chart2md 0.1.0 이상
 - smartart2md 0.1.1 이상
 - olefile 0.47 이상
-- 로컬 `.pptx` 입력
+- 로컬 `.pptx` 입력. 레거시 `.ppt`는 요청할 때만 LibreOffice로 변환
 
-파싱 경로에는 OCR, VLM, API key, cloud inference, PowerPoint 자동화,
-LibreOffice 의존성이 없습니다.
+파싱 경로에는 OCR, VLM, API key, cloud inference, PowerPoint 자동화가 없습니다.
+`.ppt` 파일은 `ppt_converter="libreoffice"`(`--ppt-converter libreoffice`)를 줄 때만
+변환하며, LibreOffice를 headless로 실행하고 작업 후 지워지는 임시 디렉터리만
+사용합니다(`SOFFICE_PATH`로 실행 파일 지정).
 
 ## Python API
 
@@ -233,6 +235,7 @@ pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
 pptx2markdown deck.pptx --audit
+pptx2markdown old-deck.ppt --ppt-converter libreoffice
 pptx2markdown deck.pptx --ask "부록은 빼줘" > recipe.json
 ```
 
