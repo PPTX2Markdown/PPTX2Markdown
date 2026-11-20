@@ -8,6 +8,7 @@ from .api import (
     parse,
 )
 from .assets import AssetLimits, AssetStore
+from .audit import AuditReport, TextLoss, audit
 from .chunks import Chunk, slide_chunks
 from .errors import (
     AssetError,
@@ -64,6 +65,7 @@ __all__ = [
     "AssetStore",
     "AssetUnavailableError",
     "AttachmentBlock",
+    "AuditReport",
     "BatchConversionResult",
     "BoundingBox",
     "BundleWriteError",
@@ -97,9 +99,11 @@ __all__ = [
     "TableBlock",
     "TableCell",
     "TextBlock",
+    "TextLoss",
     "UnsupportedBlock",
     "UnsupportedPresentationError",
     "apply_recipe",
+    "audit",
     "convert",
     "convert_many",
     "explain_recipe",

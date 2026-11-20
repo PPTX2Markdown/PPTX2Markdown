@@ -149,6 +149,27 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --review` prints the same as JSON without writing
 bundles.
 
+### Audit
+
+A rule-based converter fails quietly: a shape it does not understand is simply
+missing from the output. `audit()` reads the slide XML again, without the
+parser's rules, and reports every piece of typed text that the document does not
+contain, with its slide and shape id, plus slides missing from the document.
+Text is compared as letters and digits, so escaping, emphasis, list markers and
+line breaks never count as loss; footer, date and slide-number placeholders and
+cells hidden by a merge are left out. Charts, SmartArt and equations are not
+audited.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    report = presentation.audit()
+    print(report.ok, report.coverage, report.losses)
+```
+
+`pptx2markdown deck.pptx --audit` prints the report as JSON without writing
+bundles and exits with 1 when text was lost. Content removed by a recipe would
+be reported too, so the CLI and MCP tool audit the conversion without one.
+
 ### Agent (optional)
 
 `pip install "pptx2markdown[agent]"` adds a language-model layer on top of
@@ -183,8 +204,9 @@ JSON for review; apply it with `--recipe`.
 `pip install "pptx2markdown[mcp]"` adds `pptx2markdown-mcp`, a Model Context
 Protocol server (stdio) so an agent such as Claude can run the recipe workflow
 itself: `convert_presentation` (Markdown with block ids, optionally with a
-recipe applied), `review_presentation`, `check_recipe` (what each rule selects),
-`presentation_chunks` and `recipe_schema`. It reads local `.pptx` files and
+recipe applied), `review_presentation`, `audit_presentation` (text the
+conversion lost), `check_recipe` (what each rule selects), `presentation_chunks`
+and `recipe_schema`. It reads local `.pptx` files and
 writes nothing.
 
 ```bash
@@ -217,6 +239,7 @@ pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --audit
 pptx2markdown deck.pptx --ask "drop the appendix" > recipe.json
 ```
 

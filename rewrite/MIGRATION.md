@@ -19,7 +19,7 @@ user of 0.1.x.
 | `--inherited-shapes` | always `visible`: text and pictures drawn on the layout or master are kept, inside groups too; a template picture covering the slide is background art and left out (recipe `template_pictures: false` drops all template pictures) |
 | `.ppt` input, `--ppt-converter` | not supported: save the deck as `.pptx` first |
 | `--convert-vector-images` | not supported: EMF/WMF images are kept as they are |
-| — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |
+| — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--audit`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |
 
 Inputs are named explicitly; running without inputs no longer converts every
 presentation in the current directory.

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from .agent import document_view
 from .api import parse
+from .audit import audit
 from .chunks import slide_chunks
 from .presentation import ParsedPresentation
 from .recipe import Recipe, explain_recipe, recipe_json_schema
@@ -26,6 +27,7 @@ Converts PowerPoint (.pptx) files to Markdown for reading and retrieval.
 Read a deck with convert_presentation: every block is preceded by a comment such as
 `<!-- s3.b2 table -->` giving its id and kind. review_presentation lists the
 conversion decisions worth checking; each option carries a ready-made recipe rule.
+audit_presentation reports any text on the slides that the conversion lost.
 To change the output (drop slides, set table header rows, turn text into a
 heading, describe an image), write a recipe (see recipe_schema), check it with
 check_recipe so every rule selects something, then pass it to convert_presentation
@@ -66,6 +68,21 @@ def review_presentation(path: str) -> list[dict[str, Any]]:
 
     with _open(path, None) as presentation:
         return review_data(review(presentation.document))
+
+
+def audit_presentation(path: str) -> dict[str, Any]:
+    """Check the conversion for text typed on the slides that it does not contain.
+
+    Returns coverage, slides missing from the conversion, and each lost piece of
+    text with its slide and shape id. Losses mean the converter dropped content:
+    read those slides with convert_presentation before relying on them.
+
+    Args:
+        path: Local path to the .pptx file.
+    """
+
+    with _open(path, None) as presentation:
+        return audit(presentation.source_path or path, presentation.document).to_data()
 
 
 def check_recipe(path: str, recipe: dict[str, Any]) -> list[dict[str, Any]]:
@@ -121,6 +138,7 @@ def recipe_schema() -> dict[str, Any]:
 TOOLS = (
     convert_presentation,
     review_presentation,
+    audit_presentation,
     check_recipe,
     presentation_chunks,
     recipe_schema,

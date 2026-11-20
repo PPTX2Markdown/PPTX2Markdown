@@ -12,6 +12,7 @@ from .model import PresentationDocument
 from .render import AssetResolver, render_presentation_json, render_presentation_markdown
 
 if TYPE_CHECKING:
+    from .audit import AuditReport
     from .recipe import Recipe
 
 
@@ -65,6 +66,19 @@ class ParsedPresentation:
             asset_mode=assets,
             block_ids=block_ids,
         )
+
+    def audit(self) -> "AuditReport":
+        """Text typed on the source slides that the document does not contain.
+
+        Needs the source file; for a presentation parsed from bytes, call
+        ``pptx2markdown.audit(data, document)``. Content a recipe removed is reported too.
+        """
+
+        from .audit import audit
+
+        if self.source_path is None:
+            raise ValueError("the presentation was not parsed from a file; pass its bytes")
+        return audit(self.source_path, self.document)
 
     def apply(self, recipe: "Recipe | Mapping[str, Any] | str") -> "ParsedPresentation":
         """Apply a recipe (model, mapping or JSON text) to the document in place."""

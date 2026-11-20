@@ -146,6 +146,25 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --review`는 번들을 쓰지 않고 같은 내용을 JSON으로
 출력합니다.
 
+### 감사(audit)
+
+규칙 기반 변환기는 조용히 실패합니다. 이해하지 못한 도형은 출력에서 그냥 빠집니다.
+`audit()`은 파서의 규칙을 거치지 않고 슬라이드 XML을 다시 읽어, 문서에 없는 입력
+텍스트를 슬라이드 번호와 도형 id와 함께 모두 보고하고, 문서에서 빠진 슬라이드도
+알려 줍니다. 텍스트는 글자와 숫자만 비교하므로 이스케이프, 강조, 목록 기호, 줄바꿈은
+손실로 치지 않습니다. 바닥글·날짜·슬라이드 번호 placeholder와 병합으로 가려진 셀은
+제외하며, 차트·SmartArt·수식은 감사하지 않습니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    report = presentation.audit()
+    print(report.ok, report.coverage, report.losses)
+```
+
+`pptx2markdown deck.pptx --audit`는 번들을 쓰지 않고 보고서를 JSON으로 출력하며,
+손실이 있으면 종료 코드 1을 돌려줍니다. 레시피가 지운 내용도 손실로 보이므로 CLI와
+MCP 도구는 레시피 없이 변환 결과를 감사합니다.
+
 ### 에이전트(선택)
 
 `pip install "pptx2markdown[agent]"`를 설치하면 레시피와 검토 위에 언어 모델
@@ -179,8 +198,8 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pip install "pptx2markdown[mcp]"`를 설치하면 MCP(Model Context Protocol) 서버
 `pptx2markdown-mcp`(stdio)가 추가되어, Claude 같은 에이전트가 레시피 작업 흐름을 직접
 수행할 수 있습니다. 도구는 `convert_presentation`(블록 id가 표시된 Markdown, 레시피
-적용 가능), `review_presentation`, `check_recipe`(규칙마다 고르는 대상),
-`presentation_chunks`, `recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
+적용 가능), `review_presentation`, `audit_presentation`(변환에서 빠진 텍스트),
+`check_recipe`(규칙마다 고르는 대상), `presentation_chunks`, `recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
 쓰지 않습니다.
 
 ```bash
@@ -213,6 +232,7 @@ pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --audit
 pptx2markdown deck.pptx --ask "부록은 빼줘" > recipe.json
 ```
 
