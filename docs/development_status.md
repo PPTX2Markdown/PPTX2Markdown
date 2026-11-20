@@ -71,7 +71,10 @@ CI dependency. See the [golden suite](../tests/fixtures/golden/README.md).
 `0.2.0.dev0`) built to replace `src/` once it covers the same content. It keeps
 the static pipeline and adds escaped inline Markdown with emphasis, structured
 tables, block ids with declarative recipes, a review of uncertain decisions, an
-optional agent and MCP server, slide chunks, and in-memory input. See
+optional agent and MCP server, slide chunks, and in-memory input. It also reads
+ISO Strict decks, audits every conversion for lost text (`--audit`), converts
+`.ppt` input and EMF/WMF images through LibreOffice when asked to, and describes
+images with any model (`describe_images_with`). See
 [rewrite/README.md](../rewrite/README.md) and
 [rewrite/ARCHITECTURE.md](../rewrite/ARCHITECTURE.md).
 
@@ -81,13 +84,23 @@ than `scripts/parity_baseline.json`; deliberate differences are set back to
 legacy behaviour through `scripts/parity_legacy_recipe.json`. On the repository
 fixtures 60 of 62 slides match; the two remaining differences are deliberate.
 
+On the local corpus (952 decks compared, 2,657 slides) the rewrite keeps 99.8% of
+legacy's words at 99.9% precision, and its audit finds no lost text in any of
+984 corpus, sample and fixture decks (20,641 text runs). Every deck it cannot
+open (fuzzed, encrypted or damaged files) fails in legacy as well. Most of the
+remaining per-shape differences are deliberate: paragraphs with only a level and
+no bullet are text, not lists; legacy turns numbered lists into headings;
+attachment names keep their spaces; template background pictures are left out.
+In the feature benchmark (`benchmarks/`) the rewrite passes 20 of 20 checks,
+anydoc 13 and MarkItDown 8.
+
 ## Latest verification baseline
 
 The following completed successfully on 2026-11-21:
 
 - Ruff lint and format checks for `src/`, `tests/`, `scripts/` and `rewrite/`
 - 127 legacy unit and regression tests, 17 golden PPTX files in both modes
-- about 150 rewrite tests on Python 3.12, 3.13 and 3.14
+- about 185 rewrite tests on Python 3.12, 3.13 and 3.14
 - legacy/rewrite parity gate (60/62 fixture slides)
 - GitHub Actions on Ubuntu, macOS and Windows
 
@@ -111,8 +124,9 @@ data and should not be opened automatically.
 
 1. Review `dev` and release the unreleased changes in CHANGELOG.md as `0.1.3`
    (merge `dev` into `main`, tag, publish).
-2. Decide when `rewrite/` replaces `src/` (for example: parity on the local
-   corpus, `.ppt` input policy, migration notes for JSON schema 2.0).
+2. Decide when `rewrite/` replaces `src/`. Corpus parity, `.ppt` input and
+   vector images are covered and MIGRATION.md lists the remaining differences;
+   what is left is a release decision (JSON schema 2.0 notice, version number).
 3. Make omml2latex run on Python 3.10/3.11 (one f-string with a backslash in
    its expression) to widen supported Python versions.
 

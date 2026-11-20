@@ -71,7 +71,10 @@ PyPI 구조 변경 전 source는 `archive-pre-pypi-restructure` 브랜치와
 패키지입니다(이름은 같은 `pptx2markdown`, 버전 `0.2.0.dev0`). 정적 파이프라인은
 그대로 두고, 강조를 포함한 이스케이프된 inline Markdown, 구조화된 표, 블록 id와
 선언적 레시피, 불확실한 결정의 검토, 선택 설치하는 에이전트와 MCP 서버, 슬라이드
-청크, 메모리 입력을 더합니다. [rewrite/README.ko.md](../rewrite/README.ko.md)와
+청크, 메모리 입력을 더합니다. ISO Strict 덱을 읽고, 모든 변환에서 빠진 텍스트를
+감사하며(`--audit`), 요청하면 `.ppt` 입력과 EMF/WMF 이미지를 LibreOffice로 변환하고,
+어떤 모델로든 이미지를 설명합니다(`describe_images_with`).
+[rewrite/README.ko.md](../rewrite/README.ko.md)와
 [rewrite/ARCHITECTURE.ko.md](../rewrite/ARCHITECTURE.ko.md)를 참고하세요.
 
 `scripts/parity.py`는 같은 덱을 두 엔진으로 변환해 도형 단위로 비교합니다(legacy가
@@ -79,13 +82,22 @@ PyPI 구조 변경 전 source는 `archive-pre-pypi-restructure` 브랜치와
 차이는 `scripts/parity_legacy_recipe.json` 레시피로 legacy 동작에 맞춰 비교합니다.
 저장소 픽스처에서는 62장 중 60장이 일치하며, 남은 두 장은 의도된 차이입니다.
 
+로컬 corpus(비교한 덱 952개, 슬라이드 2,657장)에서 rewrite는 legacy 단어의 99.8%를
+정밀도 99.9%로 유지하며, 감사 기능은 corpus·샘플·픽스처 덱 984개(텍스트 20,641개)
+어디에서도 빠진 텍스트를 찾지 않습니다. rewrite가 열지 못하는 덱(퍼징, 암호화, 손상
+파일)은 legacy에서도 모두 실패합니다. 남은 도형 단위 차이는 대부분 의도된 것입니다.
+글머리 없이 수준만 있는 문단은 목록이 아닌 텍스트로 두고, legacy는 번호 목록을
+제목으로 바꾸며, 첨부 이름은 공백을 유지하고, 템플릿 배경 그림은 제외합니다. 기능
+벤치마크(`benchmarks/`)에서 rewrite는 20개 검사를 모두 통과하고 anydoc은 13개,
+MarkItDown은 8개를 통과합니다.
+
 ## 최근 검증 기준선
 
 2026-11-21에 다음 검증을 모두 통과했습니다.
 
 - `src/`, `tests/`, `scripts/`, `rewrite/`의 Ruff lint 및 format 검사
 - legacy 단위·회귀 테스트 127개, 골든 PPTX 17개(두 모드)
-- Python 3.12, 3.13, 3.14에서 rewrite 테스트 약 150개
+- Python 3.12, 3.13, 3.14에서 rewrite 테스트 약 185개
 - legacy/rewrite parity 게이트(픽스처 60/62장)
 - Ubuntu, macOS, Windows GitHub Actions
 
@@ -109,8 +121,9 @@ PyPI 구조 변경 전 source는 `archive-pre-pypi-restructure` 브랜치와
 
 1. `dev`를 검토하고 CHANGELOG.md의 미출시 변경을 `0.1.3`으로 출시합니다(`dev`를
    `main`에 병합, 태그, 배포).
-2. `rewrite/`가 `src/`를 대체할 시점을 정합니다(예: 로컬 corpus parity, `.ppt` 입력
-   정책, JSON schema 2.0 이전 안내).
+2. `rewrite/`가 `src/`를 대체할 시점을 정합니다. corpus parity, `.ppt` 입력, 벡터
+   이미지는 갖춰졌고 MIGRATION.ko.md에 남은 차이가 정리되어 있으므로, 남은 것은
+   출시 결정(JSON schema 2.0 안내, 버전 번호)입니다.
 3. omml2latex가 Python 3.10/3.11에서 동작하도록 고쳐(식 부분에 백슬래시가 있는
    f-string 하나) 지원 Python 범위를 넓힙니다.
 
