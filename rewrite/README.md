@@ -96,6 +96,9 @@ moved without breaking embedded assets.
   and equations in the same shape stay separate typed blocks; a typed `▶` starts
   a list item, and a paragraph indented with typed spaces right after an item
   continues it
+- bold and italic runs as `**bold**`/`*italic*`; text, heading and list `text`
+  is escaped inline Markdown, so typed `# x`, `- x`, `<tag>` or `[x](y)` render
+  literally instead of becoming a heading, list, HTML or link
 - equations (OMML) as LaTeX via omml2latex
 - embedded images
 - embedded audio/video payloads

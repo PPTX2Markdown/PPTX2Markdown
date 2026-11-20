@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from .errors import AssetResolutionError
+from .inline import escape_text
 from .model import (
     AttachmentBlock,
     ChartBlock,
@@ -132,7 +133,7 @@ def render_presentation_markdown(
             if rendered:
                 parts.append(rendered)
         if slide.notes and slide.notes.strip():
-            parts.extend(["[Speaker_Notes]", slide.notes.strip()])
+            parts.extend(["[Speaker_Notes]", escape_text(slide.notes.strip())])
         slides.append("\n\n".join(parts))
     merged = "\n\n".join(slides).strip()
     return f"{merged}\n" if merged else ""

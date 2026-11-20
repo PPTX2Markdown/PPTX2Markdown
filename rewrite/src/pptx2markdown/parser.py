@@ -33,6 +33,15 @@ from .inheritance import (
     is_slide_number_only,
     shape_text,
 )
+from .inline import (
+    CLOSE,
+    OPEN,
+    emphasis,
+    finalize,
+    finalize_heading,
+    markup,
+    remove_markup,
+)
 from .model import (
     AttachmentBlock,
     BoundingBox,
@@ -323,22 +332,37 @@ def _relationship_target(
     return relationship.target if relationship.external else None
 
 
-def _run_markdown(run: ET.Element, relationships: dict[str, Relationship]) -> str:
-    text = "".join(node.text or "" for node in run.findall(".//a:t", NS))
-    if not text:
-        return ""
+def _run_link(run: ET.Element, relationships: dict[str, Relationship]) -> str | None:
     properties = run.find("./a:rPr", NS)
     hyperlink = properties.find("./a:hlinkClick", NS) if properties is not None else None
     rid = hyperlink.attrib.get(f"{{{OFFICE_REL_NS}}}id", "") if hyperlink is not None else ""
     target = _relationship_target(relationships, rid)
     if target and re.match(r"^(?:https?://|mailto:)", target, flags=re.IGNORECASE):
-        label = text.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
-        return f"[{label}]({target})"
-    return text
+        return target
+    return None
+
+
+def _run_emphasis(run: ET.Element) -> tuple[bool, bool]:
+    properties = run.find("./a:rPr", NS)
+    if properties is None:
+        return False, False
+    return (
+        properties.attrib.get("b") in {"1", "true"},
+        properties.attrib.get("i") in {"1", "true"},
+    )
+
+
+def _link_markdown(label: str, target: str) -> str:
+    destination = f"<{target}>" if any(c.isspace() or c in "()<>" for c in target) else target
+    # Brackets in a label would end the link early unless escaped; the rest is source text.
+    label = label.replace("[", markup(r"\[")).replace("]", markup(r"\]"))
+    return f"{markup('[')}{label}{markup(f']({destination})')}"
 
 
 @dataclass(frozen=True)
 class _Paragraph:
+    # Inline Markdown with generated markup wrapped in sentinels (see ``inline``):
+    # ``text`` has links and math, ``rich`` also has bold/italic emphasis.
     text: str
     plain: str
     math: tuple[str, ...]
@@ -350,13 +374,11 @@ class _Paragraph:
     font_lines: tuple[tuple[str, tuple[float, ...]], ...] | None
     # The typed text starts with whitespace, i.e. it is indented by hand.
     indented: bool = False
+    rich: str = ""
 
     @property
     def is_math_only(self) -> bool:
-        remainder = self.text
-        for latex in self.math:
-            remainder = remainder.replace(f"${latex}$", "", 1)
-        return bool(self.math) and not remainder.strip()
+        return bool(self.math) and not remove_markup(self.text).strip()
 
 
 def _normalize_breaks(text: str) -> str:
@@ -366,7 +388,8 @@ def _normalize_breaks(text: str) -> str:
 
 _INDENT = re.compile(r"[ \t\u00a0\u3000]")
 # A bullet glyph typed as text rather than set as the paragraph's bullet.
-_TYPED_BULLET = re.compile(r"^▶+\s*")
+# A typed bullet may follow leading generated markup such as an opening emphasis marker.
+_TYPED_BULLET_RICH = re.compile(f"^((?:{OPEN}[^{CLOSE}]*{CLOSE})*)▶+\\s*")
 
 
 def _parse_paragraph(
@@ -376,24 +399,42 @@ def _parse_paragraph(
     """Return the paragraph and how many of its equations could not be converted."""
 
     parts: list[str] = []
+    rich_parts: list[str] = []
     plain_parts: list[str] = []
     math: list[str] = []
     lines: list[tuple[str, list[float]]] = [("", [])]
     has_rich_content = False
     unconverted_math = 0
+    # Consecutive runs with the same link and emphasis, merged before markup is added.
+    group: list[str] = []
+    group_style: tuple[str | None, bool, bool] | None = None
+
+    def flush_group() -> None:
+        nonlocal group_style
+        if group_style is None:
+            return
+        text = "".join(group)
+        link, bold, italic = group_style
+        plain_markdown = _link_markdown(text, link) if link and text else text
+        parts.append(plain_markdown)
+        rich_parts.append(emphasis(plain_markdown, bold=bold, italic=italic) if text else "")
+        group.clear()
+        group_style = None
 
     def visit(container: ET.Element) -> None:
-        nonlocal has_rich_content, unconverted_math
+        nonlocal has_rich_content, unconverted_math, group_style
         for child in container:
             if child.tag == _MATH_WRAPPER_TAG:
                 visit(child)
                 continue
             if child.tag in _MATH_TAGS:
+                flush_group()
                 has_rich_content = True
                 latex = omml_to_latex(child)
                 if latex:
                     math.append(latex)
-                    parts.append(f"${latex}$")
+                    parts.append(markup(f"${latex}$"))
+                    rich_parts.append(markup(f"${latex}$"))
                     plain_parts.append(f"${latex}$")
                 else:
                     unconverted_math += 1
@@ -402,21 +443,30 @@ def _parse_paragraph(
             if name == "fld" and (child.attrib.get("type") or "").casefold() == "slidenum":
                 continue
             if name in {"r", "fld"}:
-                markdown = _run_markdown(child, relationships)
                 run_text = "".join(node.text or "" for node in child.findall(".//a:t", NS))
-                parts.append(markdown)
-                plain_parts.append(run_text)
-                if markdown != run_text:
+                if not run_text:
+                    continue
+                link = _run_link(child, relationships)
+                if link:
                     has_rich_content = True
+                style = (link, *_run_emphasis(child))
+                if style != group_style:
+                    flush_group()
+                    group_style = style
+                group.append(run_text)
+                plain_parts.append(run_text)
                 text, sizes = lines[-1]
                 size = _integer(_attr(child.find("./a:rPr", NS), "sz"), default=-1)
                 lines[-1] = (text + run_text, [*sizes, size / 100.0] if size > 0 else sizes)
             elif name == "br":
+                flush_group()
                 parts.append("\n")
+                rich_parts.append("\n")
                 plain_parts.append(" ")
                 lines.append(("", []))
 
     visit(paragraph)
+    flush_group()
     properties = paragraph.find("./a:pPr", NS)
     bullets_disabled = properties is not None and properties.find("./a:buNone", NS) is not None
     ordered = properties is not None and properties.find("./a:buAutoNum", NS) is not None
@@ -439,6 +489,7 @@ def _parse_paragraph(
                 else tuple((text.strip(), tuple(sizes)) for text, sizes in lines if text.strip())
             ),
             indented=bool(_INDENT.match("".join(parts))),
+            rich=_normalize_breaks("".join(rich_parts)),
         ),
         unconverted_math,
     )
@@ -518,20 +569,21 @@ def _paragraph_blocks(
     provenance = {"shape_id": shape.shape_id, "bbox": bbox, "source_part": shape.source_part}
     blocks: list[ContentBlock] = []
     pending_lines: list[str] = []
-    pending_items: list[ListItem] = []
+    pending_items: list[tuple[str, int]] = []
     pending_ordered = False
 
     def flush_text() -> None:
         if pending_lines:
-            blocks.append(TextBlock(text="\n".join(pending_lines), **provenance))
+            blocks.append(TextBlock(text=finalize("\n".join(pending_lines)), **provenance))
         pending_lines.clear()
 
     def flush_list() -> None:
         nonlocal pending_ordered
         if pending_items:
-            blocks.append(
-                ListBlock(items=tuple(pending_items), ordered=pending_ordered, **provenance)
+            items = tuple(
+                ListItem(text=finalize(text), level=level) for text, level in pending_items
             )
+            blocks.append(ListBlock(items=items, ordered=pending_ordered, **provenance))
         pending_items.clear()
         pending_ordered = False
 
@@ -541,27 +593,27 @@ def _paragraph_blocks(
         if pending_items and ordered != pending_ordered:
             flush_list()
         pending_ordered = ordered
-        pending_items.append(ListItem(text=text, level=level))
+        pending_items.append((text, level))
 
     for paragraph in paragraphs:
         if paragraph.is_list:
-            add_item(paragraph.text, ordered=paragraph.ordered, level=paragraph.level)
+            add_item(paragraph.rich, ordered=paragraph.ordered, level=paragraph.level)
             continue
         if paragraph.is_math_only:
             flush_text()
             flush_list()
             blocks.append(MathBlock(latex=" ".join(paragraph.math), **provenance))
             continue
-        typed_item = _TYPED_BULLET.sub("", paragraph.text, count=1)
-        if typed_item != paragraph.text and typed_item:
+        typed_item = _TYPED_BULLET_RICH.sub(r"\1", paragraph.rich, count=1)
+        if typed_item != paragraph.rich and remove_markup(typed_item).strip():
             add_item(typed_item, ordered=False, level=paragraph.level)
             continue
         if pending_items and paragraph.indented:
-            last = pending_items[-1]
-            pending_items[-1] = last.model_copy(update={"text": f"{last.text}\n{paragraph.text}"})
+            text, level = pending_items[-1]
+            pending_items[-1] = (f"{text}\n{paragraph.rich}", level)
             continue
         flush_list()
-        pending_lines.append(paragraph.text)
+        pending_lines.append(paragraph.rich)
     flush_text()
     flush_list()
     return blocks
@@ -664,9 +716,10 @@ def _table_cell_lines(
         unconverted += missing
         # A line break inside a cell paragraph wraps a label to fit a narrow column
         # ("전자제품 / 사업부"); only paragraphs become separate lines.
-        text = re.sub(r"\s+", " ", paragraph.text).strip()
+        text = re.sub(r"\s+", " ", paragraph.rich).strip()
         if not text:
             continue
+        text = finalize(text, line_start=False)
         level = max(0, min(_integer(_attr(element.find("./a:pPr", NS), "lvl")), 8))
         marker = _cell_list_marker(element, body, level)
         if marker == "ul":
@@ -913,10 +966,10 @@ class _PresentationParser:
             return _paragraph_blocks(paragraphs, shape=shape, bbox=bbox)
         provenance = {"shape_id": shape.shape_id, "bbox": bbox, "source_part": shape.source_part}
         blocks: list[ContentBlock] = [
-            HeadingBlock(text=heading.text, level=heading.level, **provenance)
+            HeadingBlock(text=finalize_heading(heading.text), level=heading.level, **provenance)
         ]
         if heading.trailing:
-            blocks.append(TextBlock(text=heading.trailing, **provenance))
+            blocks.append(TextBlock(text=finalize(heading.trailing), **provenance))
         return blocks
 
     def _register_related_asset(
