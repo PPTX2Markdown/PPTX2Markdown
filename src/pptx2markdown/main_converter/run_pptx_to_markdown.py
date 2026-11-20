@@ -171,6 +171,38 @@ def normalize_text(s: str) -> str:
 
 # slide12.xml 같은 파일명에서 슬라이드 번호를 추출한다.
 # 정규식으로 번호를 찾지 못하는 예외 케이스에서는 호출자가 넘긴 기본 인덱스를 대신 사용한다.
+_PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+_OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def presentation_slide_xmls(package_dir: Path) -> List[Path]:
+    """Slide parts in the order the presentation shows them (``p:sldIdLst``).
+
+    Slide file names say nothing about order: a reordered deck keeps its old names,
+    and a slide part missing from the list is not part of the presentation. Falls
+    back to file-name order only when the presentation part cannot be read.
+    """
+    slides_dir = package_dir / "ppt" / "slides"
+    by_name = sorted(
+        [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
+        key=lambda p: natural_key(p.name),
+    )
+    presentation = package_dir / "ppt" / "presentation.xml"
+    rels_path = package_dir / "ppt" / "_rels" / "presentation.xml.rels"
+    try:
+        root = ET.parse(presentation).getroot()
+        rels = build_rels_map(rels_path)
+    except (OSError, ET.ParseError):
+        return by_name
+    ordered: List[Path] = []
+    for slide_id in root.findall(f"./{{{_PRESENTATION_NS}}}sldIdLst/{{{_PRESENTATION_NS}}}sldId"):
+        target = rels.get(slide_id.attrib.get(f"{{{_OFFICE_REL_NS}}}id", ""))
+        resolved = resolve_relationship_target(rels_path, target) if target else None
+        if resolved is not None and resolved.is_file() and resolved not in ordered:
+            ordered.append(resolved)
+    return ordered if ordered else by_name
+
+
 def parse_slide_number(filename: str, default_idx: int) -> int:
     m = re.search(r"slide(\d+)", filename, re.IGNORECASE)
     if m:
@@ -1519,9 +1551,9 @@ def _append_package_stage_failure(
     package_name: str,
     stage_label: str,
 ) -> None:
-    for slide_xml in slide_xmls:
+    for page_no, slide_xml in enumerate(slide_xmls, 1):
         row = {
-            "page": parse_slide_number(slide_xml.name, 0),
+            "page": page_no,
             "source_xml": str(slide_xml),
             "status": "failed",
             "error": error_message,
@@ -1573,11 +1605,7 @@ def _convert_package(
 ) -> None:
     pkg = package.package_dir
     pkg_name = pkg.name
-    slides_dir = pkg / "ppt" / "slides"
-    slide_xmls = sorted(
-        [p for p in slides_dir.glob("slide*.xml") if p.is_file()],
-        key=lambda p: natural_key(p.name),
-    )
+    slide_xmls = presentation_slide_xmls(pkg)
     pkg_out = config.output_dir / pkg_name
     output_path = (
         package.output_json_path(config.output_dir)
@@ -1630,7 +1658,7 @@ def _convert_package(
 
     with shared_source_zip(package.source_pptx_path):
         for i, slide_xml in enumerate(slide_xmls, 1):
-            page_no = parse_slide_number(slide_xml.name, i)
+            page_no = i
             ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
             row: Dict[str, object] = {
                 "page": page_no,
