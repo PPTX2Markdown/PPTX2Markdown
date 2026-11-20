@@ -174,6 +174,25 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --ask "부록은 빼줘"`는 작성된 레시피를 JSON으로 출력하므로,
 검토한 뒤 `--recipe`로 적용하면 됩니다.
 
+### MCP 서버
+
+`pip install "pptx2markdown[mcp]"`를 설치하면 MCP(Model Context Protocol) 서버
+`pptx2markdown-mcp`(stdio)가 추가되어, Claude 같은 에이전트가 레시피 작업 흐름을 직접
+수행할 수 있습니다. 도구는 `convert_presentation`(블록 id가 표시된 Markdown, 레시피
+적용 가능), `review_presentation`, `check_recipe`(규칙마다 고르는 대상),
+`presentation_chunks`, `recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
+쓰지 않습니다.
+
+```bash
+claude mcp add pptx2markdown -- pptx2markdown-mcp
+```
+
+또는 MCP 클라이언트 설정에서:
+
+```json
+{"mcpServers": {"pptx2markdown": {"command": "pptx2markdown-mcp"}}}
+```
+
 파싱과 저장을 한 번에 수행하려면 `convert()`를 사용합니다.
 
 ```python

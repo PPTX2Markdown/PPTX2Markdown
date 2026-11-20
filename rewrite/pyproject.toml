@@ -19,9 +19,11 @@ dependencies = [
 
 [project.optional-dependencies]
 agent = ["anthropic>=2.12"]
+mcp = ["mcp>=2.3"]
 
 [project.scripts]
 pptx2markdown = "pptx2markdown.cli:main"
+pptx2markdown-mcp = "pptx2markdown.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pptx2markdown"]
