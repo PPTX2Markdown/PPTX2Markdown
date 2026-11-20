@@ -164,3 +164,97 @@ class InlineMarkdownTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+STYLED_SLIDE = f"""\
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld
+  xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+      {_box(2, 0, "<a:p>" + _run("Label", 'b="1"') + "</a:p>")}
+      {
+    _box(
+        3,
+        1000000,
+        "<a:p>"
+        + _run("First bold line", 'b="1"')
+        + "</a:p>"
+        + "<a:p>"
+        + _run("Second bold line", 'b="1"')
+        + "</a:p>",
+    )
+}
+      {
+    _box(
+        4,
+        2000000,
+        "<a:p>"
+        + _run("Mixed ")
+        + _run("bold", 'b="1"')
+        + "</a:p>"
+        + "<a:p>"
+        + _run("All bold", 'b="1"')
+        + "</a:p>",
+    )
+}
+      <p:graphicFrame>
+        <p:nvGraphicFramePr><p:cNvPr id="5" name="Table"/><p:cNvGraphicFramePr/><p:nvPr/>
+        </p:nvGraphicFramePr>
+        <p:xfrm><a:off x="0" y="3000000"/><a:ext cx="2000000" cy="1000000"/></p:xfrm>
+        <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+          <a:tbl><a:tblGrid><a:gridCol w="1000000"/><a:gridCol w="1000000"/></a:tblGrid>
+            <a:tr h="500000">
+              <a:tc><a:txBody><a:bodyPr/><a:p>{_run("Head", 'b="1"')}</a:p></a:txBody></a:tc>
+              <a:tc><a:txBody><a:bodyPr/><a:p>{_run("Value ")}{_run("key", 'b="1"')}</a:p>
+              </a:txBody></a:tc>
+            </a:tr>
+          </a:tbl>
+        </a:graphicData></a:graphic>
+      </p:graphicFrame>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"""
+
+
+class StylingEmphasisTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_test_pptx(Path(directory) / "styled.pptx", STYLED_SLIDE)
+            with pptx2markdown.parse(source) as presentation:
+                cls.blocks = {b.shape_id: b for b in presentation.document.slides[0].blocks}
+
+    def test_short_bold_label_keeps_its_emphasis(self) -> None:
+        self.assertEqual(self.blocks["2"].text, "**Label**")
+
+    def test_text_box_set_entirely_in_bold_is_plain(self) -> None:
+        self.assertEqual(self.blocks["3"].text, "First bold line\nSecond bold line")
+
+    def test_partial_bold_in_a_box_stays_emphasis(self) -> None:
+        self.assertEqual(self.blocks["4"].text, "Mixed **bold**\n**All bold**")
+
+    def test_bold_over_a_whole_cell_is_table_styling(self) -> None:
+        self.assertEqual(self.blocks["5"].markdown.splitlines()[0], "| Head | Value **key** |")
+
+
+class OmittedEmbeddedImageTests(unittest.TestCase):
+    def test_omitted_picture_in_a_cell_leaves_no_empty_link(self) -> None:
+        from pptx2markdown.model import TableBlock
+        from pptx2markdown.render import render_block_markdown
+
+        asset = "asset-" + "c" * 16
+        block = TableBlock(
+            markdown=f"| a | b<br>![Pic](asset://{asset}) |\n| --- | --- |\n"
+            f"| ![x](asset://{asset})<br>c | d |",
+            asset_ids=(asset,),
+        )
+        self.assertEqual(
+            render_block_markdown(block, asset_resolver=None, asset_mode="omit"),
+            "| a | b |\n| --- | --- |\n| c | d |",
+        )
