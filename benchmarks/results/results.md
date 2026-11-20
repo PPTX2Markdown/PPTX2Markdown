@@ -17,12 +17,15 @@
 | Chart data | ✅ | ✅ | ✅ |
 | Text inside grouped shapes | ✅ | ✅ | ✅ |
 | Deck without slides | ✅ | ✅ | 💥 |
-| **Passed** | **17/17** | **7/17** | **11/17** |
+| Second column of a Two Content layout | ✅ | ✅ | ✅ |
+| Header typed one character per line | ✅ | ❌ | ❌ |
+| Strict Open XML deck | ✅ | 💥 | ✅ |
+| **Passed** | **20/20** | **8/20** | **13/20** |
 
-Time for a 300-slide deck (text, table per slide), Python 3.14.7, macOS-26.5.2:
+Time for a 300-slide deck (text, table per slide), Python 3.12.13, macOS-26.5.2:
 
 | Converter | Seconds |
 | --- | ---: |
-| pptx2markdown (rewrite) | 0.231 |
-| markitdown | 0.382 |
-| anydoc | 0.013 |
+| pptx2markdown (rewrite) | 0.224 |
+| markitdown | 0.297 |
+| anydoc | 0.012 |

@@ -10,6 +10,7 @@ import copy
 import io
 import re
 import struct
+import zipfile
 import zlib
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -360,6 +361,62 @@ def check_font_size_heading(markdown: str) -> bool:
     return any(re.match(r"^#{1,6}\s+Market Overview", line) for line in _lines(markdown))
 
 
+def build_two_content(path: Path) -> None:
+    # The standard master numbers its date placeholder 2, like the layout's second column.
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[3])
+    slide.shapes.title.text = "Options"
+    slide.placeholders[1].text = "Build in house"
+    slide.placeholders[2].text = "Buy a platform"
+    prs.save(path)
+
+
+def check_two_content(markdown: str) -> bool:
+    return "Build in house" in markdown and "Buy a platform" in markdown
+
+
+def build_stacked_cell(path: Path) -> None:
+    # A narrow header typed upright, one character per line ("\v" is a line break).
+    prs = Presentation()
+    shape = _blank(prs).shapes.add_table(2, 2, Inches(1), Inches(1), Inches(4), Inches(1))
+    cells = {(0, 0): "구\v분", (0, 1): "값", (1, 0): "매출", (1, 1): "10"}
+    for (row, column), text in cells.items():
+        shape.table.cell(row, column).text = text
+    prs.save(path)
+
+
+def check_stacked_cell(markdown: str) -> bool:
+    return any(row and row[0] == "구분" for row in _table_rows(markdown))
+
+
+_STRICT = {
+    b"http://schemas.openxmlformats.org/" + transitional: b"http://purl.oclc.org/ooxml/" + strict
+    for transitional, strict in (
+        (b"presentationml/2006/main", b"presentationml/main"),
+        (b"drawingml/2006/main", b"drawingml/main"),
+        (b"officeDocument/2006/relationships", b"officeDocument/relationships"),
+    )
+}
+
+
+def build_strict(path: Path) -> None:
+    """The title deck saved with ISO 29500 Strict namespaces ("Strict Open XML")."""
+
+    build_title(path)
+    original = path.read_bytes()
+    with zipfile.ZipFile(io.BytesIO(original)) as source, zipfile.ZipFile(path, "w") as target:
+        for info in source.infolist():
+            data = source.read(info)
+            if info.filename.endswith((".xml", ".rels")):
+                for transitional, strict in _STRICT.items():
+                    data = data.replace(transitional, strict)
+            target.writestr(info, data)
+
+
+def check_strict(markdown: str) -> bool:
+    return "Quarterly Review" in markdown and "Body text" in markdown
+
+
 CASES: tuple[Case, ...] = (
     Case(
         "slide-boundaries",
@@ -388,6 +445,19 @@ CASES: tuple[Case, ...] = (
     Case("chart", "Chart data", build_chart, check_chart),
     Case("group", "Text inside grouped shapes", build_group, check_group),
     Case("empty", "Deck without slides", build_empty, check_empty),
+    Case(
+        "two-content",
+        "Second column of a Two Content layout",
+        build_two_content,
+        check_two_content,
+    ),
+    Case(
+        "stacked-cell",
+        "Header typed one character per line",
+        build_stacked_cell,
+        check_stacked_cell,
+    ),
+    Case("strict", "Strict Open XML deck", build_strict, check_strict),
 )
 
 

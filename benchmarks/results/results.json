@@ -1,5 +1,5 @@
 {
-  "python": "3.14.7",
+  "python": "3.12.13",
   "platform": "macOS-26.5.2",
   "versions": {
     "pptx2markdown (rewrite)": "0.2.0.dev0",
@@ -23,7 +23,10 @@
     "image-alt": "Image alt text",
     "chart": "Chart data",
     "group": "Text inside grouped shapes",
-    "empty": "Deck without slides"
+    "empty": "Deck without slides",
+    "two-content": "Second column of a Two Content layout",
+    "stacked-cell": "Header typed one character per line",
+    "strict": "Strict Open XML deck"
   },
   "results": {
     "slide-boundaries": {
@@ -110,14 +113,29 @@
       "pptx2markdown (rewrite)": "pass",
       "markitdown": "pass",
       "anydoc": "error"
+    },
+    "two-content": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "pass",
+      "anydoc": "pass"
+    },
+    "stacked-cell": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "fail",
+      "anydoc": "fail"
+    },
+    "strict": {
+      "pptx2markdown (rewrite)": "pass",
+      "markitdown": "error",
+      "anydoc": "pass"
     }
   },
   "timings": {
     "slides": 300,
     "seconds": {
-      "pptx2markdown (rewrite)": 0.231,
-      "markitdown": 0.382,
-      "anydoc": 0.013
+      "pptx2markdown (rewrite)": 0.224,
+      "markitdown": 0.297,
+      "anydoc": 0.012
     }
   }
 }
