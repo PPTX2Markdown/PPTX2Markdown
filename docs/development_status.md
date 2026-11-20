@@ -2,16 +2,18 @@
 
 English | [한국어](development_status.ko.md)
 
-Last verified: 2026-07-13
+Last verified: 2026-11-21
 
 This document records the current engineering state. Read it together with
 `git status --short --branch` before changing the worktree.
 
 ## Repository state
 
-- Active development branch: `dev`
-- Release target: `0.1.0`
-- Release pull request: `dev` -> `main`, PR #17
+- Active development branch: `dev` (pull requests merge into `dev`; releases
+  go `dev` -> `main`)
+- Released: `0.1.2` on PyPI; unreleased changes on `dev` are listed in
+  [CHANGELOG.md](../CHANGELOG.md)
+- Next-generation engine: `rewrite/`, unreleased, see below
 - Public package layout: `src/pptx2markdown/`
 - Packaging backend: Hatchling
 - Supported Python: 3.12 and newer
@@ -30,7 +32,8 @@ The source state before the PyPI restructure is preserved by branch
 - Normal `.pptx` conversion is local. Legacy `.ppt` conversion may invoke
   PowerPoint on Windows or LibreOffice.
 - Final output and intermediate work use separate configurable roots.
-- Office lock files matching `~$*.pptx` are skipped silently.
+- Office lock files matching `~$*.pptx` are skipped; a named one is reported
+  with a warning.
 
 ## Output contract
 
@@ -62,19 +65,31 @@ The always-on repository suite contains 17 PPTX files:
 An additional ignored corpus is used for broad local qualification but is not a
 CI dependency. See the [golden suite](../tests/fixtures/golden/README.md).
 
+## Next-generation engine (`rewrite/`)
+
+`rewrite/` is a separate package (also named `pptx2markdown`, version
+`0.2.0.dev0`) built to replace `src/` once it covers the same content. It keeps
+the static pipeline and adds escaped inline Markdown with emphasis, structured
+tables, block ids with declarative recipes, a review of uncertain decisions, an
+optional agent and MCP server, slide chunks, and in-memory input. See
+[rewrite/README.md](../rewrite/README.md) and
+[rewrite/ARCHITECTURE.md](../rewrite/ARCHITECTURE.md).
+
+`scripts/parity.py` converts the same decks with both engines and compares them
+shape by shape (legacy is the reference). CI fails when the rewrite does worse
+than `scripts/parity_baseline.json`; deliberate differences are set back to
+legacy behaviour through `scripts/parity_legacy_recipe.json`. On the repository
+fixtures 60 of 62 slides match; the two remaining differences are deliberate.
+
 ## Latest verification baseline
 
-The following completed successfully on 2026-07-13:
+The following completed successfully on 2026-11-21:
 
-- Ruff lint and format checks
-- 87 unit and regression tests
-- 17 repository golden PPTX files in JSON and Markdown modes
-- 51 selected real-world PPTX files containing 633 slides
-- wheel and sdist build plus `twine check`
-- isolated wheel installation and installed-CLI conversion
-- GitHub Actions on Ubuntu, macOS, and Windows with Python 3.12 and 3.13
-
-The PR-specific workflow run for PR #17 also passed.
+- Ruff lint and format checks for `src/`, `tests/`, `scripts/` and `rewrite/`
+- 127 legacy unit and regression tests, 17 golden PPTX files in both modes
+- about 150 rewrite tests on Python 3.12, 3.13 and 3.14
+- legacy/rewrite parity gate (60/62 fixture slides)
+- GitHub Actions on Ubuntu, macOS and Windows
 
 ## Security boundaries
 
@@ -92,14 +107,14 @@ data and should not be opened automatically.
 5. PowerPoint review comments are intentionally excluded.
 6. Broad local-corpus tests skip when ignored source files are unavailable.
 
-## Release work remaining
+## Next steps
 
-1. Keep PR #17 green and complete documentation review.
-2. Configure the PyPI Trusted Publisher for `publish.yml` and environment
-   `pypi`.
-3. Mark the pull request ready and merge it into `main`.
-4. Publish the `v0.1.0` GitHub release.
-5. Verify the published PyPI package in a clean environment.
+1. Review `dev` and release the unreleased changes in CHANGELOG.md as `0.1.3`
+   (merge `dev` into `main`, tag, publish).
+2. Decide when `rewrite/` replaces `src/` (for example: parity on the local
+   corpus, `.ppt` input policy, migration notes for JSON schema 2.0).
+3. Make omml2latex run on Python 3.10/3.11 (one f-string with a backslash in
+   its expression) to widen supported Python versions.
 
 ## Important files
 
