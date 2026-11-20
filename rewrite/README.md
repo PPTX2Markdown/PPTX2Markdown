@@ -25,7 +25,7 @@ The rewrite separates four responsibilities:
 - local `.pptx` input
 
 There is no OCR, VLM, API key, cloud inference, PowerPoint automation or
-LibreOffice dependency in the parsing path.
+LibreOffice dependency in the parsing path; the optional agent is a separate layer.
 
 ## Python API
 
@@ -130,6 +130,35 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --review` prints the same as JSON without writing
 bundles.
 
+### Agent (optional)
+
+`pip install "pptx2markdown[agent]"` adds a language-model layer on top of
+recipes and review. The model never edits the parser or the text: it reads the
+deck with block ids and writes a recipe, which is validated, checked so that every
+rule selects something (a failing recipe is sent back once with the problem), and
+applied like a hand-written one. It uses Claude (`claude-opus-5-5` by default,
+with the API's refusal fallback on) through the Anthropic SDK and the usual
+`ANTHROPIC_API_KEY` or `ant auth login` credentials. Nothing in the parsing path
+calls a model.
+
+```python
+from pptx2markdown import agent, merge_recipes
+
+with pptx2markdown.parse("deck.pptx") as presentation:
+    draft = agent.draft_recipe(
+        presentation.document,
+        "This goes into a search index: drop the appendix after slide 20 and "
+        "treat grouped table headers as two rows.",
+    )
+    print(draft.summary, draft.unmatched)
+    answers = agent.answer_review(presentation.document)  # picks review options
+    images = agent.describe_images(presentation, language="Korean")  # vision
+    presentation.apply(merge_recipes(draft.recipe, answers, images))
+```
+
+`pptx2markdown deck.pptx --ask "drop the appendix"` prints the drafted recipe as
+JSON for review; apply it with `--recipe`.
+
 Use `convert()` for parse-and-save:
 
 ```python
@@ -149,6 +178,7 @@ pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --ask "drop the appendix" > recipe.json
 ```
 
 Default bundle:

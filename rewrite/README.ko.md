@@ -127,6 +127,34 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --review`는 번들을 쓰지 않고 같은 내용을 JSON으로
 출력합니다.
 
+### 에이전트(선택)
+
+`pip install "pptx2markdown[agent]"`를 설치하면 레시피와 검토 위에 언어 모델
+계층이 추가됩니다. 모델은 파서나 본문을 직접 고치지 않습니다. 블록 id가 표시된
+덱을 읽고 레시피를 쓰며, 그 레시피는 검증을 거치고 모든 규칙이 무언가를
+고르는지 확인한 뒤(문제가 있으면 한 번 되돌려 고치게 함) 손으로 쓴 레시피와
+똑같이 적용됩니다. Anthropic SDK로 Claude(기본 `claude-opus-5-5`, API의 거절
+시 fallback 사용)를 호출하며, 자격 증명은 `ANTHROPIC_API_KEY`나 `ant auth login`을
+씁니다. 파싱 경로에서는 모델을 호출하지 않습니다.
+
+```python
+from pptx2markdown import agent, merge_recipes
+
+with pptx2markdown.parse("deck.pptx") as presentation:
+    draft = agent.draft_recipe(
+        presentation.document,
+        "검색 인덱스에 넣을 거야. 20번 슬라이드 뒤 부록은 빼고, 그룹으로 묶인 표 "
+        "머리글은 두 줄로 봐줘.",
+    )
+    print(draft.summary, draft.unmatched)
+    answers = agent.answer_review(presentation.document)  # 검토 선택지 고르기
+    images = agent.describe_images(presentation, language="Korean")  # 이미지 설명
+    presentation.apply(merge_recipes(draft.recipe, answers, images))
+```
+
+`pptx2markdown deck.pptx --ask "부록은 빼줘"`는 작성된 레시피를 JSON으로 출력하므로,
+검토한 뒤 `--recipe`로 적용하면 됩니다.
+
 파싱과 저장을 한 번에 수행하려면 `convert()`를 사용합니다.
 
 ```python
@@ -146,6 +174,7 @@ pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --ask "부록은 빼줘" > recipe.json
 ```
 
 기본 출력:

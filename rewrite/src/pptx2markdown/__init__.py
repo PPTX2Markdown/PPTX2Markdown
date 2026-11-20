@@ -43,7 +43,15 @@ from .model import (
 )
 from .parser import ParseOptions
 from .presentation import ParsedPresentation
-from .recipe import Recipe, Rule, RuleMatch, apply_recipe, explain_recipe, recipe_json_schema
+from .recipe import (
+    Recipe,
+    Rule,
+    RuleMatch,
+    apply_recipe,
+    explain_recipe,
+    merge_recipes,
+    recipe_json_schema,
+)
 from .review import Option, ReviewItem, review, review_data
 from .writer import SavedAsset, SaveOptions, SaveResult
 
@@ -95,6 +103,7 @@ __all__ = [
     "convert",
     "convert_many",
     "explain_recipe",
+    "merge_recipes",
     "parse",
     "recipe_json_schema",
     "review",
