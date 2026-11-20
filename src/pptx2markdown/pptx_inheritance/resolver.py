@@ -28,6 +28,7 @@ from pptx2markdown.structure_analyzer.xml_primitives import (
     is_slide_number_only_shape,
     local_name,
     parse_int,
+    parse_xml_root,
     text_without_slide_number_fields,
 )
 
@@ -134,7 +135,7 @@ def _relationship_target(source_xml: Path, rel_type: str) -> Optional[Path]:
     if not rels.exists():
         return None
 
-    rel_root = ET.parse(rels).getroot()
+    rel_root = parse_xml_root(rels)
     for rel in rel_root.findall("rel:Relationship", REL_NS):
         current_type = str(rel.attrib.get("Type", ""))
         expected_suffix = "/" + rel_type.rsplit("/", 1)[-1]
@@ -156,7 +157,7 @@ def _relationship_ids(source_xml: Optional[Path]) -> set[str]:
     if not rels.exists():
         return set()
     try:
-        rel_root = ET.parse(rels).getroot()
+        rel_root = parse_xml_root(rels)
     except (ET.ParseError, OSError):
         return set()
     return {
@@ -219,7 +220,7 @@ def _build_placeholder_index(part_xml: Optional[Path]) -> Tuple[Dict[str, ET.Ele
     if part_xml is None or not part_xml.exists():
         return out, ambiguous
 
-    root = ET.parse(part_xml).getroot()
+    root = parse_xml_root(part_xml)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return out, ambiguous
@@ -334,7 +335,7 @@ def _show_master_shapes(slide_xml: Path, layout_xml: Optional[Path]) -> bool:
     for part_xml in (slide_xml, layout_xml):
         if part_xml is None or not part_xml.exists():
             continue
-        root = ET.parse(part_xml).getroot()
+        root = parse_xml_root(part_xml)
         if _is_false(root.attrib.get("showMasterSp")):
             return False
     return True
@@ -498,7 +499,7 @@ def _extract_master_tx_style_font_pt(
 ) -> Optional[float]:
     if master_xml is None or not master_xml.exists():
         return None
-    root = ET.parse(master_xml).getroot()
+    root = parse_xml_root(master_xml)
     style = root.find(f"p:txStyles/p:{_tx_style_name(ph_type)}", NS)
     if style is None:
         return None
@@ -526,7 +527,7 @@ def _master_tx_style_level_ppr(
 ) -> Optional[ET.Element]:
     if master_xml is None or not master_xml.exists():
         return None
-    root = ET.parse(master_xml).getroot()
+    root = parse_xml_root(master_xml)
     style = root.find(f"p:txStyles/p:{_tx_style_name(ph_type)}", NS)
     if style is None:
         return None
@@ -790,7 +791,7 @@ def _materialize_part_shapes(
 ) -> List[EffectiveShape]:
     if part_xml is None or not part_xml.exists() or inherited_shapes == "none":
         return []
-    root = ET.parse(part_xml).getroot()
+    root = parse_xml_root(part_xml)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return []
@@ -845,7 +846,7 @@ def resolve_effective_slide(
     pptx_inheritance = normalize_pptx_inheritance_mode(pptx_inheritance)
     inherited_shapes = normalize_inherited_shapes_mode(inherited_shapes)
 
-    root = ET.parse(slide_xml).getroot()
+    root = parse_xml_root(slide_xml)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return EffectiveSlide(

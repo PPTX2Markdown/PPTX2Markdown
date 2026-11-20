@@ -20,7 +20,7 @@ from .structure import (
     heading_threshold,
     order_objects,
 )
-from .xml_primitives import local_name, natural_key
+from .xml_primitives import local_name, natural_key, parse_xml_root
 
 SCHEMA_VERSION = "1.0"
 
@@ -139,7 +139,7 @@ def _rels_path_for_part(part_xml: Path) -> Path:
 def _read_relationships(rels_path: Path) -> Dict[str, Dict[str, str]]:
     if not rels_path.exists():
         return {}
-    root = ET.parse(rels_path).getroot()
+    root = parse_xml_root(rels_path)
     out: Dict[str, Dict[str, str]] = {}
     for rel in root.findall("rel:Relationship", REL_NS):
         rid = rel.attrib.get("Id")
@@ -170,7 +170,7 @@ def _source_part_elements(part_xml: Optional[str], source_part: str) -> Dict[str
     path = Path(part_xml)
     if not path.exists():
         return {}
-    root = ET.parse(path).getroot()
+    root = parse_xml_root(path)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return {}
