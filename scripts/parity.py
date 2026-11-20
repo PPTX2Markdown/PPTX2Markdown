@@ -253,6 +253,17 @@ def _pair_template_shapes(
                     unmatched_legacy.remove(legacy_key)
                     unmatched_rewrite.remove(rewrite_key)
                     break
+    # Legacy reports grouped layout/master shapes as slide shapes with their own id.
+    for rewrite_key in list(unmatched_rewrite):
+        legacy_key = "slide:" + rewrite_key.split(":", 1)[1]
+        if (
+            legacy_key in legacy_groups
+            and legacy_key not in rewrite_groups
+            and _group_signature(legacy_groups[legacy_key])[0]
+            == _group_signature(rewrite_groups[rewrite_key])[0]
+        ):
+            renamed[rewrite_key] = legacy_key
+            unmatched_rewrite.remove(rewrite_key)
     return {renamed.get(key, key): blocks for key, blocks in rewrite_groups.items()}
 
 

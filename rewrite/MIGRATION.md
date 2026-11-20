@@ -16,7 +16,7 @@ user of 0.1.x.
 | `--merged-cells fill\|blank` | same, plus `header` (repeat only in the header row) |
 | `--work-dir` | not needed: nothing is written outside the bundle |
 | `--placeholder-inheritance` | always on (`style`): placeholders inherit position, size and bullets |
-| `--inherited-shapes` | always `visible`: text drawn on the layout or master is kept |
+| `--inherited-shapes` | always `visible`: text and pictures drawn on the layout or master are kept, inside groups too; a template picture covering the slide is background art and left out (recipe `template_pictures: false` drops all template pictures) |
 | `.ppt` input, `--ppt-converter` | not supported: save the deck as `.pptx` first |
 | `--convert-vector-images` | not supported: EMF/WMF images are kept as they are |
 | — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |

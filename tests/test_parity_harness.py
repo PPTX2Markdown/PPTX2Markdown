@@ -164,6 +164,14 @@ class CompareSlideTests(unittest.TestCase):
             {"master:2000006": "same", "layout:1000003": "same", "layout:1000004": "differs"},
         )
 
+    def test_grouped_template_shapes_pair_with_legacy_slide_keys(self) -> None:
+        result = parity.compare_slide(
+            slide(1, [block("text", "RGB 196/0/84", "slide:89")]),
+            slide(1, [block("text", "RGB 196/0/84", "master:89")]),
+        )
+        statuses = {row["key"]: row["status"] for row in result["shapes"]}
+        self.assertEqual(statuses, {"slide:89": "same"})
+
     def test_reordered_shapes_lower_the_order_score(self) -> None:
         a, b, c = (block("text", t, f"slide:{t}") for t in "abc")
         result = parity.compare_slide(slide(1, [a, b, c]), slide(1, [c, a, b]))

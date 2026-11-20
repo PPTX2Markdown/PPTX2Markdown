@@ -341,6 +341,18 @@ class OOXMLPackage:
             entries.append(SlideEntry(page=page, part_name=target, relationship_id=rid))
         return tuple(entries)
 
+    def slide_size(self) -> tuple[int, int] | None:
+        """The slide width and height in EMU from p:sldSz, when the deck states them."""
+
+        size = self.xml("ppt/presentation.xml").find("./p:sldSz", {"p": PRESENTATION_NS})
+        if size is None:
+            return None
+        try:
+            width, height = int(size.attrib["cx"]), int(size.attrib["cy"])
+        except (KeyError, ValueError):
+            return None
+        return (width, height) if width > 0 and height > 0 else None
+
     def _require_archive(self) -> zipfile.ZipFile:
         if self._archive is None:
             raise RuntimeError("OOXML package is not open")

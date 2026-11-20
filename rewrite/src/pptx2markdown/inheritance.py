@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Literal
 
+from .geometry import Transform, group_transform, xfrm_bbox
 from .ooxml import OOXMLPackage, resolve_relationship_target
 
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -24,6 +25,8 @@ _PROMPT_TOKEN = re.compile(r"[<‹«]\s*(?:#|slide\s+number|date(?:/time)?|foote
 PartKind = Literal["slide", "layout", "master"]
 ListKind = Literal["ul", "ol"]
 BBox = tuple[int, int, int, int]
+# Share of the slide a layout or master picture must cover to count as background art.
+BACKDROP_COVERAGE = 0.9
 
 
 def _local_name(tag: str) -> str:
@@ -178,6 +181,24 @@ class InheritedShape:
     source_part: PartKind
     part_name: str
     element: ET.Element
+    # Slide EMU, through the groups that hold the shape in its layout or master.
+    bbox: BBox | None = None
+
+
+def _drawn_shapes(
+    parent: ET.Element, transform: Transform = Transform()
+) -> list[tuple[ET.Element, BBox | None]]:
+    """Shapes and pictures of a shape tree, inside groups too, with their bounding boxes."""
+
+    drawn: list[tuple[ET.Element, BBox | None]] = []
+    for child in parent:
+        name = _local_name(child.tag)
+        if name == "grpSp":
+            drawn.extend(_drawn_shapes(child, transform.compose(group_transform(child))))
+        elif name in {"sp", "pic"}:
+            bbox = xfrm_bbox(child)
+            drawn.append((child, transform.apply(bbox) if bbox is not None else None))
+    return drawn
 
 
 @dataclass(frozen=True)
@@ -185,6 +206,7 @@ class _TemplatePart:
     name: str
     root: ET.Element
     drawables: tuple[ET.Element, ...]
+    drawn: tuple[tuple[ET.Element, BBox | None], ...]
     placeholders: dict[str, ET.Element]
     ambiguous: frozenset[str]
 
@@ -207,7 +229,8 @@ class _TemplatePart:
                 ambiguous.add(idx)
             else:
                 placeholders[idx] = child
-        return cls(name, root, drawables, placeholders, frozenset(ambiguous))
+        drawn = tuple(_drawn_shapes(tree)) if tree is not None else ()
+        return cls(name, root, drawables, drawn, placeholders, frozenset(ambiguous))
 
     @property
     def shows_master_shapes(self) -> bool:
@@ -242,10 +265,12 @@ class SlideTemplate:
         layout: _TemplatePart | None,
         master: _TemplatePart | None,
         shows_master_shapes: bool,
+        slide_size: tuple[int, int] | None = None,
     ) -> None:
         self._layout = layout
         self._master = master
         self._shows_master_shapes = shows_master_shapes
+        self._slide_size = slide_size
 
     def style(self, shape: ET.Element, own_bbox: BBox | None) -> ShapeStyle:
         placeholder = placeholder_element(shape)
@@ -320,12 +345,12 @@ class SlideTemplate:
         for kind, part in parts:
             if part is None:
                 continue
-            for child in part.drawables:
+            for child, bbox in part.drawn:
                 if _local_name(child.tag) != "sp" or placeholder_element(child) is not None:
                     continue
                 text = shape_text(child)
                 if text and not _is_prompt_text(text):
-                    inherited.append(InheritedShape(kind, part.name, child))
+                    inherited.append(InheritedShape(kind, part.name, child, bbox))
         return inherited
 
     def inherited_pictures(self) -> list[InheritedShape]:
@@ -335,14 +360,25 @@ class SlideTemplate:
         if self._shows_master_shapes:
             parts.append(("master", self._master))
         return [
-            InheritedShape(kind, part.name, child)
+            InheritedShape(kind, part.name, child, bbox)
             for kind, part in parts
             if part is not None
-            for child in part.drawables
+            for child, bbox in part.drawn
             if _local_name(child.tag) == "pic"
             and placeholder_element(child) is None
             and not _is_rule(child)
+            and not self._is_backdrop(bbox)
         ]
+
+    def _is_backdrop(self, bbox: BBox | None) -> bool:
+        """A template picture covering most of the slide is its background art."""
+
+        if bbox is None or self._slide_size is None:
+            return False
+        width, height = self._slide_size
+        x1, y1, x2, y2 = bbox
+        covered = max(0, min(x2, width) - max(x1, 0)) * max(0, min(y2, height) - max(y1, 0))
+        return covered >= BACKDROP_COVERAGE * width * height
 
     def _text_style(self, placeholder_type: str | None) -> ET.Element | None:
         """The master's p:txStyles entry that applies to a placeholder type."""
@@ -414,6 +450,7 @@ class TemplateResolver:
     def __init__(self, package: OOXMLPackage) -> None:
         self._package = package
         self._parts: dict[str, _TemplatePart] = {}
+        self._slide_size = package.slide_size()
 
     def for_slide(self, slide_part: str, slide_root: ET.Element) -> SlideTemplate:
         layout_name = self._related(slide_part, "slideLayout")
@@ -423,7 +460,7 @@ class TemplateResolver:
         shows_master = _shows_master_shapes(slide_root) and (
             layout is None or layout.shows_master_shapes
         )
-        return SlideTemplate(layout, master, shows_master)
+        return SlideTemplate(layout, master, shows_master, self._slide_size)
 
     def _related(self, part_name: str, relationship_type: str) -> str | None:
         for relationship in self._package.relationships(part_name).values():

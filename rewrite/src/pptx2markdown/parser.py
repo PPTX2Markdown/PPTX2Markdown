@@ -78,7 +78,6 @@ from .shapes import (
     local_name,
     table_overlays,
     with_template_style,
-    xfrm_bbox,
 )
 from .smartart import smartart_markdown
 from .tables import (
@@ -235,7 +234,7 @@ class _PresentationParser:
                 element=inherited.element,
                 tag="sp",
                 shape_id=element_shape_id(inherited.element),
-                bbox=xfrm_bbox(inherited.element),
+                bbox=inherited.bbox,
                 source_order=len(shapes) + offset,
                 source_part=inherited.source_part,
                 template_part=inherited.part_name,
@@ -247,7 +246,7 @@ class _PresentationParser:
                 element=inherited.element,
                 tag="pic",
                 shape_id=element_shape_id(inherited.element),
-                bbox=xfrm_bbox(inherited.element),
+                bbox=inherited.bbox,
                 source_order=len(shapes) + offset,
                 source_part=inherited.source_part,
                 template_part=inherited.part_name,
