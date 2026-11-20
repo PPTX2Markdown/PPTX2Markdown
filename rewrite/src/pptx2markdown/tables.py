@@ -5,9 +5,8 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Literal
 
-from .model import TableCell
+from .model import MergedCells, TableCell
 
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS = {"a": A_NS}
@@ -127,7 +126,6 @@ def cell_in(grid: Sequence[Sequence[GridCell]], row: int | None, column: int | N
     return grid[origin_row][origin_column]
 
 
-MergedCells = Literal["fill", "header", "blank"]
 MERGED_CELL_POLICIES: tuple[MergedCells, ...] = ("fill", "header", "blank")
 
 

@@ -8,6 +8,7 @@ from .api import (
     parse,
 )
 from .assets import AssetLimits, AssetStore
+from .chunks import Chunk, slide_chunks
 from .errors import (
     AssetError,
     AssetLimitError,
@@ -36,11 +37,13 @@ from .model import (
     SmartArtBlock,
     SourceDocument,
     TableBlock,
+    TableCell,
     TextBlock,
     UnsupportedBlock,
 )
 from .parser import ParseOptions
 from .presentation import ParsedPresentation
+from .recipe import Recipe, Rule, RuleMatch, apply_recipe, explain_recipe, recipe_json_schema
 from .writer import SavedAsset, SaveOptions, SaveResult
 
 __all__ = [
@@ -56,6 +59,7 @@ __all__ = [
     "BoundingBox",
     "BundleWriteError",
     "ChartBlock",
+    "Chunk",
     "ConversionFailure",
     "ConversionWarning",
     "HeadingBlock",
@@ -69,6 +73,9 @@ __all__ = [
     "ParsedPresentation",
     "PresentationDocument",
     "PresentationParseError",
+    "Recipe",
+    "Rule",
+    "RuleMatch",
     "SaveConflictError",
     "SaveOptions",
     "SaveResult",
@@ -77,10 +84,15 @@ __all__ = [
     "SmartArtBlock",
     "SourceDocument",
     "TableBlock",
+    "TableCell",
     "TextBlock",
     "UnsupportedBlock",
     "UnsupportedPresentationError",
+    "apply_recipe",
     "convert",
     "convert_many",
+    "explain_recipe",
     "parse",
+    "recipe_json_schema",
+    "slide_chunks",
 ]

@@ -120,6 +120,7 @@ class InheritanceTests(unittest.TestCase):
         self.assertEqual(
             blocks["10"],
             HeadingBlock(
+                id="s1.b1",
                 text="Agenda",
                 level=1,
                 shape_id="10",

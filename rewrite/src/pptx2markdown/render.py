@@ -17,6 +17,7 @@ from .model import (
     ListBlock,
     MathBlock,
     PresentationDocument,
+    SlideDocument,
     SmartArtBlock,
     TableBlock,
     TextBlock,
@@ -111,30 +112,56 @@ def render_block_markdown(
     raise TypeError(f"unknown content block: {type(block).__name__}")
 
 
+def render_slide_markdown(
+    slide: SlideDocument,
+    *,
+    asset_resolver: AssetResolver | None = None,
+    asset_mode: Literal["error", "omit"] = "error",
+    block_ids: bool = False,
+    page_marker: bool = True,
+) -> str:
+    """Render one slide; ``block_ids`` prefixes each block with ``<!-- s3.b2 -->``."""
+
+    parts = [f"[Page_{slide.page}]"] if page_marker else []
+    if slide.hidden:
+        parts.append("<!-- hidden: true -->")
+    for block in slide.blocks:
+        rendered = render_block_markdown(
+            block,
+            asset_resolver=asset_resolver,
+            asset_mode=asset_mode,
+        )
+        if rendered:
+            if block_ids and block.id:
+                rendered = f"<!-- {block.id} {block.kind} -->\n{rendered}"
+            parts.append(rendered)
+    if slide.notes and slide.notes.strip():
+        parts.extend(["[Speaker_Notes]", escape_text(slide.notes.strip())])
+    return "\n\n".join(parts)
+
+
 def render_presentation_markdown(
     document: PresentationDocument,
     *,
     asset_resolver: AssetResolver | None = None,
     asset_mode: Literal["error", "omit"] = "error",
+    block_ids: bool = False,
 ) -> str:
-    """Render deterministic Markdown from one canonical document."""
+    """Render deterministic Markdown from one canonical document.
 
-    slides: list[str] = []
-    for slide in document.slides:
-        parts = [f"[Page_{slide.page}]"]
-        if slide.hidden:
-            parts.append("<!-- hidden: true -->")
-        for block in slide.blocks:
-            rendered = render_block_markdown(
-                block,
-                asset_resolver=asset_resolver,
-                asset_mode=asset_mode,
-            )
-            if rendered:
-                parts.append(rendered)
-        if slide.notes and slide.notes.strip():
-            parts.extend(["[Speaker_Notes]", escape_text(slide.notes.strip())])
-        slides.append("\n\n".join(parts))
+    ``block_ids`` annotates every block with its id and kind in an HTML comment, so a
+    reviewer or a language model can point recipe rules at exact blocks.
+    """
+
+    slides = [
+        render_slide_markdown(
+            slide,
+            asset_resolver=asset_resolver,
+            asset_mode=asset_mode,
+            block_ids=block_ids,
+        )
+        for slide in document.slides
+    ]
     merged = "\n\n".join(slides).strip()
     return f"{merged}\n" if merged else ""
 

@@ -19,6 +19,8 @@
 - Pydantic 2.10 이상
 - omml2latex 0.1.0 이상
 - chart2md 0.1.0 이상
+- smartart2md 0.1.1 이상
+- olefile 0.47 이상
 - 로컬 `.pptx` 입력
 
 파싱 경로에는 OCR, VLM, API key, cloud inference, PowerPoint 자동화,
@@ -51,6 +53,62 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     )
 ```
 
+### 검색용 청크
+
+`slide_chunks()`는 슬라이드마다 청크 하나를 돌려주고, 인용에 필요한 metadata(원본,
+페이지, 슬라이드·덱 제목, 블록 id, 블록 종류)를 붙입니다. `max_chars`보다 긴
+슬라이드는 블록 경계에서 나누며 표 중간에서 자르지 않습니다. 각 청크는 덱과
+슬라이드를 밝히는 주석으로 시작하므로, 검색된 청크 하나만 봐도 맥락을 알 수
+있습니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for chunk in pptx2markdown.slide_chunks(presentation.document, max_chars=2000):
+        index.add(chunk.text, metadata=chunk.metadata)
+```
+
+### 레시피
+
+레시피는 파서를 건드리지 않고 파싱된 문서를 조정합니다. 문서 전체 설정과,
+블록이나 슬라이드를 골라 무엇을 할지 정하는 규칙으로 이루어집니다. 단순한
+데이터라서 덱 옆에 저장하거나, 검토하거나, 팀에서 공유할 수 있고, "부록은 빼고
+매출 표는 위 두 줄을 머리글로 봐줘" 같은 요청으로부터 언어 모델이 작성할 수도
+있습니다. 적용 결과는 항상 같습니다.
+
+```python
+recipe = pptx2markdown.Recipe(
+    merged_cells="blank",
+    rules=[
+        {"target": "slide[12-]", "exclude": True, "reason": "부록"},
+        {"target": "slide[3]/table[0]", "header_rows": 2},
+        {"target": "s5.b2", "description": "2021-2024 분기별 매출"},
+        {"target": "s1.b3", "heading_level": 2},
+    ],
+)
+with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
+    ...
+```
+
+모든 블록에는 `s<페이지>.b<번호>` id가 있습니다. `render_markdown(block_ids=True)`는
+이를 `<!-- s3.b2 table -->` 주석으로 보여 주므로 검토자나 모델이 정확한 블록을
+가리킬 수 있고, `explain_recipe()`는 적용 전에 각 규칙이 무엇을 고르는지
+알려 줍니다. selector는 다음과 같습니다.
+
+| Selector | 고르는 대상 |
+| --- | --- |
+| `s3.b2` | id로 지정한 블록 하나 |
+| `slide[3]`, `slide[2-5]`, `slide[12-]`, `slide[*]`, `slide[hidden]` | 슬라이드 전체 |
+| `table`, `image`, `heading` 등 또는 `*` | 해당 종류의 모든 블록 |
+| `table[0]`, `table[-1]` | 슬라이드마다 해당 종류의 첫 번째·마지막 블록 |
+| `slide[3]/table[0]` | 3번 슬라이드의 첫 번째 표 |
+
+규칙 동작: `exclude`, `merged_cells`, `header_rows`(표), `heading_level`(제목 수준
+변경 또는 텍스트를 제목으로), `as_text`(제목·목록), `description`(이미지 대체
+텍스트), `notes`(슬라이드 selector), 그리고 검토용으로만 남는 `reason`. 뒤의
+규칙이 앞의 규칙보다 우선하며, 모든 selector는 파싱된 그대로의 문서를 봅니다.
+`recipe_json_schema()`(또는 `pptx2markdown --recipe-schema`)는 입력 폼이나 모델의
+구조화 출력에 쓸 JSON Schema를 돌려줍니다.
+
 파싱과 저장을 한 번에 수행하려면 `convert()`를 사용합니다.
 
 ```python
@@ -67,6 +125,8 @@ pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
 pptx2markdown deck.pptx --merged-cells blank
+pptx2markdown deck.pptx --recipe recipe.json
+pptx2markdown --recipe-schema
 ```
 
 기본 출력:
