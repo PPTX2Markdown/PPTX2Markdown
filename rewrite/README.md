@@ -112,7 +112,9 @@ moved without breaking embedded assets.
 - charts via chart2md: classic charts from their cached values, Office 2016
   chartEx charts (funnel, waterfall, ...) from their embedded workbook, which is
   checked like the package itself and falls back to cached values when rejected
-- SmartArt text data
+- SmartArt via smartart2md: hierarchies as indented lists, process and cycle
+  layouts as numbered steps, matrices as tables and pictures as images; a
+  diagram whose nodes have no text is counted as `[smartart: N unlabeled nodes]`
 - speaker notes
 - grouped shapes and Markup Compatibility `AlternateContent`
 

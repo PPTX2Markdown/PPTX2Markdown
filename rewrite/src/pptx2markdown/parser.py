@@ -72,6 +72,7 @@ from .ooxml import (
     resolve_relationship_target,
 )
 from .reading_order import LayoutNode, geometry_reading_order
+from .smartart import smartart_markdown
 from .tables import GridCell, cell_at, cell_bounds, cell_in, grid_markdown, table_grid
 
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -1000,6 +1001,17 @@ class _PresentationParser:
                 shape_id=shape_id,
             )
             return None
+        return self._register_part(package, target, kind=kind, slide=slide, shape_id=shape_id)
+
+    def _register_part(
+        self,
+        package: OOXMLPackage,
+        target: str,
+        *,
+        kind: Literal["image", "attachment"],
+        slide: int,
+        shape_id: str | None,
+    ):
         try:
             with package.open_part(target) as stream:
                 return self.assets.register_stream(
@@ -1020,6 +1032,58 @@ class _PresentationParser:
                 shape_id=shape_id,
             )
             return None
+
+    def _smartart_blocks(
+        self,
+        package: OOXMLPackage,
+        entry: SlideEntry,
+        shape: _Shape,
+        data_part: str,
+        bbox: BoundingBox | None,
+    ) -> list[ContentBlock]:
+        provenance = {"shape_id": shape.shape_id, "bbox": bbox}
+        try:
+            conversion = smartart_markdown(package, data_part)
+        except (PackageSecurityError, AssetLimitError):
+            raise
+        except Exception as exc:  # smartart2md on a malformed data model
+            self.warnings.add(
+                "smartart-conversion-failed",
+                f"SmartArt could not be converted: {type(exc).__name__}: {exc}",
+                slide=entry.page,
+                shape_id=shape.shape_id,
+            )
+            return [UnsupportedBlock(message="SmartArt could not be converted", **provenance)]
+
+        asset_ids: list[str] = []
+
+        def picture(part: str) -> str:
+            descriptor = self._register_part(
+                package, part, kind="image", slide=entry.page, shape_id=shape.shape_id
+            )
+            if descriptor is None:
+                return ""
+            asset_ids.append(descriptor.id)
+            return _image_markdown("image", descriptor.id)
+
+        markdown = conversion.render(picture)
+        if markdown:
+            return [
+                SmartArtBlock(
+                    markdown=markdown, asset_ids=tuple(dict.fromkeys(asset_ids)), **provenance
+                )
+            ]
+        if conversion.content_points:
+            count = conversion.content_points
+            label = f"{count} unlabeled node{'' if count == 1 else 's'}"
+            return [SmartArtBlock(markdown=f"[smartart: {label}]", **provenance)]
+        self.warnings.add(
+            "smartart-empty",
+            "SmartArt has no content nodes",
+            slide=entry.page,
+            shape_id=shape.shape_id,
+        )
+        return []
 
     def _ole_attachment(
         self,
@@ -1313,21 +1377,7 @@ class _PresentationParser:
             if relationship is not None and not relationship.external:
                 target = resolve_relationship_target(entry.part_name, relationship)
                 if target is not None and package.exists(target):
-                    root = package.xml(target)
-                    texts = [
-                        re.sub(r"\s+", " ", node.text or "").strip()
-                        for node in root.findall(".//a:t", NS)
-                    ]
-                    texts = [text for text in texts if text]
-                    if texts:
-                        markdown = "\n".join(f"- {text}" for text in texts)
-                        return [
-                            SmartArtBlock(
-                                markdown=markdown,
-                                shape_id=shape.shape_id,
-                                bbox=bbox,
-                            )
-                        ]
+                    return self._smartart_blocks(package, entry, shape, target, bbox)
             self.warnings.add(
                 "smartart-data-unavailable",
                 "SmartArt data relationship is unavailable",

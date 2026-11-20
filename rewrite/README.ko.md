@@ -111,7 +111,9 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
 - chart2md를 이용한 차트 변환: 일반 차트는 cache 값으로, Office 2016 chartEx
   차트(깔때기, 폭포 등)는 내장 workbook으로 변환합니다. 내장 workbook도 패키지와
   같은 기준으로 검사하며, 거부되면 cache 값을 사용합니다.
-- SmartArt 텍스트 데이터
+- smartart2md를 이용한 SmartArt 변환: 계층은 들여 쓴 목록, 프로세스·순환은 번호
+  단계, 행렬은 표, 그림은 이미지로 씁니다. 텍스트 없는 노드만 있는 다이어그램은
+  `[smartart: N unlabeled nodes]`로 개수를 남깁니다.
 - 발표자 노트
 - 그룹 도형과 Markup Compatibility `AlternateContent`
 
