@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .api import convert_many
-from .recipe import Recipe, recipe_json_schema
+from .recipe import Recipe, merge_recipes, recipe_json_schema
 from .tables import MERGED_CELL_POLICIES
 
 
@@ -54,6 +54,12 @@ def _parser() -> argparse.ArgumentParser:
             "What table cells covered by a merge show: fill repeats the merged value "
             "(default), header repeats it only in the header row, blank leaves them empty"
         ),
+    )
+    parser.add_argument(
+        "--headings",
+        choices=("auto", "strict"),
+        default="auto",
+        help="strict keeps only headings from title placeholders (recipe headings=placeholder)",
     )
     parser.add_argument(
         "--recipe",
@@ -158,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             recipe = Recipe.model_validate_json(args.recipe.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             parser.error(f"invalid recipe {args.recipe}: {exc}")
+    if args.headings == "strict":
+        recipe = merge_recipes(recipe or Recipe(), Recipe(headings="placeholder"))
     if args.review:
         return _print_review(args, recipe)
     if args.ask:

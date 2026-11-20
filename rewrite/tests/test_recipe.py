@@ -288,3 +288,14 @@ class HeadingPolicyTests(unittest.TestCase):
         items = [item for item in review(self._document()) if item.topic == "heading"]
         self.assertEqual([item.target for item in items], ["s1.b3"])
         self.assertTrue(items[0].options[1].rule.as_text)
+
+
+class CliHeadingsTests(unittest.TestCase):
+    def test_strict_headings_keep_only_placeholder_headings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = build_test_pptx(root / "deck.pptx")
+            code = cli.main([str(source), "-o", str(root / "out"), "--headings", "strict"])
+            self.assertEqual(code, 0)
+            markdown = (root / "out" / "deck" / "deck.md").read_text(encoding="utf-8")
+        self.assertIn("# Quarterly Report", markdown)
