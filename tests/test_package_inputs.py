@@ -27,10 +27,12 @@ class PackageInputTests(unittest.TestCase):
             lock_file = root / "~$sample.pptx"
             lock_file.write_bytes(b"office lock metadata")
 
-            prepared, missing = prepare_package_inputs(root, [str(lock_file)])
+            with self.assertLogs("pptx2markdown", level="WARNING") as logs:
+                prepared, missing = prepare_package_inputs(root, [str(lock_file)])
 
         self.assertEqual(prepared, [])
         self.assertEqual(missing, [])
+        self.assertIn("skipping Office lock file", logs.output[0])
 
     def test_ignored_lock_file_does_not_hide_genuinely_missing_input(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
