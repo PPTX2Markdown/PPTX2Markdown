@@ -5,21 +5,57 @@
 ## 의존성 방향
 
 ```text
-api / cli
-    ↓
-parser → ooxml / inheritance / reading_order / headings / omml / charts / tables
+api / cli                                agent (선택, anthropic)
+    ↓                                        ↓ 레시피만 작성
+parser → ooxml / inheritance / reading_order / headings / inline
+       → omml / charts / smartart / tables / attachments
     ↓
 model + AssetStore
     ↓
-ParsedPresentation
-    ↓
-renderer
+ParsedPresentation ←── recipe (apply_recipe: 문서 → 문서)
+    ↓                  review (문서 → 레시피 규칙이 달린 질문)
+renderer / chunks
     ↓
 transactional bundle writer
 ```
 
 표준 문서는 로컬 경로나 binary payload를 소유하지 않습니다. Runtime 소유권은
 `ParsedPresentation`에 있으며, 이 객체가 `AssetStore`를 닫습니다.
+
+
+## 결정은 데이터로
+
+읽기 순서, 제목, 목록 구조, 표 머리글과 제목은 항상 parser가 결정합니다. 파싱
+이후의 모든 단계는 표준 문서만 다룹니다.
+
+- `recipe.apply_recipe`는 문서와 레시피를 받아 문서를 돌려주는 순수 함수입니다.
+  selector는 읽기 순서대로 매긴 블록 id(`s<페이지>.b<번호>`)나 슬라이드·종류로
+  블록을 고르며, 항상 파싱된 그대로의 문서를 보므로 규칙의 대상이 앞 규칙에 따라
+  달라지지 않습니다.
+- `review.review`는 문서를 읽고 다시 볼 만한 결정을 골라, 대안을 바로 쓸 수 있는
+  레시피 규칙으로 함께 돌려줍니다.
+- `agent`(선택)는 레시피만 만듭니다. 요청·검토 질문·이미지를 받아 검증된 레시피를
+  내놓고, `explain_recipe`로 모든 규칙이 무언가를 고르는지 확인합니다. 모델은
+  본문이나 parser를 고치지 않습니다.
+
+표는 전체 격자(`rows`, 병합 범위, `merged_from`)를, 제목은 제목이 된 근거
+(`source`)를 남기므로, 레시피는 패키지를 다시 파싱하지 않고 블록을 다시
+렌더링하거나 분류를 바꿀 수 있습니다.
+
+## Inline Markdown
+
+텍스트·제목·목록·표 셀의 텍스트는 이스케이프된 inline Markdown입니다. parser가
+텍스트 규칙(제목, 직접 입력한 글머리)을 적용하는 동안 생성한 마크업(링크, 문장 속
+수식, 강조)은 private-use 표지 문자로 감싸 두고, 블록을 만들 때
+`inline.finalize`가 원문 문자만 이스케이프한 뒤 표지를 지웁니다. 발표자 노트는
+모델에서는 평문으로 두고 렌더링할 때 이스케이프합니다.
+
+## 읽기 순서
+
+`reading_order`는 재귀 XY-cut입니다. 영역을 관통하는 세로 공백이 있으면 열로
+나눠 한 열씩 읽고, 없으면 맨 위 띠를 먼저 읽은 뒤 나머지를 다시 나눕니다. 촘촘히
+쌓인 단일 상자들은 위에서 아래로 읽고, 1px까지 겹쳐도 공백으로 보며, 바닥글과
+장식 도형은 공백을 찾는 데 쓰지 않습니다.
 
 ## Asset 식별
 
