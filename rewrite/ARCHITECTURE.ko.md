@@ -7,7 +7,8 @@
 ```text
 api / cli                                agent (선택, anthropic)
     ↓                                        ↓ 레시피만 작성
-parser → ooxml / inheritance / reading_order / headings / inline
+parser → shapes (geometry, footers, decoration) / paragraphs (runs, lists)
+       → ooxml / inheritance / reading_order / headings / inline
        → omml / charts / smartart / tables / attachments
     ↓
 model + AssetStore

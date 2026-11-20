@@ -7,7 +7,8 @@
 ```text
 api / cli                                agent (optional, anthropic)
     ↓                                        ↓ writes recipes only
-parser → ooxml / inheritance / reading_order / headings / inline
+parser → shapes (geometry, footers, decoration) / paragraphs (runs, lists)
+       → ooxml / inheritance / reading_order / headings / inline
        → omml / charts / smartart / tables / attachments
     ↓
 model + AssetStore
