@@ -374,6 +374,9 @@ def prepare_package_inputs(
     for item in raw_inputs:
         raw_path = Path(item)
         if raw_path.suffix.lower() in {".pptx", ".ppt"} and is_ignored_presentation_file(raw_path):
+            # Shell globs pick up the lock files of open decks, so this is not an error,
+            # but a named input should never vanish without a word.
+            logger.warning("[input] skipping Office lock file (not a presentation): %s", item)
             continue
 
         picked_file, candidates = resolve_input_presentation_path(cwd, item)
