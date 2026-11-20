@@ -19,9 +19,13 @@ from .render import render_presentation_json, render_presentation_markdown
 
 @dataclass(frozen=True)
 class SaveOptions:
-    output_format: Literal["markdown", "json"] = "markdown"
+    """``chunks`` writes one JSON line per slide chunk (see ``slide_chunks``), split
+    at ``max_chunk_chars`` when set."""
+
+    output_format: Literal["markdown", "json", "chunks"] = "markdown"
     assets: Literal["copy", "omit"] = "copy"
     overwrite: Literal["error", "replace"] = "error"
+    max_chunk_chars: int | None = None
 
 
 @dataclass(frozen=True)
@@ -133,7 +137,9 @@ def save_bundle(
     try:
         document = presentation.document
         stem = safe_basename(Path(document.source.name).stem, fallback="presentation")
-        extension = ".md" if options.output_format == "markdown" else ".json"
+        extension = {"markdown": ".md", "json": ".json", "chunks": ".chunks.jsonl"}[
+            options.output_format
+        ]
         document_name = f"{stem}{extension}"
         document_path = staging / document_name
         manifest_path = staging / "bundle-manifest.json"
@@ -167,15 +173,31 @@ def save_bundle(
                 )
             )
 
+        def bundle_location(asset_id: str) -> str:
+            return relative_paths[asset_id].as_posix() if asset_id in relative_paths else ""
+
         if options.output_format == "markdown":
             output_text = render_presentation_markdown(
                 document,
-                asset_resolver=(
-                    lambda asset_id: (
-                        relative_paths[asset_id].as_posix() if asset_id in relative_paths else ""
-                    )
-                ),
+                asset_resolver=bundle_location,
                 asset_mode="omit" if options.assets == "omit" else "error",
+            )
+        elif options.output_format == "chunks":
+            from .chunks import slide_chunks
+
+            output_text = "".join(
+                json.dumps(
+                    {"text": chunk.text, "metadata": chunk.metadata},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n"
+                for chunk in slide_chunks(
+                    document,
+                    asset_resolver=bundle_location if options.assets == "copy" else None,
+                    asset_mode="omit" if options.assets == "omit" else "error",
+                    max_chars=options.max_chunk_chars,
+                )
             )
         else:
             output_text = render_presentation_json(document)

@@ -27,8 +27,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-format",
-        choices=("markdown", "json"),
+        choices=("markdown", "json", "chunks"),
+        help="chunks writes one JSON line per slide chunk for retrieval pipelines",
         default="markdown",
+    )
+    parser.add_argument(
+        "--max-chunk-chars",
+        type=int,
+        help="With --output-format chunks, split slides longer than this at block boundaries",
     )
     parser.add_argument(
         "--no-assets",
@@ -169,6 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         strict=not args.tolerant,
         merged_cells=args.merged_cells,
         recipe=recipe,
+        max_chunk_chars=args.max_chunk_chars,
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

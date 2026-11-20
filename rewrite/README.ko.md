@@ -67,6 +67,10 @@ with pptx2markdown.parse("deck.pptx") as presentation:
         index.add(chunk.text, metadata=chunk.metadata)
 ```
 
+`--output-format chunks`는 같은 청크를 JSON Lines(`<덱>.chunks.jsonl`, 줄마다
+`{"text": ..., "metadata": ...}`)로 쓰며, 이미지 링크는 번들 안을 가리킵니다.
+`--max-chunk-chars`로 나누는 크기를 정합니다.
+
 ### 레시피
 
 레시피는 파서를 건드리지 않고 파싱된 문서를 조정합니다. 문서 전체 설정과,
@@ -170,6 +174,7 @@ result = pptx2markdown.convert(
 pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --output-format chunks --max-chunk-chars 2000
 pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema

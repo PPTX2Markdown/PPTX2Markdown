@@ -99,9 +99,10 @@ class ParsedPresentation:
         self,
         bundle_dir: str | Path,
         *,
-        output_format: Literal["markdown", "json"] = "markdown",
+        output_format: Literal["markdown", "json", "chunks"] = "markdown",
         assets: Literal["copy", "omit"] = "copy",
         overwrite: Literal["error", "replace"] = "error",
+        max_chunk_chars: int | None = None,
     ):
         """Write a portable bundle using the atomic writer."""
 
@@ -115,6 +116,7 @@ class ParsedPresentation:
                 output_format=output_format,
                 assets=assets,
                 overwrite=overwrite,
+                max_chunk_chars=max_chunk_chars,
             ),
         )
 
