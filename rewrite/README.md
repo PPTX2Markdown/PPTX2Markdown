@@ -247,7 +247,9 @@ moved without breaking embedded assets.
   `text` or `font`) so the weakest decisions can be reviewed or dropped
 - placeholder type, position, font size and bullets inherited from the slide
   layout and master; footer placeholders are dropped
-- text shapes drawn from the slide layout and master
+- text shapes and pictures drawn from the slide layout and master (blocks keep
+  `source_part`; thin lines and bands are decoration; the recipe setting
+  `template_pictures: false` leaves repeated logos out)
 - text, hyperlinks and lists; consecutive plain paragraphs of a shape form one
   text block (one line each) and consecutive bullets one list, while text, lists
   and equations in the same shape stay separate typed blocks; a typed `▶` starts
@@ -286,9 +288,9 @@ moved without breaking embedded assets.
 Unsupported or unavailable content produces a structured warning or an
 `UnsupportedBlock`; it is not silently treated as successfully converted.
 
-Legacy `.ppt`, pictures and tables drawn from the layout or master, OCR, image
-descriptions and vector image rasterization are not part of this first
-standalone rewrite.
+Legacy `.ppt`, tables drawn from the layout or master, OCR and vector image
+rasterization are not part of the rewrite; image descriptions come only from the
+optional agent.
 
 ## Development
 

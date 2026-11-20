@@ -213,6 +213,7 @@ def build_templated_pptx(
     layout_xml: str,
     master_xml: str,
     layout_relationships: str = "",
+    extra_parts: dict[str, str | bytes] | None = None,
 ) -> Path:
     """One slide inheriting from one layout and one master."""
 
@@ -240,6 +241,8 @@ def build_templated_pptx(
             ),
         )
         archive.writestr("ppt/slideMasters/slideMaster1.xml", master_xml)
+        for name, data in (extra_parts or {}).items():
+            archive.writestr(name, data)
     return path
 
 

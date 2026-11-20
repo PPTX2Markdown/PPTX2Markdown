@@ -242,7 +242,9 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
   가장 약한 판정만 골라 검토하거나 뺄 수 있습니다.
 - slide layout/master에서 상속한 placeholder 종류, 위치, 글꼴 크기, 글머리 기호
   (바닥글 placeholder는 제외)
-- slide layout/master에 그려진 텍스트 shape
+- slide layout/master에 그려진 텍스트 shape와 그림(블록에 `source_part`가 남고, 가는
+  선·띠는 장식으로 봅니다. 반복되는 로고는 레시피 설정 `template_pictures: false`로
+  뺄 수 있습니다)
 - 텍스트, hyperlink, 목록. 한 shape 안에서 이어지는 일반 문단은 텍스트 블록
   하나(문단마다 한 줄)로, 이어지는 글머리 기호 문단은 목록 하나로 묶습니다.
   같은 shape 안의 텍스트·목록·수식은 각자 종류에 맞는 블록으로 둡니다.
@@ -280,8 +282,8 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
 지원하지 못하거나 관계가 없는 콘텐츠는 구조화 warning 또는
 `UnsupportedBlock`으로 남기며, 성공한 것처럼 조용히 버리지 않습니다.
 
-구형 `.ppt`, layout/master에 그려진 그림과 표, OCR, 이미지 설명,
-vector 이미지 rasterization은 첫 독립 구현 범위에 포함하지 않았습니다.
+구형 `.ppt`, layout/master에 그려진 표, OCR, vector 이미지 rasterization은 rewrite
+범위에 포함하지 않으며, 이미지 설명은 선택 설치하는 에이전트만 만듭니다.
 
 ## 개발
 

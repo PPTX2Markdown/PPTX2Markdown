@@ -906,6 +906,18 @@ class _PresentationParser:
             )
             for offset, inherited in enumerate(template.inherited_text_shapes())
         )
+        shapes.extend(
+            _Shape(
+                element=inherited.element,
+                tag="pic",
+                shape_id=_shape_id(inherited.element),
+                bbox=_xfrm_bbox(inherited.element),
+                source_order=len(shapes) + offset,
+                source_part=inherited.source_part,
+                template_part=inherited.part_name,
+            )
+            for offset, inherited in enumerate(template.inherited_pictures())
+        )
         styled = [_with_template_style(shape, template) for shape in shapes]
         ordered_shapes = geometry_reading_order(
             LayoutNode(
@@ -944,7 +956,9 @@ class _PresentationParser:
                         package,
                         entry,
                         shape,
-                        relationships,
+                        package.relationships(shape.template_part)
+                        if shape.template_part is not None
+                        else relationships,
                         overlays.get(id(shape.element), []),
                     )
                 )
@@ -1225,13 +1239,15 @@ class _PresentationParser:
     ) -> list[ContentBlock]:
         blocks: list[ContentBlock] = []
         bbox = _bbox_model(shape.bbox)
+        # A picture drawn from the layout or master resolves its links from that part.
+        part_name = shape.template_part or entry.part_name
         blip = shape.element.find(".//a:blip", NS)
         rid = blip.attrib.get(f"{{{OFFICE_REL_NS}}}embed", "") if blip is not None else ""
         relationship = relationships.get(rid)
         if relationship is not None:
             descriptor = self._register_related_asset(
                 package,
-                source_part=entry.part_name,
+                source_part=part_name,
                 relationship=relationship,
                 kind="image",
                 slide=entry.page,
@@ -1250,6 +1266,7 @@ class _PresentationParser:
                         alt_text=alt_text,
                         shape_id=shape.shape_id,
                         bbox=bbox,
+                        source_part=shape.source_part,
                     )
                 )
         elif rid:
@@ -1270,7 +1287,7 @@ class _PresentationParser:
                 continue
             descriptor = self._register_related_asset(
                 package,
-                source_part=entry.part_name,
+                source_part=part_name,
                 relationship=media_relationship,
                 kind="attachment",
                 slide=entry.page,
