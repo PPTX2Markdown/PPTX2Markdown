@@ -38,6 +38,7 @@ PRESENTATION = """\
   <p:sldIdLst>
     <p:sldId id="256" r:id="rId1"/>
   </p:sldIdLst>
+  <p:sldSz cx="9144000" cy="6858000"/>
 </p:presentation>
 """
 
@@ -213,6 +214,7 @@ def build_templated_pptx(
     layout_xml: str,
     master_xml: str,
     layout_relationships: str = "",
+    master_relationships: str = "",
     extra_parts: dict[str, str | bytes] | None = None,
 ) -> Path:
     """One slide inheriting from one layout and one master."""
@@ -241,6 +243,11 @@ def build_templated_pptx(
             ),
         )
         archive.writestr("ppt/slideMasters/slideMaster1.xml", master_xml)
+        if master_relationships:
+            archive.writestr(
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                _relationships(master_relationships),
+            )
         for name, data in (extra_parts or {}).items():
             archive.writestr(name, data)
     return path
