@@ -9,6 +9,7 @@ wrapped in private-use sentinels so those rules see the same text as before, and
 from __future__ import annotations
 
 import re
+import unicodedata
 
 OPEN = ""
 CLOSE = ""
@@ -88,8 +89,62 @@ def _escape_line_start(line: str) -> str:
     return line
 
 
+_EMPHASIS_MARKERS = {"*", "**", "***"}
+
+
+def _is_space(char: str) -> bool:
+    return char.isspace()
+
+
+def _is_punctuation(char: str) -> bool:
+    return unicodedata.category(char)[0] in {"P", "S"}
+
+
+def _drop_unrenderable_emphasis(pieces: list[str]) -> list[str]:
+    """Remove emphasis pairs that CommonMark would print as literal asterisks.
+
+    An opening ``**`` must be left-flanking and a closing one right-flanking: in
+    ``**중첩된(nested)**테이블`` the closing run sits between ``)`` and a letter, so
+    a renderer shows the asterisks. Such a pair is dropped and the text stays.
+    """
+
+    def text_of(piece: str) -> str:
+        return piece[1:-1] if piece.startswith(OPEN) else piece
+
+    def before(index: int) -> str:
+        for piece in reversed(pieces[:index]):
+            if text := text_of(piece):
+                return text[-1]
+        return " "
+
+    def after(index: int) -> str:
+        for piece in pieces[index + 1 :]:
+            if text := text_of(piece):
+                return text[0]
+        return " "
+
+    markers = [
+        index
+        for index, piece in enumerate(pieces)
+        if piece.startswith(OPEN) and piece[1:-1] in _EMPHASIS_MARKERS
+    ]
+    result = list(pieces)
+    for opening, closing in zip(markers[::2], markers[1::2]):
+        left, first = before(opening), after(opening)
+        last, right = before(closing), after(closing)
+        left_flanking = not _is_space(first) and (
+            not _is_punctuation(first) or _is_space(left) or _is_punctuation(left)
+        )
+        right_flanking = not _is_space(last) and (
+            not _is_punctuation(last) or _is_space(right) or _is_punctuation(right)
+        )
+        if not (left_flanking and right_flanking):
+            result[opening] = result[closing] = ""
+    return result
+
+
 def _finalize_line(line: str, *, line_start: bool) -> str:
-    pieces = re.split(f"({OPEN}[^{CLOSE}]*{CLOSE})", line)
+    pieces = _drop_unrenderable_emphasis(re.split(f"({OPEN}[^{CLOSE}]*{CLOSE})", line))
     source = "".join(piece for piece in pieces if not piece.startswith(OPEN))
     # Two or more dollar signs could pair up as inline math in renderers that support it.
     dollars = source.count("$") >= 2
