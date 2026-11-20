@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import BinaryIO, Iterable, Literal
 
 from .assets import safe_basename
-from .errors import PPTX2MarkdownError
+from .errors import PPTX2MarkdownError, UnsupportedPresentationError
 from .parser import ParseOptions, parse_components
+from .ppt import PptConverter, ppt_to_pptx
 from .presentation import ParsedPresentation
 from .recipe import Recipe
 from .tables import MergedCells
@@ -50,6 +51,7 @@ def parse(
     strict: bool = True,
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
+    ppt_converter: PptConverter = "none",
 ) -> ParsedPresentation:
     """Parse one PPTX without creating persistent output.
 
@@ -59,8 +61,20 @@ def parse(
     ``merged_cells`` controls table Markdown: ``fill`` repeats a merged value in
     every cell it covers, ``header`` only in the header row, ``blank`` nowhere.
     ``recipe`` is applied to the parsed document before it is returned.
+    ``ppt_converter="libreoffice"`` accepts a legacy ``.ppt`` path by having
+    LibreOffice save it as ``.pptx`` first (see ``pptx2markdown.ppt``).
     """
 
+    if isinstance(path, (str, Path)) and Path(path).suffix.casefold() == ".ppt":
+        source = Path(path).expanduser()
+        if ppt_converter != "libreoffice":
+            raise UnsupportedPresentationError(
+                f"{source.name} is a legacy .ppt file: save it as .pptx, or pass "
+                "ppt_converter='libreoffice' (--ppt-converter libreoffice) to convert it"
+            )
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        path, name = ppt_to_pptx(source), name or f"{source.stem}.pptx"
     components = parse_components(
         path,
         name=name,
@@ -94,6 +108,7 @@ def convert(
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
     max_chunk_chars: int | None = None,
+    ppt_converter: PptConverter = "none",
 ) -> SaveResult:
     """Parse and save one presentation as a portable bundle."""
 
@@ -109,6 +124,7 @@ def convert(
         strict=strict,
         merged_cells=merged_cells,
         recipe=recipe,
+        ppt_converter=ppt_converter,
     ) as presentation:
         return presentation.save(
             bundle_dir,
@@ -130,6 +146,7 @@ def convert_many(
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
     max_chunk_chars: int | None = None,
+    ppt_converter: PptConverter = "none",
 ) -> BatchConversionResult:
     """Convert inputs independently and preserve successful bundles."""
 
@@ -163,6 +180,7 @@ def convert_many(
                     merged_cells=merged_cells,
                     recipe=recipe,
                     max_chunk_chars=max_chunk_chars,
+                    ppt_converter=ppt_converter,
                 )
             )
         except (PPTX2MarkdownError, OSError, ValueError) as exc:

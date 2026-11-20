@@ -259,6 +259,7 @@ def build_test_pptx(
     *,
     extra_slide_relationships: str = "",
     extra_parts: dict[str, str | bytes] | None = None,
+    notes_xml: str = NOTES,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     slide_relationships = SLIDE_RELS.replace(
@@ -273,7 +274,7 @@ def build_test_pptx(
         archive.writestr("ppt/slides/_rels/slide1.xml.rels", slide_relationships)
         for name, data in (extra_parts or {}).items():
             archive.writestr(name, data)
-        archive.writestr("ppt/notesSlides/notesSlide1.xml", NOTES)
+        archive.writestr("ppt/notesSlides/notesSlide1.xml", notes_xml)
         archive.writestr("ppt/media/image1.png", b"\x89PNG\r\n\x1a\nsynthetic")
         archive.writestr("ppt/media/media1.mp3", b"ID3synthetic-audio")
     return path
