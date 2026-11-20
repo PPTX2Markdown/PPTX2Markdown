@@ -31,8 +31,10 @@ accepted.
   separate row-clustering pass.
 - Full-width regions remain before and after their enclosed grid. Within the
   tightly aligned grid fixture, horizontal cuts yield row-major order.
-- Merged header cells repeat their value across Markdown header columns; merged
-  body cells keep content only at the merge origin.
+- Merged cells repeat the merged value in every cell they cover, in the header
+  and the body, horizontally and vertically (`--merged-cells fill`, the default),
+  so each row reads on its own; `--merged-cells blank` keeps the value only in
+  the cell the merge starts from.
 - Unicode content is preserved as authored. NFC/NFD and full-width variants are
   not rewritten in the user-visible output.
 - Unlabeled SmartArt is represented by a stable node-count placeholder rather

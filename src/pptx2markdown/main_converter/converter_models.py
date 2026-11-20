@@ -322,6 +322,7 @@ class ConverterConfig(BaseModel):
     output_format: str = "markdown"
     heading_mode: str = "auto"
     strict: bool = False
+    merged_cells: str = "fill"
     pptx_inheritance: str = "style"
     inherited_shapes: str = "visible"
     ppt_converter: str = "auto"

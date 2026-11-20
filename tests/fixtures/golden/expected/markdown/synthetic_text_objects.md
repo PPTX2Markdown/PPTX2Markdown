@@ -47,7 +47,7 @@ emoji 😀
 |---|---|---|
 | Column A | Column B | Column C |
 | alpha<br>beta | plain cell | gamma |
-| merged body |  | tail |
+| merged body | merged body | tail |
 
 [Page_5]
 

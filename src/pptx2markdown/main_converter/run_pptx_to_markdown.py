@@ -1168,6 +1168,7 @@ def convert_table_to_markdown(
     copied_media: Optional[Dict[str, Path]] = None,
     rels_path: Optional[Path] = None,
     rels_map: Optional[Dict[str, str]] = None,
+    merged_cells: str = "fill",
 ) -> Tuple[Optional[str], Optional[str]]:
     return convert_table_to_markdown_core(
         graphic_frame,
@@ -1181,6 +1182,7 @@ def convert_table_to_markdown(
         normalize_text_fn=normalize_text,
         overlay_content_text_fn=overlay_content_text,
         resolve_image_path_fn=resolve_image_path,
+        merged_cells=merged_cells,
     )
 
 
@@ -1334,6 +1336,15 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--merged-cells",
+        choices=("fill", "blank"),
+        default="fill",
+        help=(
+            "What table cells covered by a merge show. fill (default) repeats the merged "
+            "value so every row reads on its own; blank leaves them empty."
+        ),
+    )
+    parser.add_argument(
         "--placeholder-inheritance",
         dest="pptx_inheritance",
         choices=("none", "geometry", "style"),
@@ -1394,6 +1405,9 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
     pptx_inheritance = str(args.pptx_inheritance)
     if pptx_inheritance not in {"none", "geometry", "style"}:
         raise ValueError("placeholder_inheritance must be 'none', 'geometry', or 'style'")
+    merged_cells = str(getattr(args, "merged_cells", "fill"))
+    if merged_cells not in {"fill", "blank"}:
+        raise ValueError("merged_cells must be 'fill' or 'blank'")
     inherited_shapes = str(args.inherited_shapes)
     if inherited_shapes not in {"none", "visible", "all"}:
         raise ValueError("inherited_shapes must be 'none', 'visible', or 'all'")
@@ -1404,6 +1418,7 @@ def _build_config(args: argparse.Namespace) -> ConverterConfig:
         output_format=output_format,
         heading_mode=heading_mode,
         strict=heading_mode == "strict",
+        merged_cells=merged_cells,
         pptx_inheritance=pptx_inheritance,
         inherited_shapes=inherited_shapes,
         ppt_converter=str(args.ppt_converter),
@@ -1632,6 +1647,7 @@ def _convert_package(
                     page_no=page_no,
                     ns=NS,
                     source_pptx_path=package.source_pptx_path,
+                    merged_cells=config.merged_cells,
                 )
                 assets = SlideRenderAssets(
                     output_dir=pkg_out,

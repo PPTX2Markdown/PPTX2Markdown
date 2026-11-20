@@ -209,7 +209,7 @@ def run_pipeline(pptx_paths: list[Path], work_dir: Path | None = None) -> int:
                         md = table_render.render_parsed_table_to_markdown(
                             parsed_table=parsed,
                             header_rows=1,
-                            fill_merged=table_render.FILL_HEADER,
+                            fill_merged=table_render.FILL_BOTH,
                         )
                         md_path.write_text(md, encoding="utf-8")
                         summary["tables_rendered"] = int(summary.get("tables_rendered", 0)) + 1

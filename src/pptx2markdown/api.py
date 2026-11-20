@@ -22,6 +22,7 @@ def convert(
     work_dir: Optional[PathLike] = None,
     output_format: str = "markdown",
     headings: str = "auto",
+    merged_cells: str = "fill",
     placeholder_inheritance: str = "style",
     inherited_shapes: str = "visible",
     ppt_converter: str = "auto",
@@ -38,6 +39,8 @@ def convert(
         work_dir: Where intermediate artifacts and caches live
             (default: ``./.pptx2markdown``).
         output_format: ``"markdown"`` (default) or ``"json"``.
+        merged_cells: ``"fill"`` (default) repeats a merged table value in every
+            cell it covers; ``"blank"`` leaves covered cells empty.
         convert_vector_images: Convert embedded EMF/WMF images to PNG with
             LibreOffice. The default preserves original vector assets.
     Returns:
@@ -62,6 +65,7 @@ def convert(
         work_dir=str(work_dir) if work_dir else None,
         output_format=output_format,
         headings=headings,
+        merged_cells=merged_cells,
         pptx_inheritance=placeholder_inheritance,
         inherited_shapes=inherited_shapes,
         ppt_converter=ppt_converter,

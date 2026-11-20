@@ -442,12 +442,12 @@
       "require_all_bbox": true
     },
     {
-      "name": "merged table body cells do not repeat origin content",
+      "name": "merged table cells repeat the merged value by default",
       "path": "pptx-automizer/__tests__/pptx-templates/GS_Tables_Merged.pptx",
       "sha256": "542eb85493348fa3a49e473434b765d7b7f807ed49fd90fa2a2f0ac56b051faa",
       "slide_count": 4,
-      "required_content_substrings": ["| C: 2, 0 -> Merged 2 cells |  | C: 2, 2 |"],
-      "forbidden_document_substrings": ["| C: 2, 0 -> Merged 2 cells | C: 2, 0 -> Merged 2 cells |"],
+      "required_content_substrings": ["| C: 2, 0 -> Merged 2 cells | C: 2, 0 -> Merged 2 cells | C: 2, 2 |"],
+      "forbidden_document_substrings": ["| C: 2, 0 -> Merged 2 cells |  | C: 2, 2 |"],
       "require_all_bbox": true
     },
     {
