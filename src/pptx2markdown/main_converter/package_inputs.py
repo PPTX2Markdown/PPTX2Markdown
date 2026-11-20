@@ -155,6 +155,7 @@ def extract_pptx_to_target(
     extraction_root.mkdir(parents=True, exist_ok=True)
 
     pkg_name = package.package_dir_name
+    _ensure_direct_child(extraction_root, extraction_root / pkg_name)
     pkg_dir = extraction_root / pkg_name
     pkg_dir = _resolve_extract_destination(
         pkg_name=pkg_name,
@@ -162,6 +163,9 @@ def extract_pptx_to_target(
         extraction_root=extraction_root,
         allow_replace_unmanaged=allow_replace_unmanaged,
     )
+    # Every rmtree below targets pkg_dir, so it must be a real child of the
+    # managed extraction root and never the root itself or anything above it.
+    _ensure_direct_child(extraction_root, pkg_dir)
 
     if package_marker_matches(pkg_dir, pptx_path):
         normalize_strict_ooxml_package(pkg_dir)
@@ -198,6 +202,38 @@ def extract_pptx_to_target(
 
     _write_package_marker(marker, pptx_path, stat.st_size, stat.st_mtime_ns)
     return package.with_package_dir(pkg_dir.resolve())
+
+
+def _ensure_direct_child(root: Path, candidate: Path) -> None:
+    name = candidate.name
+    if not name or not name.strip(".") or "/" in name or "\\" in name:
+        raise ValueError(f"unsafe package directory name: {name!r}")
+    if candidate.resolve(strict=False).parent != root.resolve(strict=False):
+        raise ValueError(f"package directory escapes extraction root: {candidate}")
+
+
+def safe_package_name(stem: str) -> str:
+    """Return a stem usable as a single directory name inside the work dir."""
+    name = stem.strip().replace("/", "_").replace("\\", "_")
+    if not name.strip("."):
+        return "presentation"
+    return name
+
+
+def unique_package_name(stem: str, used: set[str]) -> str:
+    """Return a package name that no earlier input in this run has taken.
+
+    Names are compared case-insensitively so that ``Deck.pptx`` and
+    ``deck.pptx`` do not share a directory on case-insensitive filesystems.
+    """
+    base = safe_package_name(stem)
+    candidate = base
+    index = 2
+    while candidate.casefold() in used:
+        candidate = f"{base}-{index}"
+        index += 1
+    used.add(candidate.casefold())
+    return candidate
 
 
 def _resolve_extract_destination(
@@ -332,6 +368,8 @@ def prepare_package_inputs(
     prepared: List[PreparedPackage] = []
     missing_inputs: List[Dict[str, object]] = []
     extraction_root = default_target_dir(cwd)
+    used_package_names: set[str] = set()
+    seen_sources: set[str] = set()
 
     for item in raw_inputs:
         raw_path = Path(item)
@@ -342,11 +380,17 @@ def prepare_package_inputs(
         if picked_file is None:
             missing_inputs.append(_missing_input_row(item, candidates))
             continue
+        source_key = str(picked_file.resolve())
+        if source_key in seen_sources:
+            logger.info("[input] skipping duplicate input: %s", picked_file)
+            continue
+        seen_sources.add(source_key)
 
         try:
             picked_file = normalize_presentation_to_pptx(cwd, picked_file, ppt_converter)
+            package_name = unique_package_name(picked_file.stem, used_package_names)
             package = PreparedPackage(
-                package_dir=extraction_root / picked_file.stem,
+                package_dir=extraction_root / package_name,
                 source_pptx_path=picked_file,
             )
             prepared.append(

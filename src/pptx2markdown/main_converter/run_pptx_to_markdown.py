@@ -22,18 +22,25 @@ import logging
 import os
 import posixpath
 import re
+import shutil
 import xml.etree.ElementTree as ET
 import zipfile
+from contextlib import contextmanager
+from functools import lru_cache
 from itertools import count
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from chart2md import ZipContext, convert_chart
 from omml2latex import convert_omml
 from smartart2md import ZipContext as SmartArtZipContext
 from smartart2md import convert_smartart
 
-from pptx2markdown.ooxml_security import resolve_relationship_target
+from pptx2markdown.ooxml_security import (
+    find_package_root,
+    resolve_internal_target,
+    resolve_relationship_target,
+)
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
 from .asset_utils import convert_vector_assets_to_png, copy_media_asset
@@ -99,6 +106,42 @@ _SMARTART_ASSET_COUNTER = count()
 _WORK_ROOT: Optional[Path] = None
 
 
+# 패키지 변환 동안 원본 PPTX zip을 한 번만 열어 재사용한다.
+# 차트/SmartArt마다 zip을 다시 열면 중앙 디렉터리를 매번 다시 읽어 슬라이드 수에 대해
+# 제곱에 가까운 비용이 든다.
+_SHARED_SOURCE_ZIPS: Dict[Path, zipfile.ZipFile] = {}
+
+
+@contextmanager
+def shared_source_zip(source_pptx_path: Optional[Path]) -> Iterator[None]:
+    """Keep ``source_pptx_path`` open for the duration of the block."""
+    if source_pptx_path is None or source_pptx_path in _SHARED_SOURCE_ZIPS:
+        yield
+        return
+    try:
+        archive = zipfile.ZipFile(source_pptx_path)
+    except (OSError, zipfile.BadZipFile):
+        # Let per-part conversion report the error exactly as before.
+        yield
+        return
+    _SHARED_SOURCE_ZIPS[source_pptx_path] = archive
+    try:
+        yield
+    finally:
+        _SHARED_SOURCE_ZIPS.pop(source_pptx_path, None)
+        archive.close()
+
+
+@contextmanager
+def _open_source_zip(source_pptx_path: Path) -> Iterator[zipfile.ZipFile]:
+    shared = _SHARED_SOURCE_ZIPS.get(source_pptx_path)
+    if shared is not None:
+        yield shared
+        return
+    with zipfile.ZipFile(source_pptx_path) as archive:
+        yield archive
+
+
 def default_work_root() -> Path:
     if _WORK_ROOT is not None:
         return _WORK_ROOT
@@ -160,6 +203,27 @@ def find_sidecar_json(slide_xml: Path) -> Optional[Path]:
     return None
 
 
+@lru_cache(maxsize=64)
+def _read_sidecar_json(path: str, mtime_ns: int, size: int) -> Optional[Dict[str, object]]:
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+# 슬라이드당 여러 로더가 같은 sidecar를 읽으므로 파싱 결과를 공유한다(읽기 전용).
+def _load_sidecar_payload(slide_xml: Path) -> Optional[Dict[str, object]]:
+    sidecar = find_sidecar_json(slide_xml)
+    if sidecar is None:
+        return None
+    try:
+        stat = sidecar.stat()
+    except OSError:
+        return None
+    return _read_sidecar_json(str(sidecar), stat.st_mtime_ns, stat.st_size)
+
+
 # 구조 분석의 heading 힌트를 shape_id 기준 맵으로 읽는다.
 def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     """
@@ -167,12 +231,8 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
     key: shape_id (string)
     value: subset of hint fields
     """
-    sidecar = find_sidecar_json(slide_xml)
-    if sidecar is None:
-        return {}
-    try:
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
+    payload = _load_sidecar_payload(slide_xml)
+    if payload is None:
         return {}
     rows = payload.get("structure_order")
     if not isinstance(rows, list):
@@ -206,12 +266,8 @@ def load_heading_hints(slide_xml: Path) -> Dict[str, Dict[str, object]]:
 
 
 def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
-    sidecar = find_sidecar_json(slide_xml)
-    if sidecar is None:
-        return {}
-    try:
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
+    payload = _load_sidecar_payload(slide_xml)
+    if payload is None:
         return {}
     rows = payload.get("structure_order")
     if not isinstance(rows, list):
@@ -243,12 +299,8 @@ def load_effective_properties(slide_xml: Path) -> Dict[str, Dict[str, object]]:
 
 # sidecar의 input_xml을 이용해 원본 슬라이드 관계 파일을 찾는다.
 def rels_from_sidecar(slide_xml: Path) -> Optional[Path]:
-    sidecar = find_sidecar_json(slide_xml)
-    if sidecar is None:
-        return None
-    try:
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-    except Exception:
+    payload = _load_sidecar_payload(slide_xml)
+    if payload is None:
         return None
     src = payload.get("input_xml")
     if not isinstance(src, str) or not src:
@@ -302,21 +354,24 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     return out
 
 
-def _resolve_extracted_relationship_target(source_xml: Path, target: str) -> Path:
-    """Resolve relative and package-absolute OOXML relationship targets."""
-    if not target.startswith("/"):
-        return (source_xml.parent / target).resolve()
+def _resolve_extracted_relationship_target(source_xml: Path, target: str) -> Optional[Path]:
+    """Resolve an internal OOXML relationship target inside its own package.
 
-    for parent in source_xml.parents:
-        if (parent / "[Content_Types].xml").exists():
-            return (parent / target.lstrip("/")).resolve()
-
-    # Extracted PowerPoint parts normally live below a ``ppt`` directory. This
-    # fallback keeps absolute package targets useful for reduced test fixtures.
-    for parent in source_xml.parents:
-        if parent.name == "ppt":
-            return (parent.parent / target.lstrip("/")).resolve()
-    return Path(target).resolve()
+    Returns None for external URLs and for targets that would leave the
+    package, so a crafted deck cannot read files elsewhere on the host.
+    """
+    package_root = find_package_root(source_xml)
+    if package_root is None:
+        # Extracted PowerPoint parts normally live below a ``ppt`` directory.
+        # This fallback keeps reduced test fixtures without
+        # [Content_Types].xml usable.
+        package_root = next(
+            (parent.parent for parent in source_xml.parents if parent.name == "ppt"),
+            None,
+        )
+    if package_root is None:
+        return None
+    return resolve_internal_target(source_xml.parent, package_root, target)
 
 
 def extract_speaker_notes(slide_xml: Path) -> Optional[str]:
@@ -334,6 +389,8 @@ def extract_speaker_notes(slide_xml: Path) -> Optional[str]:
         if not rel.attrib.get("Type", "").endswith("/notesSlide"):
             continue
         target = rel.attrib.get("Target", "").strip()
+        if rel.attrib.get("TargetMode", "").casefold() == "external":
+            break
         if target:
             notes_xml = _resolve_extracted_relationship_target(slide_xml, target)
         break
@@ -908,7 +965,7 @@ def convert_chart_to_markdown(
         return None, f"chart conversion failed: unsupported rels path: {rels_path}"
 
     try:
-        with zipfile.ZipFile(source_pptx_path) as zf:
+        with _open_source_zip(source_pptx_path) as zf:
             chart_root = ET.fromstring(zf.read(chart_part_path))
             ctx = ZipContext(zf, chart_part_path)
             markdown = convert_chart(chart_root, ctx).strip()
@@ -951,7 +1008,7 @@ def convert_smartart_to_markdown(
         return None, f"smartart conversion failed: unsupported rels path: {rels_path}"
 
     try:
-        with zipfile.ZipFile(source_pptx_path) as zf:
+        with _open_source_zip(source_pptx_path) as zf:
             data_root = ET.fromstring(zf.read(data_part_path))
             ctx = SmartArtZipContext(zf, data_part_path)
             markdown, images = convert_smartart(data_root, ctx)
@@ -1461,6 +1518,38 @@ def _append_package_stage_failure(
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
 
+def _clear_previous_package_output(pkg_out: Path, package: PreparedPackage) -> None:
+    """Remove a previous run's output so stale media/attachments do not linger.
+
+    Only folders that contain nothing but pptx2markdown's own output names are
+    cleared; anything else in the folder means it may hold user files, so it
+    is left untouched with a warning.
+    """
+    if pkg_out.is_symlink() or not pkg_out.is_dir():
+        return
+    generated_names = {
+        "media",
+        "attachments",
+        package.output_markdown_name,
+        package.output_json_name,
+    }
+    entries = list(pkg_out.iterdir())
+    unexpected = sorted(entry.name for entry in entries if entry.name not in generated_names)
+    if unexpected:
+        logger.warning(
+            "[%s] output folder has files pptx2markdown did not create; "
+            "previous outputs were not cleared: %s",
+            pkg_out.name,
+            ", ".join(unexpected[:5]),
+        )
+        return
+    for entry in entries:
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
 # 추출된 패키지 하나를 변환하고 결과와 manifest를 누적한다.
 def _convert_package(
     config: ConverterConfig,
@@ -1484,6 +1573,7 @@ def _convert_package(
     copied_media: Dict[str, Path] = {}
     attachments_dir = pkg_out / "attachments"
     copied_attachments: Dict[str, Path] = {}
+    _clear_previous_package_output(pkg_out, package)
     pkg_out.mkdir(parents=True, exist_ok=True)
 
     pkg_row: Dict[str, object] = {
@@ -1523,65 +1613,66 @@ def _convert_package(
             )
             return
 
-    for i, slide_xml in enumerate(slide_xmls, 1):
-        page_no = parse_slide_number(slide_xml.name, i)
-        ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
-        row: Dict[str, object] = {
-            "page": page_no,
-            "source_xml": str(slide_xml),
-            "structure_analysis_xml": str(ordered_slide_xml),
-            "status": "ok",
-            "warnings": [],
-        }
-        try:
-            if not ordered_slide_xml.exists():
-                raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
-            context = SlideConversionContext(
-                slide_xml=ordered_slide_xml,
-                page_no=page_no,
-                ns=NS,
-                source_pptx_path=package.source_pptx_path,
-            )
-            assets = SlideRenderAssets(
-                output_dir=pkg_out,
-                media_dir=media_dir,
-                copied_media=copied_media,
-                attachments_dir=attachments_dir,
-                copied_attachments=copied_attachments,
-            )
-            slide_document, stats = convert_one_slide(
-                context=context,
-                assets=assets,
-                strict_headings=config.strict,
-                heading_mode=config.heading_mode,
-            )
-            speaker_notes = extract_speaker_notes(slide_xml)
-            if speaker_notes:
-                slide_document = slide_document.model_copy(update={"notes": speaker_notes})
-            slides.append(slide_document)
+    with shared_source_zip(package.source_pptx_path):
+        for i, slide_xml in enumerate(slide_xmls, 1):
+            page_no = parse_slide_number(slide_xml.name, i)
+            ordered_slide_xml = ro_map.get(str(slide_xml.resolve()), slide_xml)
+            row: Dict[str, object] = {
+                "page": page_no,
+                "source_xml": str(slide_xml),
+                "structure_analysis_xml": str(ordered_slide_xml),
+                "status": "ok",
+                "warnings": [],
+            }
+            try:
+                if not ordered_slide_xml.exists():
+                    raise FileNotFoundError(f"reordered slide xml not found: {ordered_slide_xml}")
+                context = SlideConversionContext(
+                    slide_xml=ordered_slide_xml,
+                    page_no=page_no,
+                    ns=NS,
+                    source_pptx_path=package.source_pptx_path,
+                )
+                assets = SlideRenderAssets(
+                    output_dir=pkg_out,
+                    media_dir=media_dir,
+                    copied_media=copied_media,
+                    attachments_dir=attachments_dir,
+                    copied_attachments=copied_attachments,
+                )
+                slide_document, stats = convert_one_slide(
+                    context=context,
+                    assets=assets,
+                    strict_headings=config.strict,
+                    heading_mode=config.heading_mode,
+                )
+                speaker_notes = extract_speaker_notes(slide_xml)
+                if speaker_notes:
+                    slide_document = slide_document.model_copy(update={"notes": speaker_notes})
+                slides.append(slide_document)
 
-            row.update({"status": "ok", **stats.to_slide_row_fields()})
-            manifest.summary.add_slide(stats)
-            logger.info("[%s] [convert] Processed: %s", pkg_name, slide_xml.name)
-            if stats.warnings:
-                seen_warnings: set[str] = set()
-                for warning in stats.warnings:
-                    text = str(warning or "").strip()
-                    if not text or text in seen_warnings:
-                        continue
-                    seen_warnings.add(text)
-                    logger.warning(
-                        "[%s] Warning: %s (page=%s, slide=%s)",
-                        pkg_name,
-                        text,
-                        page_no,
-                        slide_xml.name,
-                    )
-        except Exception as e:  # noqa: BLE001
-            row.update({"status": "failed", "error": str(e)})
-            manifest.summary.failed += 1
-            logger.error("[%s] Failed: %s -> %s", pkg_name, slide_xml.name, e)
-        pkg_row["slides"].append(row)
+                row.update({"status": "ok", **stats.to_slide_row_fields()})
+                manifest.summary.add_slide(stats)
+                logger.info("[%s] [convert] Processed: %s", pkg_name, slide_xml.name)
+                if stats.warnings:
+                    seen_warnings: set[str] = set()
+                    for warning in stats.warnings:
+                        text = str(warning or "").strip()
+                        if not text or text in seen_warnings:
+                            continue
+                        seen_warnings.add(text)
+                        logger.warning(
+                            "[%s] Warning: %s (page=%s, slide=%s)",
+                            pkg_name,
+                            text,
+                            page_no,
+                            slide_xml.name,
+                        )
+            except Exception as e:  # noqa: BLE001
+                row.update({"status": "failed", "error": str(e)})
+                manifest.summary.failed += 1
+                logger.error("[%s] Failed: %s -> %s", pkg_name, slide_xml.name, e)
+            pkg_row["slides"].append(row)
 
     document = PresentationDocument(
         source=SourceDocument(

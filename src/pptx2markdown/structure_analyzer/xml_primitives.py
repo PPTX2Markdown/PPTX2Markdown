@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import os
 import re
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .constants import LARGE_INT, NS
+
+
+@lru_cache(maxsize=512)
+def _parse_xml_root_cached(path: str, mtime_ns: int, size: int) -> ET.Element:
+    return ET.parse(path).getroot()
+
+
+def parse_xml_root(path: Path) -> ET.Element:
+    """Parse an OOXML part once and reuse the root while the file is unchanged.
+
+    Layout, master and relationship parts are shared by many slides, so parsing
+    them per shape dominated structure analysis. The returned tree is shared:
+    callers must treat it as read-only (``copy.deepcopy`` before mutating).
+    """
+    stat = os.stat(path)
+    return _parse_xml_root_cached(os.fspath(path), stat.st_mtime_ns, stat.st_size)
 
 
 def local_name(tag: str) -> str:

@@ -280,11 +280,15 @@ class PreparedPackage(BaseModel):
     @property
     def source_stem(self) -> str:
         stem = self.source_pptx_path.stem.strip()
-        return stem or self.package_dir.name
+        # Names made only of dots ("." / "..") would escape their parent
+        # directory when joined into output or work paths.
+        if not stem or not stem.strip("."):
+            return self.package_dir.name
+        return stem
 
     @property
     def package_dir_name(self) -> str:
-        return self.source_stem
+        return self.package_dir.name
 
     @property
     def name(self) -> str:

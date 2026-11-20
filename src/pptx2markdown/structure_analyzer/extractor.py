@@ -32,6 +32,7 @@ from .xml_primitives import (
     is_slide_number_only_shape,
     local_name,
     parse_int,
+    parse_xml_root,
     text_without_slide_number_fields,
 )
 
@@ -79,7 +80,7 @@ def resolve_slide_layout(slide_xml: Path) -> Optional[Path]:
     if not rels.exists():
         return None
 
-    rel_root = ET.parse(rels).getroot()
+    rel_root = parse_xml_root(rels)
     for rel in rel_root.findall("rel:Relationship", REL_NS):
         if rel.attrib.get("Type") != SLIDE_LAYOUT_REL_TYPE:
             continue
@@ -99,7 +100,7 @@ def parse_layout_placeholders(
     if layout_xml is None or not layout_xml.exists():
         return out
 
-    root = ET.parse(layout_xml).getroot()
+    root = parse_xml_root(layout_xml)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return out
@@ -368,7 +369,7 @@ def extract_slide_objects_xml(
     pptx_inheritance = normalize_pptx_inheritance_mode(pptx_inheritance)
     inherited_shapes = normalize_inherited_shapes_mode(inherited_shapes)
 
-    root = ET.parse(slide_xml).getroot()
+    root = parse_xml_root(slide_xml)
     sp_tree = root.find("p:cSld/p:spTree", NS)
     if sp_tree is None:
         return [], {"error": "Missing p:cSld/p:spTree"}

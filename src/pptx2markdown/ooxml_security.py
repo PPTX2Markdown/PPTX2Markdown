@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import stat
+import unicodedata
 import urllib.parse
 import zipfile
 from dataclasses import dataclass
@@ -36,7 +37,28 @@ def _normalized_member_path(filename: str) -> PurePosixPath:
         or (len(first_part) >= 2 and first_part[1] == ":")
     ):
         raise ValueError(f"unsafe archive entry: {filename}")
+    for part in member_path.parts:
+        # ":" opens an NTFS alternate data stream, and Windows silently drops
+        # trailing dots/spaces, so these names alias other entries on disk.
+        if ":" in part or part != part.rstrip(". ") or _is_windows_reserved_name(part):
+            raise ValueError(f"unsafe archive entry: {filename}")
     return member_path
+
+
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{index}" for index in range(1, 10)}
+    | {f"LPT{index}" for index in range(1, 10)}
+)
+
+
+def _is_windows_reserved_name(part: str) -> bool:
+    return part.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES
+
+
+def _collision_key(name: str) -> str:
+    """Key under which two entry names land on the same file on macOS/Windows."""
+    return unicodedata.normalize("NFC", name).casefold()
 
 
 def _validate_archive(
@@ -54,7 +76,7 @@ def _validate_archive(
     validated: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
     for member in members:
         member_path = _normalized_member_path(member.filename)
-        normalized_name = member_path.as_posix().rstrip("/")
+        normalized_name = _collision_key(member_path.as_posix().rstrip("/"))
         if normalized_name in seen_paths:
             raise ValueError(f"duplicate archive entry: {member.filename}")
         seen_paths.add(normalized_name)
@@ -149,6 +171,11 @@ def _resolve_internal_target(base_dir: Path, package_root: Path, target: str) ->
     except ValueError:
         return None
     return resolved
+
+
+def resolve_internal_target(base_dir: Path, package_root: Path, target: str) -> Path | None:
+    """Resolve ``target`` from ``base_dir`` only if it stays inside ``package_root``."""
+    return _resolve_internal_target(base_dir, package_root.resolve(), target)
 
 
 def resolve_package_part(

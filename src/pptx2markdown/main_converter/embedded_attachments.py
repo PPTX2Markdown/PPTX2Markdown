@@ -4,6 +4,7 @@ import io
 import re
 import shutil
 import struct
+import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -88,10 +89,35 @@ def infer_payload_extension(data: bytes, prog_id: str = "") -> str:
     return ".bin"
 
 
+_MAX_FILENAME_BYTES = 200
+_WINDOWS_RESERVED_STEMS = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{index}" for index in range(1, 10)}
+    | {f"LPT{index}" for index in range(1, 10)}
+)
+
+
+def _truncate_utf8(value: str, max_bytes: int) -> str:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
 def _sanitize_filename(filename: str, fallback: str) -> str:
     name = Path(filename.replace("\\", "/")).name.strip()
     name = re.sub(r"[^\w.()-]+", "_", name, flags=re.UNICODE).strip("._")
-    return name or fallback
+    if not name:
+        return fallback
+    stem, suffix = Path(name).stem, Path(name).suffix
+    if len(suffix.encode("utf-8")) > 32:
+        stem, suffix = name, ""
+    if stem.split(".", 1)[0].upper() in _WINDOWS_RESERVED_STEMS:
+        stem = f"_{stem}"
+    # Leave room for a "-N" collision suffix within common 255-byte limits.
+    budget = _MAX_FILENAME_BYTES - len(suffix.encode("utf-8"))
+    stem = _truncate_utf8(stem, budget).rstrip("._") or "attachment"
+    return f"{stem}{suffix}"
 
 
 def _relationship_part_path(rels_path: Path, target: str) -> Optional[Path]:
@@ -122,11 +148,21 @@ def _ole_payload(source: Path, prog_id: str, display_name: str) -> Tuple[str, by
 
 
 def _unique_attachment_path(directory: Path, filename: str, reserved: set[Path]) -> Path:
+    """Pick a destination that no other attachment or existing file occupies.
+
+    Comparison is case- and Unicode-normalization-insensitive because macOS and
+    Windows treat ``Report.pdf`` and ``report.pdf`` as the same file.
+    """
     stem = Path(filename).stem
     suffix = Path(filename).suffix
+    taken = {unicodedata.normalize("NFC", path.name).casefold() for path in reserved}
     candidate = directory / filename
     index = 2
-    while candidate in reserved:
+    while (
+        unicodedata.normalize("NFC", candidate.name).casefold() in taken
+        or candidate.exists()
+        or candidate.is_symlink()
+    ):
         candidate = directory / f"{stem}-{index}{suffix}"
         index += 1
     return candidate
