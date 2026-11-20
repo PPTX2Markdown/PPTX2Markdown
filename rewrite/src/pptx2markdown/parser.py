@@ -993,7 +993,12 @@ class _PresentationParser:
             return _paragraph_blocks(paragraphs, shape=shape, bbox=bbox)
         provenance = {"shape_id": shape.shape_id, "bbox": bbox, "source_part": shape.source_part}
         blocks: list[ContentBlock] = [
-            HeadingBlock(text=finalize_heading(heading.text), level=heading.level, **provenance)
+            HeadingBlock(
+                text=finalize_heading(heading.text),
+                level=heading.level,
+                source=heading.source,
+                **provenance,
+            )
         ]
         if heading.trailing:
             blocks.append(TextBlock(text=finalize(heading.trailing), **provenance))

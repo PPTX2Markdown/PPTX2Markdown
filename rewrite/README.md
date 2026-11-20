@@ -103,6 +103,10 @@ applied. Selectors:
 | `table[0]`, `table[-1]` | the first or last block of a kind on each slide |
 | `slide[3]/table[0]` | the first table on slide 3 |
 
+Settings: `merged_cells`, `include_notes`, `include_hidden`, and `headings`
+(`placeholder` keeps only headings from title placeholders, like the legacy
+converter's `--headings strict`).
+
 Rule actions: `exclude`, `merged_cells`, `header_rows`, `caption_rows` (tables),
 `heading_level` (set a heading's level or turn text into a heading), `as_text`
 (headings and lists), `description` (image alt text), `notes` (slide
@@ -117,8 +121,9 @@ The converter always decides; `review()` points at the decisions most worth a
 second look and offers each alternative as a ready-made recipe rule: a header
 with merged groups whose next row looks like labels (two header rows?), a first
 row that is all numbers (no header?), a merged first row taken as a table title,
-an image with no description, or a short bold line that introduces a list or
-table (a subheading?). A person, a UI or a language model only picks options, and
+an image with no description, a heading decided by font size alone (a
+heading?), or a short bold line that introduces a list or table (a
+subheading?). A person, a UI or a language model only picks options, and
 the picks form a recipe.
 
 ```python
@@ -203,7 +208,9 @@ moved without breaking embedded assets.
   the columns below it, a stack of slightly offset boxes stays top to bottom, an
   overlap of up to one pixel still counts as a gap, and background frames and
   footers cannot seal a column gap
-- headings from title/subtitle placeholders, section numbering and font size
+- headings from title/subtitle placeholders, section numbering and font size;
+  each heading records its `source` (`placeholder`, `position`, `numbering`,
+  `text` or `font`) so the weakest decisions can be reviewed or dropped
 - placeholder type, position, font size and bullets inherited from the slide
   layout and master; footer placeholders are dropped
 - text shapes drawn from the slide layout and master

@@ -155,7 +155,28 @@ def review(document: PresentationDocument) -> tuple[ReviewItem, ...]:
         for index, block in enumerate(blocks):
             if block.id is None:
                 continue
-            if isinstance(block, TableBlock):
+            if isinstance(block, HeadingBlock) and block.source == "font":
+                items.append(
+                    ReviewItem(
+                        topic="heading",
+                        target=block.id,
+                        question=f"{block.text!r} is a heading only because of its font size. "
+                        "Is it a heading?",
+                        options=(
+                            Option("Yes, a heading"),
+                            Option(
+                                "No, plain text",
+                                Rule(
+                                    target=block.id,
+                                    as_text=True,
+                                    reason="large text, not a heading",
+                                ),
+                            ),
+                        ),
+                        evidence={"level": block.level},
+                    )
+                )
+            elif isinstance(block, TableBlock):
                 items.extend(_table_items(block))
             elif isinstance(block, ImageBlock) and not block.description:
                 alt = block.alt_text.strip()

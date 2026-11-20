@@ -52,16 +52,20 @@ class HeadingDetectorTests(unittest.TestCase):
         detector = HeadingDetector()
         self.assertEqual(
             detector.classify(text_shape("Report", placeholder_type="title"), HeadingHint()),
-            Heading(level=1, text="Report"),
+            Heading(level=1, text="Report", source="placeholder"),
         )
         self.assertEqual(
             detector.classify(text_shape("Q3", placeholder_type="subTitle"), HeadingHint()),
-            Heading(level=2, text="Q3"),
+            Heading(level=2, text="Q3", source="placeholder"),
         )
 
     def test_large_first_text_block_falls_back_to_h1(self) -> None:
         heading = HeadingDetector().classify(text_shape("Agenda", font_pt=28.0), HeadingHint())
-        self.assertEqual(heading, Heading(level=1, text="Agenda"))
+        self.assertEqual(heading, Heading(level=1, text="Agenda", source="font"))
+
+    def test_numbered_fallback_is_numbering_not_font(self) -> None:
+        heading = HeadingDetector().classify(text_shape("2. Results", font_pt=28.0), HeadingHint())
+        self.assertEqual(heading.source, "numbering")
 
     def test_small_or_later_text_blocks_are_not_headings(self) -> None:
         self.assertIsNone(
@@ -99,7 +103,7 @@ class HeadingDetectorTests(unittest.TestCase):
         )
         self.assertEqual(
             HeadingDetector().classify(shape, HeadingHint()),
-            Heading(level=1, text="Report", trailing="Prepared by the team"),
+            Heading(level=1, text="Report", trailing="Prepared by the team", source="placeholder"),
         )
 
 

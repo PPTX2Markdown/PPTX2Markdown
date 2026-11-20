@@ -257,3 +257,34 @@ class CliRecipeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeadingPolicyTests(unittest.TestCase):
+    def _document(self) -> PresentationDocument:
+        return PresentationDocument(
+            source=SourceDocument(name="deck.pptx", sha256="0" * 64),
+            slides=(
+                SlideDocument(
+                    page=1,
+                    blocks=(
+                        HeadingBlock(id="s1.b1", text="Title", level=1, source="placeholder"),
+                        HeadingBlock(id="s1.b2", text="2. Results", level=2, source="numbering"),
+                        HeadingBlock(id="s1.b3", text="Big claim", level=2, source="font"),
+                    ),
+                ),
+            ),
+        )
+
+    def test_placeholder_policy_keeps_only_placeholder_headings(self) -> None:
+        result = apply_recipe(self._document(), Recipe(headings="placeholder"))
+        self.assertEqual(
+            [block.kind for block in result.slides[0].blocks], ["heading", "text", "text"]
+        )
+        self.assertEqual(result.slides[0].blocks[1], TextBlock(id="s1.b2", text="2. Results"))
+
+    def test_font_only_heading_is_a_review_question(self) -> None:
+        from pptx2markdown.review import review
+
+        items = [item for item in review(self._document()) if item.topic == "heading"]
+        self.assertEqual([item.target for item in items], ["s1.b3"])
+        self.assertTrue(items[0].options[1].rule.as_text)

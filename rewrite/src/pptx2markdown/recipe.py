@@ -218,6 +218,10 @@ class Recipe(BaseModel):
     )
     include_notes: bool = True
     include_hidden: bool = True
+    headings: Literal["auto", "placeholder"] = Field(
+        default="auto",
+        description="placeholder keeps only headings from title placeholders; others become text.",
+    )
     rules: tuple[Rule, ...] = ()
 
 
@@ -317,6 +321,19 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
             source = [_apply_block(block, neutral, recipe.merged_cells) for block in slide.blocks]
         else:
             source = list(slide.blocks)
+        if recipe.headings == "placeholder":
+            source = [
+                TextBlock(
+                    text=block.text,
+                    id=block.id,
+                    shape_id=block.shape_id,
+                    bbox=block.bbox,
+                    source_part=block.source_part,
+                )
+                if isinstance(block, HeadingBlock) and block.source not in (None, "placeholder")
+                else block
+                for block in source
+            ]
         for rule, selector in zip(recipe.rules, selectors):
             if selector.slides_only and selector.matches_slide(slide):
                 if rule.exclude:
@@ -364,6 +381,9 @@ def merge_recipes(*recipes: Recipe) -> Recipe:
     for recipe in recipes:
         merged = Recipe(
             merged_cells=recipe.merged_cells or merged.merged_cells,
+            headings="placeholder"
+            if "placeholder" in (merged.headings, recipe.headings)
+            else "auto",
             include_notes=merged.include_notes and recipe.include_notes,
             include_hidden=merged.include_hidden and recipe.include_hidden,
             rules=merged.rules + recipe.rules,
