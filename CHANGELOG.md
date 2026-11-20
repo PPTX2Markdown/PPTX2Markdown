@@ -1,5 +1,7 @@
 # Changelog
 
+[한국어](CHANGELOG.ko.md)
+
 All notable changes to the released converter (`src/`, the `pptx2markdown`
 package on PyPI). The next-generation engine in `rewrite/` is unreleased and
 documented in [rewrite/README.md](rewrite/README.md).
