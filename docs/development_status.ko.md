@@ -2,16 +2,17 @@
 
 [English](development_status.md) | 한국어
 
-마지막 검증: 2026-07-13
+마지막 검증: 2026-11-21
 
 이 문서는 현재 개발 상태를 기록합니다. 작업 트리를 변경하기 전에
 `git status --short --branch` 결과와 함께 읽으세요.
 
 ## 저장소 상태
 
-- 활성 개발 브랜치: `dev`
-- 출시 목표: `0.1.0`
-- 출시 pull request: `dev` -> `main`, PR #17
+- 활성 개발 브랜치: `dev`(pull request는 `dev`로 병합하고, 출시는 `dev` -> `main`)
+- 출시 버전: PyPI `0.1.2`. `dev`의 미출시 변경은 [CHANGELOG.md](../CHANGELOG.md)에
+  정리되어 있습니다.
+- 차세대 엔진: `rewrite/`, 미출시, 아래 참고
 - 공개 패키지 구조: `src/pptx2markdown/`
 - 패키징 backend: Hatchling
 - 지원 Python: 3.12 이상
@@ -30,7 +31,8 @@ PyPI 구조 변경 전 source는 `archive-pre-pypi-restructure` 브랜치와
 - 일반 `.pptx` 변환은 로컬에서 동작합니다. 구형 `.ppt` 변환은 Windows의
   PowerPoint 또는 LibreOffice를 실행할 수 있습니다.
 - 최종 출력과 중간 작업은 서로 분리된 설정 가능 루트를 사용합니다.
-- `~$*.pptx` 형식의 Office 잠금 파일은 조용히 건너뜁니다.
+- `~$*.pptx` 형식의 Office 잠금 파일은 건너뛰며, 직접 지정한 경우에는 경고를
+  남깁니다.
 
 ## 출력 계약
 
@@ -63,19 +65,29 @@ PyPI 구조 변경 전 source는 `archive-pre-pypi-restructure` 브랜치와
 추가로 ignore된 corpus를 넓은 로컬 검증에 사용하지만 CI 의존성은 아닙니다.
 [골든셋 문서](../tests/fixtures/golden/README.ko.md)를 참고하세요.
 
+## 차세대 엔진 (`rewrite/`)
+
+`rewrite/`는 같은 콘텐츠를 다룰 수 있게 되면 `src/`를 대체하기 위해 만든 별도
+패키지입니다(이름은 같은 `pptx2markdown`, 버전 `0.2.0.dev0`). 정적 파이프라인은
+그대로 두고, 강조를 포함한 이스케이프된 inline Markdown, 구조화된 표, 블록 id와
+선언적 레시피, 불확실한 결정의 검토, 선택 설치하는 에이전트와 MCP 서버, 슬라이드
+청크, 메모리 입력을 더합니다. [rewrite/README.ko.md](../rewrite/README.ko.md)와
+[rewrite/ARCHITECTURE.ko.md](../rewrite/ARCHITECTURE.ko.md)를 참고하세요.
+
+`scripts/parity.py`는 같은 덱을 두 엔진으로 변환해 도형 단위로 비교합니다(legacy가
+기준). rewrite가 `scripts/parity_baseline.json`보다 나빠지면 CI가 실패하고, 의도된
+차이는 `scripts/parity_legacy_recipe.json` 레시피로 legacy 동작에 맞춰 비교합니다.
+저장소 픽스처에서는 62장 중 60장이 일치하며, 남은 두 장은 의도된 차이입니다.
+
 ## 최근 검증 기준선
 
-2026-07-13에 다음 검증을 모두 통과했습니다.
+2026-11-21에 다음 검증을 모두 통과했습니다.
 
-- Ruff lint 및 format 검사
-- 단위·회귀 테스트 87개
-- 저장소 골든 PPTX 17개를 JSON 및 Markdown 모드로 변환
-- 실제 사례에서 고른 PPTX 51개, 슬라이드 633개
-- wheel 및 sdist 빌드와 `twine check`
-- 격리된 wheel 설치와 설치된 CLI 변환
-- Ubuntu, macOS, Windows 및 Python 3.12, 3.13 GitHub Actions
-
-PR #17 전용 workflow도 통과했습니다.
+- `src/`, `tests/`, `scripts/`, `rewrite/`의 Ruff lint 및 format 검사
+- legacy 단위·회귀 테스트 127개, 골든 PPTX 17개(두 모드)
+- Python 3.12, 3.13, 3.14에서 rewrite 테스트 약 150개
+- legacy/rewrite parity 게이트(픽스처 60/62장)
+- Ubuntu, macOS, Windows GitHub Actions
 
 ## 보안 경계
 
@@ -93,13 +105,14 @@ PR #17 전용 workflow도 통과했습니다.
 5. PowerPoint 검토 댓글은 의도적으로 제외합니다.
 6. 넓은 로컬 corpus 테스트는 ignore된 source 파일이 없으면 건너뜁니다.
 
-## 남은 출시 작업
+## 다음 단계
 
-1. PR #17 CI를 통과 상태로 유지하고 문서 검토를 완료합니다.
-2. `publish.yml`, environment `pypi`용 PyPI Trusted Publisher를 설정합니다.
-3. pull request를 Ready로 전환하고 `main`에 병합합니다.
-4. `v0.1.0` GitHub release를 발행합니다.
-5. 깨끗한 환경에서 공개된 PyPI 패키지를 검증합니다.
+1. `dev`를 검토하고 CHANGELOG.md의 미출시 변경을 `0.1.3`으로 출시합니다(`dev`를
+   `main`에 병합, 태그, 배포).
+2. `rewrite/`가 `src/`를 대체할 시점을 정합니다(예: 로컬 corpus parity, `.ppt` 입력
+   정책, JSON schema 2.0 이전 안내).
+3. omml2latex가 Python 3.10/3.11에서 동작하도록 고쳐(식 부분에 백슬래시가 있는
+   f-string 하나) 지원 Python 범위를 넓힙니다.
 
 ## 중요 파일
 
