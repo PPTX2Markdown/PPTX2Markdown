@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 
@@ -350,6 +351,24 @@ def _cell_list_marker(element: ET.Element, body: ET.Element, level: int) -> str 
     return None
 
 
+def _is_stacked(pieces: list[str], *, paragraphs: bool) -> bool:
+    """One character per line, set upright in a narrow cell ("구" / "분").
+
+    Full-width characters stack by line breaks or by paragraphs. Narrow letters only
+    count when at least three are broken within one paragraph: single letters in
+    separate paragraphs are as often one value per row ("M" / "M").
+    """
+
+    pieces = [piece.strip() for piece in pieces if piece.strip()]
+    if len(pieces) < 2 or any(len(piece) != 1 for piece in pieces):
+        return False
+    if not any(piece.isalpha() for piece in pieces):
+        return False
+    if all(unicodedata.east_asian_width(piece) in {"W", "F"} for piece in pieces):
+        return True
+    return not paragraphs and len(pieces) >= 3
+
+
 def table_cell_lines(
     cell: ET.Element, relationships: dict[str, Relationship]
 ) -> tuple[list[str], int]:
@@ -359,6 +378,8 @@ def table_cell_lines(
     if body is None:
         return [], 0
     lines: list[str] = []
+    # Plain text of lines without list markers, to recognise stacked characters.
+    plain_lines: list[str | None] = []
     counters: dict[int, int] = {}
     unconverted = 0
     for element in body.findall("./a:p", NS):
@@ -368,6 +389,10 @@ def table_cell_lines(
         # ("전자제품 / 사업부"); only paragraphs become separate lines.
         # Bold over a whole cell is the table's styling, not emphasis.
         source = paragraph.text if paragraph.uniform_emphasis else paragraph.rich
+        plain = remove_markup(paragraph.text)
+        if _is_stacked(plain.split("\n"), paragraphs=False):
+            source = re.sub(r"\s*\n\s*", "", source)
+            plain = re.sub(r"\s*\n\s*", "", plain)
         text = re.sub(r"\s+", " ", source).strip()
         if not text:
             continue
@@ -381,4 +406,7 @@ def table_cell_lines(
             counters[level] = counters.get(level, 0) + 1
             text = f"{'  ' * level}{counters[level]}. {text}"
         lines.append(text)
+        plain_lines.append(plain.strip() if marker is None else None)
+    if None not in plain_lines and _is_stacked(plain_lines, paragraphs=True):  # type: ignore[arg-type]
+        return ["".join(lines)], unconverted
     return lines, unconverted
