@@ -18,7 +18,7 @@ rewrite는 같은 패키지 이름 `pptx2markdown`으로 배포되므로, 업그
 | `--inherited-shapes` | 항상 `visible`: 레이아웃·마스터에 그려진 텍스트와 그림을 그룹 안까지 유지. 슬라이드를 덮는 템플릿 그림은 배경으로 보고 제외(레시피 `template_pictures: false`는 템플릿 그림 전체 제외) |
 | `.ppt` 입력, `--ppt-converter` | 지원하지 않음: 먼저 `.pptx`로 저장 |
 | `--convert-vector-images` | 지원하지 않음: EMF/WMF 이미지는 그대로 유지 |
-| — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |
+| — | `--no-assets`, `--overwrite`, `--tolerant`, `--recipe`, `--review`, `--audit`, `--ask`, `--max-chunk-chars`, `--recipe-schema` |
 
 입력은 직접 지정해야 하며, 입력 없이 실행해도 현재 디렉터리의 모든 프레젠테이션을
 변환하지 않습니다.

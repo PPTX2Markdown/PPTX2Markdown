@@ -35,6 +35,9 @@ only:
   parsed, so a rule's targets never depend on earlier rules.
 - `review.review` reads the document and returns the decisions most worth a
   second look, each with alternatives that are ready-made recipe rules.
+- `audit.audit` re-reads the slide XML without the parser's rules and reports
+  typed text the document does not contain: a check on the parser that shares
+  none of its code paths for text, so it catches what the parser silently drops.
 - `agent` (optional) only produces recipes: a request, review questions or an
   image go in, a validated recipe comes out, and `explain_recipe` checks that
   every rule selects something. The model never edits text or the parser.

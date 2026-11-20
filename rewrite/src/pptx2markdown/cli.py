@@ -73,6 +73,12 @@ def _parser() -> argparse.ArgumentParser:
         "rules for each answer, instead of writing bundles",
     )
     parser.add_argument(
+        "--audit",
+        action="store_true",
+        help="Print, as JSON, text typed on the slides that the conversion does not "
+        "contain, instead of writing bundles; exits with 1 when any is found",
+    )
+    parser.add_argument(
         "--ask",
         metavar="REQUEST",
         help="Have a language model draft a recipe for the request (needs the agent "
@@ -114,6 +120,32 @@ def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
                         "items": review_data(review(presentation.document)),
                     }
                 )
+        except (PPTX2MarkdownError, OSError, ValueError) as exc:
+            failed = True
+            report.append({"source": Path(value).name, "error": str(exc)})
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 1 if failed else 0
+
+
+def _print_audit(args: argparse.Namespace) -> int:
+    from .api import parse
+    from .audit import audit
+    from .errors import PPTX2MarkdownError
+
+    report: list[dict[str, object]] = []
+    failed = False
+    for value in args.inputs:
+        try:
+            # The converter is audited, not a recipe: recipes drop content on purpose.
+            with parse(
+                value,
+                include_assets=False,
+                strict=not args.tolerant,
+                merged_cells=args.merged_cells,
+            ) as presentation:
+                result = audit(value, presentation.document)
+            failed = failed or not result.ok
+            report.append({"source": Path(value).name, **result.to_data()})
         except (PPTX2MarkdownError, OSError, ValueError) as exc:
             failed = True
             report.append({"source": Path(value).name, "error": str(exc)})
@@ -168,6 +200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         recipe = merge_recipes(recipe or Recipe(), Recipe(headings="placeholder"))
     if args.review:
         return _print_review(args, recipe)
+    if args.audit:
+        return _print_audit(args)
     if args.ask:
         return _print_draft(args, recipe)
     logging.basicConfig(
