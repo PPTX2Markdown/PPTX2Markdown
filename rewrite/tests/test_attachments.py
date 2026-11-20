@@ -105,3 +105,48 @@ class FixtureAttachmentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+OLE_SLIDE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr/>
+    <p:graphicFrame>
+      <p:nvGraphicFramePr><p:cNvPr id="4" name="Object 3"/><p:cNvGraphicFramePr/><p:nvPr/>
+      </p:nvGraphicFramePr>
+      <p:xfrm><a:off x="0" y="0"/><a:ext cx="1000000" cy="1000000"/></p:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole">
+        <p:oleObj name="Slide" progId="PowerPoint.Slide.8" r:id="rIdOle"/>
+      </a:graphicData></a:graphic>
+    </p:graphicFrame>
+  </p:spTree></p:cSld>
+</p:sld>"""
+
+
+class KeptOleNameTests(unittest.TestCase):
+    def test_object_kept_as_stored_is_named_after_the_object(self) -> None:
+        import tempfile
+
+        from .pptx_factory import build_test_pptx
+
+        relationship = (
+            '<Relationship Id="rIdOle" Type="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships/oleObject" Target="../embeddings/oleObject2.bin"/>'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_test_pptx(
+                Path(directory) / "ole.pptx",
+                OLE_SLIDE,
+                extra_slide_relationships=relationship,
+                extra_parts={
+                    "ppt/embeddings/oleObject2.bin": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1x"
+                },
+            )
+            with pptx2markdown.parse(source) as presentation:
+                (block,) = presentation.document.slides[0].blocks
+                codes = [warning.code for warning in presentation.document.warnings]
+        self.assertEqual((block.label, block.program), ("Slide.bin", "PowerPoint.Slide.8"))
+        self.assertIn("ole-unpack-failed", codes)
