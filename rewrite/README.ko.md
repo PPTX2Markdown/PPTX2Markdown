@@ -109,6 +109,24 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 `recipe_json_schema()`(또는 `pptx2markdown --recipe-schema`)는 입력 폼이나 모델의
 구조화 출력에 쓸 JSON Schema를 돌려줍니다.
 
+### 검토(review)
+
+변환기는 항상 스스로 결정합니다. `review()`는 그중 다시 볼 만한 결정을 골라,
+각 대안을 바로 쓸 수 있는 레시피 규칙으로 함께 내놓습니다. 병합된 그룹이 있는
+머리글 아래 행이 라벨처럼 보이는 경우(머리글 두 줄?), 첫 행이 모두 숫자인
+경우(머리글 없음?), 병합된 첫 행을 표 제목으로 본 경우, 설명이 없는 이미지,
+목록이나 표를 이끄는 짧은 굵은 줄(소제목?)이 그 대상입니다. 사람이나 UI, 언어
+모델은 선택지만 고르면 되고, 고른 결과가 곧 레시피가 됩니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for item in pptx2markdown.review(presentation.document):
+        print(item.target, item.question, [option.label for option in item.options])
+```
+
+`pptx2markdown deck.pptx --review`는 번들을 쓰지 않고 같은 내용을 JSON으로
+출력합니다.
+
 파싱과 저장을 한 번에 수행하려면 `convert()`를 사용합니다.
 
 ```python
@@ -127,6 +145,7 @@ pptx2markdown deck.pptx --output-format json
 pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
+pptx2markdown deck.pptx --review
 ```
 
 기본 출력:
