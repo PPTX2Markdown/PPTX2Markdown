@@ -9,7 +9,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
-from .assets import AssetLimits, AssetStore
+from .assets import AssetLimits, AssetStore, safe_basename
+from .attachments import unpack_ole
 from .charts import chart_markdown
 from .errors import (
     AssetLimitError,
@@ -1020,6 +1021,68 @@ class _PresentationParser:
             )
             return None
 
+    def _ole_attachment(
+        self,
+        package: OOXMLPackage,
+        entry: SlideEntry,
+        shape: _Shape,
+        ole: ET.Element,
+        relationships: dict[str, Relationship],
+    ):
+        """The embedded file, unpacked from its OLE compound file when it has one."""
+
+        relationship = relationships.get(ole.attrib.get(f"{{{OFFICE_REL_NS}}}id", ""))
+        if relationship is None:
+            return None
+        target = (
+            None
+            if relationship.external
+            else resolve_relationship_target(entry.part_name, relationship)
+        )
+        if target is not None and target.casefold().endswith(".bin") and package.exists(target):
+            limit = self.options.asset_limits.max_single_asset_bytes
+            with package.open_part(target) as stream:
+                data = stream.read(limit + 1)
+            unpacked = None
+            if len(data) <= limit:
+                stem = safe_basename(
+                    ole.attrib.get("name") or PurePosixPath(target).stem, fallback="attachment"
+                )
+                try:
+                    unpacked = unpack_ole(data, prog_id=ole.attrib.get("progId", ""), stem=stem)
+                except ValueError as exc:
+                    self.warnings.add(
+                        "ole-unpack-failed",
+                        f"embedded OLE object kept as stored: {exc}",
+                        slide=entry.page,
+                        shape_id=shape.shape_id,
+                    )
+            if unpacked is not None:
+                try:
+                    return self.assets.register_bytes(
+                        unpacked.payload,
+                        logical_key=f"{target}#payload",
+                        kind="attachment",
+                        original_name=unpacked.name,
+                        source_part=target,
+                        preserve_payload=self.options.include_assets,
+                    )
+                except AssetLimitError as exc:
+                    if self.options.strict:
+                        raise
+                    self.warnings.add(
+                        "asset-limit-exceeded", str(exc), slide=entry.page, shape_id=shape.shape_id
+                    )
+                    return None
+        return self._register_related_asset(
+            package,
+            source_part=entry.part_name,
+            relationship=relationship,
+            kind="attachment",
+            slide=entry.page,
+            shape_id=shape.shape_id,
+        )
+
     def _picture_blocks(
         self,
         package: OOXMLPackage,
@@ -1281,26 +1344,17 @@ class _PresentationParser:
 
         ole = shape.element.find(".//p:oleObj", NS)
         if ole is not None:
-            rid = ole.attrib.get(f"{{{OFFICE_REL_NS}}}id", "")
-            relationship = relationships.get(rid)
-            if relationship is not None:
-                descriptor = self._register_related_asset(
-                    package,
-                    source_part=entry.part_name,
-                    relationship=relationship,
-                    kind="attachment",
-                    slide=entry.page,
-                    shape_id=shape.shape_id,
-                )
-                if descriptor is not None:
-                    return [
-                        AttachmentBlock(
-                            asset_id=descriptor.id,
-                            label=ole.attrib.get("name") or descriptor.original_name,
-                            shape_id=shape.shape_id,
-                            bbox=bbox,
-                        )
-                    ]
+            descriptor = self._ole_attachment(package, entry, shape, ole, relationships)
+            if descriptor is not None:
+                return [
+                    AttachmentBlock(
+                        asset_id=descriptor.id,
+                        label=descriptor.original_name,
+                        program=ole.attrib.get("progId") or None,
+                        shape_id=shape.shape_id,
+                        bbox=bbox,
+                    )
+                ]
 
         model = next(
             (element for element in shape.element.iter() if _local_name(element.tag) == "model3d"),

@@ -60,3 +60,7 @@ chart2md는 자체 `zipfile`이 아니라 검증된 패키지 위의 어댑터�
 entry 수·크기·압축률 검사와 XML part의 DTD 검사를 똑같이 거칩니다. 거부된
 workbook은 warning을 남기고, 차트는 cache 값으로 변환합니다.
 
+
+내장 OLE 복합 파일은 asset 한도로 크기가 제한된 메모리 버퍼에서 olefile로
+풉니다. olefile은 짧은 bytes를 파일 경로로 읽기 때문에 bytes를 그대로 넘기지
+않습니다.

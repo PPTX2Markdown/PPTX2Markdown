@@ -102,7 +102,9 @@ moved without breaking embedded assets.
 - equations (OMML) as LaTeX via omml2latex
 - embedded images
 - embedded audio/video payloads
-- raw OLE and 3D model attachments
+- OLE, 3D model, audio and video attachments, labelled by file name; an OLE
+  compound file is unpacked to the file inside it (the Packager's original file
+  or the server's document stream) and its ProgID is kept as `program`
 - native tables: the first row is the header, a header merged across columns
   repeats its text and an empty header becomes `col_N`; merged body cells stay
   empty; bullets, numbering and links inside cells are kept, and pictures lying

@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.10,<3",
     "omml2latex>=0.1.0",
     "chart2md>=0.1.0",
+    "olefile>=0.47",
 ]
 
 [project.scripts]

@@ -122,6 +122,9 @@ def _rewrite_block_text(block: dict[str, Any]) -> str:
             f"{'  ' * int(item.get('level', 0))}- {item.get('text', '')}"
             for item in block.get("items", [])
         )
+    if kind == "attachment":
+        # Same words as the legacy "[attachment: name](path)" link label.
+        return f"attachment: {block.get('label', '')}"
     return str(block.get(REWRITE_TEXT_FIELDS.get(kind, "text"), ""))
 
 
