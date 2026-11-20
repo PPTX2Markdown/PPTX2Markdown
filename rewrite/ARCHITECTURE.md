@@ -61,3 +61,7 @@ so it gets the same entry, size and ratio checks plus the DTD check on its XML
 parts before chart2md opens it; a rejected workbook leaves a warning and the
 chart falls back to its cached values.
 
+An embedded OLE compound file is unpacked with olefile from an in-memory
+buffer whose size is already bounded by the asset limits; it is never passed
+as raw bytes, which olefile would read as a file path when short.
+

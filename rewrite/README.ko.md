@@ -101,7 +101,9 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
 - 수식(OMML)을 omml2latex로 LaTeX 변환
 - 내장 이미지
 - 내장 audio/video payload
-- 원본 OLE 및 3D model 첨부
+- OLE, 3D model, 오디오·비디오 첨부. 라벨은 파일 이름이고, OLE 복합 파일은 그 안의
+  실제 파일(Packager의 원본 파일이나 프로그램의 문서 stream)로 풀어서 저장하며
+  ProgID는 `program`에 남깁니다.
 - 네이티브 표: 첫 행을 머리글로 쓰고, 여러 열에 걸친 머리글은 각 열에 같은
   텍스트를 반복하며, 빈 머리글은 `col_N`으로 채웁니다. 본문의 병합 셀은 비워
   둡니다. 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인 그림이나 셀

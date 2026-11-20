@@ -75,8 +75,28 @@ def safe_source_part(source_part: str) -> str:
     return path.as_posix()
 
 
+_ZIP_DOCUMENTS = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".docm": "application/vnd.ms-word.document.macroEnabled.12",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pptm": "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".hwpx": "application/hwp+zip",
+}
+
+
 def media_type_for(name: str, data_prefix: bytes = b"") -> str:
     """Infer a conservative media type from magic bytes and the filename."""
+
+    if data_prefix.startswith(b"PK\x03\x04"):
+        # Office and OpenDocument files are ZIP archives; their extension is more specific.
+        document = _ZIP_DOCUMENTS.get(PurePosixPath(name).suffix.casefold())
+        if document:
+            return document
 
     signatures = (
         (b"\x89PNG\r\n\x1a\n", "image/png"),

@@ -141,9 +141,12 @@ class TableBlock(MarkdownBlockBase):
 
 
 class AttachmentBlock(BlockBase):
+    """An embedded file; ``label`` is its file name, ``program`` its OLE ProgID."""
+
     kind: Literal["attachment"] = "attachment"
     asset_id: str
     label: str = Field(min_length=1)
+    program: str | None = None
 
 
 class UnsupportedBlock(BlockBase):
