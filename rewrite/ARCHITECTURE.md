@@ -5,21 +5,58 @@
 ## Dependency direction
 
 ```text
-api / cli
-    ↓
-parser → ooxml / inheritance / reading_order / headings / omml / charts / tables
+api / cli                                agent (optional, anthropic)
+    ↓                                        ↓ writes recipes only
+parser → ooxml / inheritance / reading_order / headings / inline
+       → omml / charts / smartart / tables / attachments
     ↓
 model + AssetStore
     ↓
-ParsedPresentation
-    ↓
-renderer
+ParsedPresentation ←── recipe (apply_recipe: document → document)
+    ↓                  review (document → questions with recipe rules)
+renderer / chunks
     ↓
 transactional bundle writer
 ```
 
 The canonical document never owns a local path or binary payload. Runtime
 ownership lives in `ParsedPresentation`, which closes its `AssetStore`.
+
+## Decisions as data
+
+The parser always decides: reading order, headings, list structure, table
+headers and titles. Everything after parsing works on the canonical document
+only:
+
+- `recipe.apply_recipe` is a pure function from a document and a recipe to a
+  document. Selectors address blocks by their id (`s<page>.b<n>`, assigned in
+  reading order) or by slide and kind; selectors always see the document as
+  parsed, so a rule's targets never depend on earlier rules.
+- `review.review` reads the document and returns the decisions most worth a
+  second look, each with alternatives that are ready-made recipe rules.
+- `agent` (optional) only produces recipes: a request, review questions or an
+  image go in, a validated recipe comes out, and `explain_recipe` checks that
+  every rule selects something. The model never edits text or the parser.
+
+Because tables keep their full grid (`rows`, merge spans, `merged_from`) and
+headings keep the signal that made them headings (`source`), a recipe can
+re-render or reclassify blocks without parsing the package again.
+
+## Inline Markdown
+
+Text, heading, list and table-cell text is escaped inline Markdown. While the
+parser runs its text rules (headings, typed bullets), generated markup (links,
+inline math, emphasis) is wrapped in private-use sentinels; `inline.finalize`
+escapes only the source characters and removes the sentinels when blocks are
+built. Speaker notes stay plain in the model and are escaped when rendered.
+
+## Reading order
+
+`reading_order` is a recursive XY-cut: a vertical gap through the region splits
+columns read one after another; otherwise the top band is read first and the
+rest is cut again. A stack of single closely spaced boxes stays top to bottom,
+an overlap of up to one pixel still counts as a gap, and footers and decorative
+shapes do not take part in finding gaps.
 
 ## Asset identity
 
