@@ -39,12 +39,13 @@ if __name__ == "__main__":
 
 class StructureTests(unittest.TestCase):
     def test_a_background_frame_does_not_seal_the_column_gap(self) -> None:
+        inch = 914_400
         nodes = [
-            LayoutNode("frame", 0, (0, 0, 1000, 1000), structure=False),
-            LayoutNode("right-top", 1, (600, 0, 900, 300)),
-            LayoutNode("left-bottom", 2, (0, 400, 300, 700)),
-            LayoutNode("left-top", 3, (0, 0, 300, 300)),
-            LayoutNode("right-bottom", 4, (600, 350, 900, 650)),
+            LayoutNode("frame", 0, (0, 0, 10 * inch, 7 * inch), structure=False),
+            LayoutNode("right-top", 1, (6 * inch, 1 * inch, 9 * inch, 2 * inch)),
+            LayoutNode("left-bottom", 2, (1 * inch, 3 * inch, 4 * inch, 4 * inch)),
+            LayoutNode("left-top", 3, (1 * inch, 1 * inch, 4 * inch, 2 * inch)),
+            LayoutNode("right-bottom", 4, (6 * inch, 2_500_000, 9 * inch, 3_400_000)),
         ]
         self.assertEqual(
             geometry_reading_order(nodes),
