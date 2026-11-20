@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -161,6 +162,22 @@ class PresentationDocument(BaseModel):
         return self
 
 
+_RAW_HTML_START = re.compile(r"(?<!\\)<(?!br>)(?=[A-Za-z/!?])")
+_INLINE_MATH = re.compile(r"(\$[^$\n]+\$)")
+
+
+def _escape_raw_html(content: str) -> str:
+    """Keep slide text such as ``<script>`` literal instead of live HTML.
+
+    Generated ``<br>`` (table cells) and inline ``$math$`` are left as they are.
+    """
+    pieces = _INLINE_MATH.split(content)
+    return "".join(
+        piece if index % 2 else _RAW_HTML_START.sub(r"\\<", piece)
+        for index, piece in enumerate(pieces)
+    )
+
+
 def render_slide_markdown(slide: SlideDocument) -> str:
     parts = [f"[Page_{slide.page}]"]
     if slide.hidden:
@@ -169,11 +186,13 @@ def render_slide_markdown(slide: SlideDocument) -> str:
         content = block.content.strip()
         if not content:
             continue
+        if block.kind != "math":
+            content = _escape_raw_html(content)
         if block.kind == "heading" and block.heading_level is not None:
             content = f"{'#' * block.heading_level} {content}"
         parts.append(content)
     if slide.notes and slide.notes.strip():
-        parts.extend(["[Speaker_Notes]", slide.notes.strip()])
+        parts.extend(["[Speaker_Notes]", _escape_raw_html(slide.notes.strip())])
     return "\n\n".join(parts).rstrip() + "\n"
 
 
