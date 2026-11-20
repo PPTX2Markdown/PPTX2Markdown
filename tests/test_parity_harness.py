@@ -31,6 +31,11 @@ class TokenTests(unittest.TestCase):
         text = "![image](media/a.png) [label](https://x.test/y)\n| a | b |\n|---|---|\n**bold**"
         self.assertEqual(parity.tokens(text), ["label", "a", "b", "bold"])
 
+    def test_tokens_ignore_emphasis_and_escapes_inside_words(self) -> None:
+        self.assertEqual(
+            parity.tokens("**도구**의 snake\\_case \\# tag"), ["도구의", "snake_case", "tag"]
+        )
+
     def test_display_lines_canonicalize_table_padding(self) -> None:
         self.assertEqual(
             parity.display_lines("| a   | b |\n| --- | :-: |\n![x](m.png)"),
@@ -183,6 +188,39 @@ class EndToEndTests(unittest.TestCase):
             run_dir = Path(temp) / "runs" / deck["id"]
             self.assertTrue((run_dir / "legacy.txt").is_file())
             self.assertTrue((run_dir / "rewrite.txt").is_file())
+
+
+class BaselineTests(unittest.TestCase):
+    BASE = {
+        "slides_passed": 10,
+        "slides_compared": 12,
+        "recall": 0.9,
+        "precision": 0.95,
+        "same_shapes": {"table": 3, "text": 8},
+        "failed_runs": ["old.pptx:rewrite"],
+    }
+
+    def test_equal_or_better_numbers_pass(self) -> None:
+        better = {**self.BASE, "slides_passed": 11, "same_shapes": {"table": 4, "text": 8}}
+        self.assertEqual(parity.compare_baseline(self.BASE, better), [])
+
+    def test_every_worse_number_is_reported(self) -> None:
+        worse = {
+            **self.BASE,
+            "slides_passed": 9,
+            "recall": 0.89,
+            "same_shapes": {"text": 8},
+            "failed_runs": ["new.pptx:rewrite"],
+        }
+        self.assertEqual(
+            parity.compare_baseline(self.BASE, worse),
+            [
+                "slides_passed: 10 -> 9",
+                "recall: 0.9 -> 0.89",
+                "identical table shapes: 3 -> 0",
+                "runs that now fail: new.pptx:rewrite",
+            ],
+        )
 
 
 if __name__ == "__main__":

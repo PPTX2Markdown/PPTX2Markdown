@@ -81,6 +81,13 @@ class BlockBase(BaseModel):
 
 
 class TextBlock(BlockBase):
+    """Paragraph lines as inline Markdown.
+
+    ``text`` of text, heading and list blocks is escaped inline Markdown: links,
+    ``$inline math$`` and ``**bold**``/``*italic*`` are markup, and source characters
+    that Markdown would interpret are backslash-escaped. Slide ``notes`` stay plain.
+    """
+
     kind: Literal["text"] = "text"
     text: str = Field(min_length=1)
 
