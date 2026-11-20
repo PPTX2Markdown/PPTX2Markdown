@@ -1,0 +1,145 @@
+"""Pure Markdown and JSON renderers for the canonical document."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from typing import Literal
+
+from .errors import AssetResolutionError
+from .model import (
+    AttachmentBlock,
+    ChartBlock,
+    ContentBlock,
+    HeadingBlock,
+    ImageBlock,
+    ListBlock,
+    MathBlock,
+    PresentationDocument,
+    SmartArtBlock,
+    TableBlock,
+    TextBlock,
+    UnsupportedBlock,
+)
+
+AssetResolver = Callable[[str], str]
+
+
+def _escape_alt_text(text: str) -> str:
+    return str(text).replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
+
+
+def _destination(value: str) -> str:
+    return f"<{value}>" if any(char.isspace() or char in "()" for char in value) else value
+
+
+def _resolve_asset(
+    asset_id: str,
+    resolver: AssetResolver | None,
+    asset_mode: Literal["error", "omit"],
+) -> str | None:
+    if resolver is None:
+        if asset_mode == "omit":
+            return None
+        raise AssetResolutionError(
+            f"asset {asset_id} requires a URL resolver or asset_mode='omit'"
+        )
+    resolved = str(resolver(asset_id)).strip()
+    if not resolved:
+        if asset_mode == "omit":
+            return None
+        raise AssetResolutionError(f"resolver returned an empty location for {asset_id}")
+    return resolved.replace("\\", "/")
+
+
+def _resolve_embedded_assets(
+    markdown: str,
+    asset_ids: tuple[str, ...],
+    resolver: AssetResolver | None,
+    asset_mode: Literal["error", "omit"],
+) -> str:
+    rendered = markdown
+    for asset_id in asset_ids:
+        location = _resolve_asset(asset_id, resolver, asset_mode)
+        token = f"asset://{asset_id}"
+        rendered = rendered.replace(token, location or "")
+    return rendered.strip()
+
+
+def render_block_markdown(
+    block: ContentBlock,
+    *,
+    asset_resolver: AssetResolver | None,
+    asset_mode: Literal["error", "omit"],
+) -> str | None:
+    """Render one typed block without filesystem access."""
+
+    if isinstance(block, TextBlock):
+        return block.text.strip()
+    if isinstance(block, HeadingBlock):
+        return f"{'#' * block.level} {block.text.strip()}"
+    if isinstance(block, ListBlock):
+        lines: list[str] = []
+        for index, item in enumerate(block.items, 1):
+            marker = f"{index}." if block.ordered else "-"
+            lines.append(f"{'  ' * item.level}{marker} {item.text.strip()}")
+        return "\n".join(lines)
+    if isinstance(block, MathBlock):
+        return f"$$\n{block.latex.strip()}\n$$"
+    if isinstance(block, ImageBlock):
+        location = _resolve_asset(block.asset_id, asset_resolver, asset_mode)
+        if location is None:
+            return None
+        alt_text = block.description or block.alt_text or "image"
+        return f"![{_escape_alt_text(alt_text)}]({_destination(location)})"
+    if isinstance(block, AttachmentBlock):
+        location = _resolve_asset(block.asset_id, asset_resolver, asset_mode)
+        if location is None:
+            return None
+        label = block.label.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
+        return f"[attachment: {label}]({_destination(location)})"
+    if isinstance(block, (ChartBlock, SmartArtBlock, TableBlock)):
+        return _resolve_embedded_assets(
+            block.markdown,
+            block.asset_ids,
+            asset_resolver,
+            asset_mode,
+        )
+    if isinstance(block, UnsupportedBlock):
+        return f"[unsupported: {block.message}]"
+    raise TypeError(f"unknown content block: {type(block).__name__}")
+
+
+def render_presentation_markdown(
+    document: PresentationDocument,
+    *,
+    asset_resolver: AssetResolver | None = None,
+    asset_mode: Literal["error", "omit"] = "error",
+) -> str:
+    """Render deterministic Markdown from one canonical document."""
+
+    slides: list[str] = []
+    for slide in document.slides:
+        parts = [f"[Page_{slide.page}]"]
+        if slide.hidden:
+            parts.append("<!-- hidden: true -->")
+        for block in slide.blocks:
+            rendered = render_block_markdown(
+                block,
+                asset_resolver=asset_resolver,
+                asset_mode=asset_mode,
+            )
+            if rendered:
+                parts.append(rendered)
+        if slide.notes and slide.notes.strip():
+            parts.extend(["[Speaker_Notes]", slide.notes.strip()])
+        slides.append("\n\n".join(parts))
+    merged = "\n\n".join(slides).strip()
+    return f"{merged}\n" if merged else ""
+
+
+def render_presentation_json(document: PresentationDocument) -> str:
+    """Render canonical JSON without paths, timestamps or asset payloads."""
+
+    value = document.model_dump(mode="json")
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
