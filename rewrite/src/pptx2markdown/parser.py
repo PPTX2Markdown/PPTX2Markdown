@@ -183,6 +183,7 @@ class _PresentationParser:
         try:
             with OOXMLPackage(self.source, self.options.package_limits, name=self.name) as package:
                 templates = TemplateResolver(package)
+                sections = package.slide_sections()
                 slides: list[SlideDocument] = []
                 for entry in package.slide_entries():
                     try:
@@ -200,6 +201,8 @@ class _PresentationParser:
                             slide=entry.page,
                         )
                         slide = SlideDocument(page=entry.page)
+                    if entry.slide_id in sections:
+                        slide = slide.model_copy(update={"section": sections[entry.slide_id]})
                     if self.options.include_hidden or not slide.hidden:
                         slides.append(slide)
 

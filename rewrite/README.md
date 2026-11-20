@@ -123,6 +123,7 @@ applied. Selectors:
 | `table`, `image`, `heading`, ... or `*` | every block of a kind |
 | `table[0]`, `table[-1]` | the first or last block of a kind on each slide |
 | `slide[3]/table[0]` | the first table on slide 3 |
+| `section[Appendix]`, `section[Appendix]/image` | the slides (or blocks) of a PowerPoint section |
 
 Settings: `merged_cells`, `include_notes`, `include_hidden`, and `headings`
 (`placeholder` keeps only headings from title placeholders, like the legacy

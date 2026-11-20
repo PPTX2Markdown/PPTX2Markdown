@@ -242,6 +242,8 @@ class SlideDocument(BaseModel):
     hidden: bool = False
     blocks: tuple[ContentBlock, ...] = ()
     notes: str | None = None
+    # The PowerPoint section the slide belongs to, when the deck has sections.
+    section: str | None = None
 
 
 class PresentationDocument(BaseModel):

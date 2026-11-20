@@ -18,6 +18,7 @@ from .errors import PackageSecurityError, PresentationParseError
 RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_P14_NS = "http://schemas.microsoft.com/office/powerpoint/2010/main"
 
 # ISO 29500 Strict documents use their own namespace URIs; everything here reads the
 # Transitional ones, so Strict parts are rewritten on read. The relationships
@@ -88,6 +89,8 @@ class SlideEntry:
     page: int
     part_name: str
     relationship_id: str
+    # p:sldId/@id, which PowerPoint sections refer to.
+    slide_id: str = ""
 
 
 def normalize_part_name(name: str) -> str:
@@ -374,8 +377,27 @@ class OOXMLPackage:
                 raise PresentationParseError(
                     self.path, f"slide {page} target is missing: {relationship.target}"
                 )
-            entries.append(SlideEntry(page=page, part_name=target, relationship_id=rid))
+            entries.append(
+                SlideEntry(
+                    page=page,
+                    part_name=target,
+                    relationship_id=rid,
+                    slide_id=element.attrib.get("id", "").strip(),
+                )
+            )
         return tuple(entries)
+
+    def slide_sections(self) -> dict[str, str]:
+        """Section name by slide id, from the deck's PowerPoint sections (p14:sectionLst)."""
+
+        sections: dict[str, str] = {}
+        for section in self.xml("ppt/presentation.xml").iter(f"{{{_P14_NS}}}section"):
+            name = (section.attrib.get("name") or "").strip()
+            for slide in section.iter(f"{{{_P14_NS}}}sldId"):
+                slide_id = slide.attrib.get("id", "").strip()
+                if name and slide_id:
+                    sections.setdefault(slide_id, name)
+        return sections
 
     def slide_size(self) -> tuple[int, int] | None:
         """The slide width and height in EMU from p:sldSz, when the deck states them."""

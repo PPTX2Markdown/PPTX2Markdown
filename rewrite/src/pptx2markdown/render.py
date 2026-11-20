@@ -142,6 +142,9 @@ def render_slide_markdown(
     parts = [f"[Page_{slide.page}]"] if page_marker else []
     if slide.hidden:
         parts.append("<!-- hidden: true -->")
+    if block_ids and slide.section:
+        # The annotated view names the section, so a reader can select it in a recipe.
+        parts.append(f"<!-- section: {slide.section.replace('--', '- -')} -->")
     for block in slide.blocks:
         rendered = render_block_markdown(
             block,
