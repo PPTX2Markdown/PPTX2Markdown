@@ -129,7 +129,7 @@ class ApplyRecipeTests(unittest.TestCase):
             rules=(
                 Rule(target="slide[1]", notes=False),
                 Rule(target="s1.b2", exclude=True),
-                Rule(target="table[0]", header_rows=2, merged_cells="fill"),
+                Rule(target="table[0]", header_rows=2, merged_cells="fill", caption_rows=0),
                 Rule(target="image", description="Bar chart of sales by region"),
                 Rule(target="slide[2]/list", as_text=True),
                 Rule(target="slide[3]", exclude=True),

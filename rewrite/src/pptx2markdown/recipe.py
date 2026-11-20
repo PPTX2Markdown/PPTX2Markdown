@@ -172,7 +172,13 @@ class Rule(BaseModel):
         description="Tables: fill repeats merged values, header only in the header, blank never.",
     )
     header_rows: int | None = Field(
-        default=None, ge=0, le=10, description="Tables: how many leading rows form the header."
+        default=None, ge=0, le=10, description="Tables: how many rows form the header."
+    )
+    caption_rows: int | None = Field(
+        default=None,
+        ge=0,
+        le=5,
+        description="Tables: how many leading rows are a title above the table, not data.",
     )
     heading_level: int | None = Field(
         default=None,
@@ -259,14 +265,23 @@ def _apply_block(block: ContentBlock, rule: Rule, default_merged: MergedCells | 
     }
     if isinstance(block, TableBlock) and block.rows:
         header_rows = rule.header_rows if rule.header_rows is not None else block.header_rows
+        captions = rule.caption_rows if rule.caption_rows is not None else block.caption_rows
         merged = rule.merged_cells or default_merged or block.merged_cells
-        if (header_rows, merged) != (block.header_rows, block.merged_cells):
+        if (header_rows, captions, merged) != (
+            block.header_rows,
+            block.caption_rows,
+            block.merged_cells,
+        ):
             return block.model_copy(
                 update={
                     "header_rows": header_rows,
+                    "caption_rows": captions,
                     "merged_cells": merged,
                     "markdown": rows_markdown(
-                        block.rows, header_rows=header_rows, merged_cells=merged
+                        block.rows,
+                        header_rows=header_rows,
+                        merged_cells=merged,
+                        caption_rows=captions,
                     ),
                 }
             )

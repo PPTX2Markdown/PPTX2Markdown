@@ -1,0 +1,10 @@
+{
+  "merged_cells": "header",
+  "rules": [
+    {
+      "target": "table",
+      "caption_rows": 0,
+      "reason": "legacy uses a full-width first row as the header instead of a title"
+    }
+  ]
+}

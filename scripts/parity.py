@@ -40,9 +40,10 @@ DEFAULT_INPUT_DIRS = (
 )
 DEFAULT_REPORT_DIR = REPO_ROOT / ".pptx2markdown" / "parity"
 NO_SHAPE_KEY = "<no-shape-id>"
-# Rewrite defaults that deliberately differ from legacy, set back to legacy behavior so
-# parity measures porting gaps rather than policy changes. --rewrite-args can override.
-REWRITE_LEGACY_SETTINGS = ("--merged-cells", "header")
+# Rewrite defaults that deliberately differ from legacy are set back to legacy behavior
+# by a recipe, so parity measures porting gaps rather than policy changes.
+LEGACY_RECIPE = REPO_ROOT / "scripts" / "parity_legacy_recipe.json"
+REWRITE_LEGACY_SETTINGS = ("--recipe", str(LEGACY_RECIPE))
 TOKEN_PREVIEW = 12
 SLIDE_DETAIL_LIMIT = 15
 

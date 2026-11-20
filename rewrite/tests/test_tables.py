@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pptx2markdown
 from pptx2markdown.model import ImageBlock, TableBlock, TableCell
-from pptx2markdown.tables import grid_rows, rows_markdown, table_grid
+from pptx2markdown.tables import caption_rows, grid_rows, rows_markdown, table_grid
 
 from .pptx_factory import build_test_pptx
 
@@ -254,3 +254,37 @@ class MergedCellPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+TITLED = (
+    (_cell("**2024 results**", col_span=3), _covered(0, 0), _covered(0, 0)),
+    (_cell("Region"), _cell("Q1"), _cell("Q2")),
+    (_cell("Domestic", col_span=3), _covered(2, 0), _covered(2, 0)),
+    (_cell("Seoul"), _cell("10"), _cell("12")),
+)
+
+
+class CaptionTests(unittest.TestCase):
+    def test_a_full_width_first_row_is_a_title(self) -> None:
+        self.assertEqual(caption_rows(TITLED), 1)
+        self.assertEqual(caption_rows(TITLED[:2]), 0)
+        self.assertEqual(caption_rows(BLOCK), 0)
+
+    def test_title_is_written_once_above_the_table_and_sections_are_not_repeated(self) -> None:
+        self.assertEqual(
+            rows_markdown(TITLED, caption_rows=1).splitlines(),
+            [
+                "**2024 results**",
+                "",
+                "| Region | Q1 | Q2 |",
+                "| --- | --- | --- |",
+                "| Domestic |  |  |",
+                "| Seoul | 10 | 12 |",
+            ],
+        )
+
+    def test_without_a_caption_the_title_names_the_columns(self) -> None:
+        self.assertEqual(
+            rows_markdown(TITLED).splitlines()[0],
+            "| **2024 results** | **2024 results** | **2024 results** |",
+        )

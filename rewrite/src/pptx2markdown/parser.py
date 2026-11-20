@@ -76,6 +76,7 @@ from .smartart import smartart_markdown
 from .tables import (
     GridCell,
     MergedCells,
+    caption_rows,
     cell_at,
     cell_bounds,
     cell_in,
@@ -1337,9 +1338,13 @@ class _PresentationParser:
                     add_image(cell_in(grid, row_index, column), rid, "image", shape.shape_id)
 
         rows = grid_rows(grid)
+        captions = caption_rows(rows)
         return TableBlock(
-            markdown=rows_markdown(rows, merged_cells=self.options.merged_cells),
+            markdown=rows_markdown(
+                rows, merged_cells=self.options.merged_cells, caption_rows=captions
+            ),
             rows=rows,
+            caption_rows=captions,
             merged_cells=self.options.merged_cells,
             asset_ids=tuple(dict.fromkeys(asset_ids)),
             shape_id=shape.shape_id,

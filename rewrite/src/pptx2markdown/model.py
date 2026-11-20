@@ -166,13 +166,15 @@ class TableBlock(MarkdownBlockBase):
     """A native table: ``rows`` is the full grid, ``markdown`` its rendering.
 
     Cell ``text`` is inline Markdown with one line per paragraph. ``markdown``
-    renders the grid with the first ``header_rows`` rows as the header and merged
-    cells filled according to the conversion's merged-cell policy.
+    renders the grid: the first ``caption_rows`` rows as a title line, the next
+    ``header_rows`` rows as the header, and merged cells filled according to
+    ``merged_cells``.
     """
 
     kind: Literal["table"] = "table"
     rows: tuple[tuple[TableCell, ...], ...] = ()
     header_rows: int = Field(default=1, ge=0)
+    caption_rows: int = Field(default=0, ge=0)
     merged_cells: MergedCells = "fill"
 
     @model_validator(mode="after")

@@ -102,7 +102,7 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 | `table[0]`, `table[-1]` | 슬라이드마다 해당 종류의 첫 번째·마지막 블록 |
 | `slide[3]/table[0]` | 3번 슬라이드의 첫 번째 표 |
 
-규칙 동작: `exclude`, `merged_cells`, `header_rows`(표), `heading_level`(제목 수준
+규칙 동작: `exclude`, `merged_cells`, `header_rows`, `caption_rows`(표), `heading_level`(제목 수준
 변경 또는 텍스트를 제목으로), `as_text`(제목·목록), `description`(이미지 대체
 텍스트), `notes`(슬라이드 selector), 그리고 검토용으로만 남는 `reason`. 뒤의
 규칙이 앞의 규칙보다 우선하며, 모든 selector는 파싱된 그대로의 문서를 봅니다.
@@ -171,8 +171,10 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
   채웁니다. 덮인 칸에 무엇을 쓸지는 `merged_cells`로 정합니다. 기본값 `fill`은
   병합된 값을 모든 칸에 반복해 각 행이 혼자서도 뜻이 통하게 하고(검색·RAG에
   유리), `header`는 legacy처럼 머리글 행에서만 반복하며, `blank`는 반복하지
-  않습니다. 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인 그림이나 셀
-  배경 그림은 그 셀 안에 넣습니다.
+  않습니다. 표 전체 폭으로 병합된 첫 행은 표 제목으로 보고 표 위에 한 번만
+  쓰며(`caption_rows`), 본문에서 전체 폭으로 병합된 행은 구역 이름이라 열마다
+  반복하지 않습니다. 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인
+  그림이나 셀 배경 그림은 그 셀 안에 넣습니다.
 - chart2md를 이용한 차트 변환: 일반 차트는 cache 값으로, Office 2016 chartEx
   차트(깔때기, 폭포 등)는 내장 workbook으로 변환합니다. 내장 workbook도 패키지와
   같은 기준으로 검사하며, 거부되면 cache 값을 사용합니다.
