@@ -40,6 +40,16 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     print(result.document_path)
 ```
 
+`parse()` also takes the file's bytes or a binary stream, so an upload can be
+converted without touching the disk (`name` is recorded as the source name):
+
+```python
+with pptx2markdown.parse(request.files["deck"].stream, name="deck.pptx") as presentation:
+    markdown = presentation.render_markdown(assets="omit")
+```
+
+In-memory input is limited to `PackageLimits.max_package_bytes` (1 GiB).
+
 `parse()` does not leave persistent output. Embedded payloads are kept in a
 managed spooled store and no temporary path appears in the canonical model.
 

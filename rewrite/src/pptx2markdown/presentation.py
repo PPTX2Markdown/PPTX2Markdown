@@ -23,7 +23,7 @@ class ParsedPresentation:
         *,
         document: PresentationDocument,
         assets: AssetStore,
-        source_path: Path,
+        source_path: Path | None,
     ) -> None:
         descriptor_ids = tuple(asset.id for asset in assets.descriptors())
         document_ids = tuple(asset.id for asset in document.assets)

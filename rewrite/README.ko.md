@@ -39,6 +39,16 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     print(result.document_path)
 ```
 
+`parse()`는 파일의 bytes나 바이너리 스트림도 받으므로, 업로드된 파일을 디스크에
+쓰지 않고 바로 변환할 수 있습니다(`name`은 원본 이름으로 기록됨).
+
+```python
+with pptx2markdown.parse(request.files["deck"].stream, name="deck.pptx") as presentation:
+    markdown = presentation.render_markdown(assets="omit")
+```
+
+메모리 입력은 `PackageLimits.max_package_bytes`(1 GiB)까지 받습니다.
+
 `parse()`는 영구 출력 파일을 남기지 않습니다. 내장 payload는 관리되는 spooled
 store에 보관하며 canonical 문서에는 임시경로가 들어가지 않습니다.
 

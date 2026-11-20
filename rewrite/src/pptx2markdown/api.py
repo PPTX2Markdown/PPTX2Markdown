@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import BinaryIO, Iterable, Literal
 
 from .assets import safe_basename
 from .errors import PPTX2MarkdownError
@@ -41,8 +41,9 @@ def _source_hash_prefix(source: Path) -> str:
 
 
 def parse(
-    path: str | Path,
+    path: str | Path | bytes | BinaryIO,
     *,
+    name: str | None = None,
     include_assets: bool = True,
     include_notes: bool = True,
     include_hidden: bool = True,
@@ -50,7 +51,10 @@ def parse(
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
 ) -> ParsedPresentation:
-    """Parse one local PPTX without creating persistent output.
+    """Parse one PPTX without creating persistent output.
+
+    ``path`` may be a local path, the file's bytes or a binary stream (for an
+    upload, say); ``name`` is the file name recorded for in-memory input.
 
     ``merged_cells`` controls table Markdown: ``fill`` repeats a merged value in
     every cell it covers, ``header`` only in the header row, ``blank`` nowhere.
@@ -59,6 +63,7 @@ def parse(
 
     components = parse_components(
         path,
+        name=name,
         options=ParseOptions(
             include_assets=include_assets,
             include_notes=include_notes,
