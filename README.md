@@ -246,6 +246,36 @@ attachments are data from the input presentation; inspect them before opening.
 Legacy `.ppt` conversion invokes the selected external Office converter.
 `--convert-vector-images` also invokes LibreOffice for embedded EMF/WMF assets.
 
+## Next generation (preview)
+
+[`rewrite/`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/rewrite/README.md) is the next engine, developed next to this
+release and checked against it on every pull request (a parity harness that
+fails CI when the rewrite falls behind). It is not published yet. It keeps the
+static, deterministic pipeline and adds:
+
+- **Clean Markdown** — typed `# x`, `<tag>` or `[x](y)` stay literal; bold and
+  italic are kept; link and image text is escaped.
+- **Structured tables** — the full cell grid with merge spans in JSON, merged
+  values filled or left blank by policy, table titles above the table.
+- **Recipes** — every block has an id (`s3.b2`); a JSON recipe of selectors
+  and actions (drop the appendix, two header rows for this table, describe
+  that image) adjusts a conversion without touching the parser.
+- **Review** — the converter lists its least certain decisions as questions
+  whose answers are recipe rules; an optional agent (`pptx2markdown[agent]`)
+  can answer them, draft recipes from plain requests and describe images.
+- **Retrieval-ready output** — slide-aligned chunks with citation metadata, as
+  an API or a JSON Lines bundle; parsing from bytes or a stream.
+
+What each converter keeps of a deck, from the [feature benchmark](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/benchmarks/README.md):
+
+| | pptx2markdown (rewrite) | anydoc 0.2.5 | MarkItDown 0.1.9 |
+| --- | :---: | :---: | :---: |
+| Features kept (of 17) | **17** | 11 | 7 |
+| 300-slide deck | 0.23 s | **0.012 s** | 0.32 s |
+
+The features were chosen around presentation structure; see the benchmark
+README for what that means.
+
 ## Documentation
 
 - [Output schema](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.md)
