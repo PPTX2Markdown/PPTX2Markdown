@@ -56,7 +56,7 @@ from pptx2markdown.structure_analyzer.xml_primitives import (
     text_without_slide_number_fields,
 )
 from pptx2markdown.table_pipeline.parse import parse_table_element
-from pptx2markdown.table_pipeline.render import render_parsed_table_to_markdown
+from pptx2markdown.table_pipeline.render import fill_mode, render_parsed_table_to_markdown
 
 
 def _slide_object(**overrides: object) -> SlideObject:
@@ -512,7 +512,7 @@ class ContentRegressionTests(unittest.TestCase):
 
         self.assertIn("[Linked cell](https://example.com/cell)", markdown)
 
-    def test_merged_table_body_keeps_content_only_at_merge_origin(self) -> None:
+    def test_merged_table_cells_repeat_by_default_and_stay_empty_when_blank(self) -> None:
         table = ET.fromstring(
             f"""
             <a:tbl xmlns:a="{NS["a"]}">
@@ -531,9 +531,51 @@ class ContentRegressionTests(unittest.TestCase):
             """
         )
 
-        markdown = render_parsed_table_to_markdown(parse_table_element(table))
+        parsed = parse_table_element(table)
 
-        self.assertEqual(markdown, "| Header | Header |\n|---|---|\n| Body |  |\n")
+        self.assertEqual(
+            render_parsed_table_to_markdown(parsed),
+            "| Header | Header |\n|---|---|\n| Body | Body |\n",
+        )
+        self.assertEqual(
+            render_parsed_table_to_markdown(parsed, fill_merged=fill_mode("blank")),
+            "| Header | col_2 |\n|---|---|\n| Body |  |\n",
+        )
+        with self.assertRaises(ValueError):
+            fill_mode("header-only")
+
+    def test_cell_inside_a_two_dimensional_merge_points_at_the_merge_start(self) -> None:
+        table = ET.fromstring(
+            f"""
+            <a:tbl xmlns:a="{NS["a"]}">
+              <a:tblGrid><a:gridCol w="100"/><a:gridCol w="100"/><a:gridCol w="100"/></a:tblGrid>
+              <a:tr h="100">
+                <a:tc><a:txBody><a:p><a:r><a:t>H1</a:t></a:r></a:p></a:txBody></a:tc>
+                <a:tc><a:txBody><a:p><a:r><a:t>H2</a:t></a:r></a:p></a:txBody></a:tc>
+                <a:tc><a:txBody><a:p><a:r><a:t>H3</a:t></a:r></a:p></a:txBody></a:tc>
+              </a:tr>
+              <a:tr h="100">
+                <a:tc gridSpan="2" rowSpan="2"><a:txBody><a:p><a:r><a:t>Block</a:t></a:r>
+                </a:p></a:txBody></a:tc>
+                <a:tc hMerge="1"><a:txBody><a:p/></a:txBody></a:tc>
+                <a:tc><a:txBody><a:p><a:r><a:t>x</a:t></a:r></a:p></a:txBody></a:tc>
+              </a:tr>
+              <a:tr h="100">
+                <a:tc vMerge="1"><a:txBody><a:p/></a:txBody></a:tc>
+                <a:tc hMerge="1" vMerge="1"><a:txBody><a:p/></a:txBody></a:tc>
+                <a:tc><a:txBody><a:p><a:r><a:t>y</a:t></a:r></a:p></a:txBody></a:tc>
+              </a:tr>
+            </a:tbl>
+            """
+        )
+
+        parsed = parse_table_element(table)
+
+        self.assertEqual(parsed["rows"][2][1]["origin"], [1, 0])
+        self.assertEqual(
+            render_parsed_table_to_markdown(parsed).splitlines()[2:],
+            ["| Block | Block | x |", "| Block | Block | y |"],
+        )
 
     def test_table_cell_preserves_paragraphs_and_nested_list_semantics(self) -> None:
         table = ET.fromstring(

@@ -195,6 +195,7 @@ Example Markdown:
 | `--work-dir` | `./.pptx2markdown` | Extracted packages, analysis files, and caches |
 | `--output-format` | `markdown` | `markdown` or `json` |
 | `--headings` | `auto` | `auto` or placeholder-only `strict` heading detection |
+| `--merged-cells` | `fill` | `fill` repeats a merged table value in every cell it covers; `blank` leaves covered cells empty |
 | `--placeholder-inheritance` | `style` | `none`, `geometry`, or `style` inheritance |
 | `--inherited-shapes` | `visible` | `none`, `visible`, or `all` layout/master shapes |
 | `--ppt-converter` | `auto` | `auto`, `powerpoint`, or `libreoffice` for `.ppt` |

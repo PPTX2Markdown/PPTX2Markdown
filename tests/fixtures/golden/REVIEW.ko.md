@@ -29,8 +29,9 @@
   필요하지 않음
 - 전체 너비 영역은 내부 grid 전후 순서를 유지. 촘촘히 정렬된 grid fixture에서는
   수평 분할로 row-major 순서를 생성
-- 병합 header cell은 Markdown header 열마다 값을 반복하고 병합 body cell은 병합
-  시작점에만 콘텐츠 유지
+- 병합 셀은 머리글과 본문, 가로와 세로 구분 없이 병합 범위의 모든 칸에 값을
+  반복합니다(`--merged-cells fill`, 기본값). 그래서 행 하나만 봐도 뜻이 통합니다.
+  `--merged-cells blank`는 병합이 시작되는 칸에만 값을 둡니다.
 - Unicode는 작성된 형태 그대로 보존. 사용자 출력에서 NFC/NFD 및 full-width
   variant를 다시 쓰지 않음
 - label 없는 SmartArt는 버리거나 가짜 label을 만들지 않고 안정적인 node-count

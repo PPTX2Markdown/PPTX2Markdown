@@ -270,7 +270,7 @@
         },
         {
           "kind": "table",
-          "content": "| Merged table title | Merged table title | Merged table title |\n|---|---|---|\n| Column A | Column B | Column C |\n| alpha<br>beta | plain cell | gamma |\n| merged body |  | tail |",
+          "content": "| Merged table title | Merged table title | Merged table title |\n|---|---|---|\n| Column A | Column B | Column C |\n| alpha<br>beta | plain cell | gamma |\n| merged body | merged body | tail |",
           "shape_id": "4",
           "heading_level": null,
           "bbox": {

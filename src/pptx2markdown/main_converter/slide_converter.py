@@ -137,6 +137,7 @@ class SlideConversionContext:
     ns: Dict[str, str]
     source_pptx_path: Optional[Path] = None
     heading_mode: str = "auto"
+    merged_cells: str = "fill"
     rels_path: Optional[Path] = None
     rels_map: Dict[str, str] = field(default_factory=dict)
     heading_hints: Dict[str, Dict[str, object]] = field(default_factory=dict)
@@ -982,6 +983,7 @@ def _handle_graphic_frame_block(
         copied_media=assets.copied_media,
         rels_path=context.rels_path,
         rels_map=context.rels_map,
+        merged_cells=context.merged_cells,
     )
     if table_md is not None:
         blocks.append(

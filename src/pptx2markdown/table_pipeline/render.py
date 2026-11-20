@@ -9,6 +9,20 @@ FILL_H = "horizontal"
 FILL_V = "vertical"
 FILL_BOTH = "both"
 FILL_HEADER = "header"
+FILL_NONE = "none"
+
+# Public merged-cell policies: fill repeats a merged value in every cell it
+# covers, so each row reads on its own; blank leaves covered cells empty.
+MERGED_CELL_POLICIES = ("fill", "blank")
+
+
+def fill_mode(merged_cells: str) -> str:
+    """The renderer fill mode for a public merged-cell policy."""
+    if merged_cells == "fill":
+        return FILL_BOTH
+    if merged_cells == "blank":
+        return FILL_NONE
+    raise ValueError(f"merged_cells must be one of {', '.join(MERGED_CELL_POLICIES)}")
 
 
 def _normalize_text(text: str) -> str:
@@ -54,6 +68,29 @@ def _dense_grid_from_parsed_table(
         n_cols = max((len(r) for r in rows if isinstance(r, list)), default=0)
     dense = [["" for _ in range(n_cols)] for _ in range(n_rows)]
     origin_texts: dict[tuple[int, int], str] = {}
+    pointers: dict[tuple[int, int], tuple[int, int]] = {}
+    for r_idx, row in enumerate(rows[:n_rows]):
+        if not isinstance(row, list):
+            continue
+        for c_idx, cell in enumerate(row[:n_cols]):
+            origin = cell.get("origin") if isinstance(cell, dict) else None
+            if (
+                isinstance(cell, dict)
+                and cell.get("type") in {"hMerge", "vMerge"}
+                and isinstance(origin, list)
+                and len(origin) == 2
+                and all(isinstance(value, int) for value in origin)
+            ):
+                pointers[(r_idx, c_idx)] = (origin[0], origin[1])
+
+    def merge_start(position: tuple[int, int]) -> tuple[int, int]:
+        # A covered cell may point at another covered cell (inside a 2D block);
+        # follow the chain to the cell the merge starts from.
+        seen = {position}
+        while position in pointers and pointers[position] not in seen:
+            position = pointers[position]
+            seen.add(position)
+        return position
 
     for r_idx, row in enumerate(rows[:n_rows]):
         if not isinstance(row, list):
@@ -72,14 +109,8 @@ def _dense_grid_from_parsed_table(
                 row_index=r_idx,
                 header_rows=header_rows,
             ):
-                origin = cell.get("origin")
-                if (
-                    isinstance(origin, list)
-                    and len(origin) == 2
-                    and isinstance(origin[0], int)
-                    and isinstance(origin[1], int)
-                ):
-                    dense[r_idx][c_idx] = origin_texts.get((origin[0], origin[1]), "")
+                if (r_idx, c_idx) in pointers:
+                    dense[r_idx][c_idx] = origin_texts.get(merge_start((r_idx, c_idx)), "")
     return dense
 
 
@@ -128,7 +159,7 @@ def _render_markdown_flat(dense: list[list[str]], header_rows: int, use_header_r
 def render_parsed_table_to_markdown(
     parsed_table: dict[str, Any],
     header_rows: int = 1,
-    fill_merged: str = FILL_HEADER,
+    fill_merged: str = FILL_BOTH,
 ) -> str:
     """Public API for rendering parsed-table payload into markdown."""
     normalized_header_rows = max(0, int(header_rows))

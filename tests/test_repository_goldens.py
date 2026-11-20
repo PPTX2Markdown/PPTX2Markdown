@@ -222,7 +222,7 @@ class RepositoryGoldenTests(unittest.TestCase):
             ["Speaker notes remain separate from visible blocks", "visible-slide-body"],
         )
         self.assertIn("[example.com](https://example.com/docs)", slides[1]["blocks"][1]["content"])
-        self.assertIn("| merged body |  | tail |", slides[4]["blocks"][1]["content"])
+        self.assertIn("| merged body | merged body | tail |", slides[4]["blocks"][1]["content"])
         self.assertIn("**Chart type:** Column Chart", slides[5]["blocks"][1]["content"])
 
 

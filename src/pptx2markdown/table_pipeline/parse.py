@@ -103,7 +103,9 @@ def parse_table_root(root: ET.Element, source: str = "<in-memory>") -> dict[str,
             is_v_merge = tc.get("vMerge") == "1"
             text = _cell_text(tc)
 
-            if is_h_merge:
+            # Inside a 2D block a cell is both; its vertical span already knows the
+            # cell the merge starts from, while its left neighbour is only covered.
+            if is_h_merge and not (is_v_merge and c_idx in active_v):
                 origin_col = current_origin_col if current_origin_col is not None else c_idx - 1
                 row_cells.append(
                     {

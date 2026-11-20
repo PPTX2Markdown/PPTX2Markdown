@@ -192,6 +192,7 @@ Markdown 출력 예시:
 | `--work-dir` | `./.pptx2markdown` | 압축 해제 패키지, 분석 파일, 캐시 |
 | `--output-format` | `markdown` | `markdown` 또는 `json` |
 | `--headings` | `auto` | `auto` 또는 placeholder 전용 `strict` 헤딩 판정 |
+| `--merged-cells` | `fill` | `fill`은 병합된 표 값을 병합 범위의 모든 칸에 반복하고, `blank`는 덮인 칸을 비워 둡니다 |
 | `--placeholder-inheritance` | `style` | `none`, `geometry`, `style` 상속 |
 | `--inherited-shapes` | `visible` | `none`, `visible`, `all` 레이아웃/마스터 도형 |
 | `--ppt-converter` | `auto` | `.ppt`용 `auto`, `powerpoint`, `libreoffice` |

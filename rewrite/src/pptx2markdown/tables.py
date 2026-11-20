@@ -193,9 +193,7 @@ def rows_markdown(
     ``merged_cells`` decides what a position covered by a merge shows: ``fill``
     repeats the merged text everywhere (each row stays self-contained, which suits
     retrieval), ``header`` repeats it only in the header so every column keeps a
-    name, and ``blank`` leaves every covered position empty. A merge across the
-    whole width in the body is a section label and is never repeated across the
-    row. Several header rows are combined per column as ``top / bottom``; an empty
+    name, and ``blank`` leaves every covered position empty. Several header rows are combined per column as ``top / bottom``; an empty
     header is ``col_N``. The first ``caption_rows`` rows are written as a bold line
     above the table.
     """
@@ -221,8 +219,6 @@ def rows_markdown(
             return _cell_markdown(cell.text)
         origin = origin_of(row, column)
         assert origin is not None
-        if not in_header and origin.col_span >= width:
-            return ""
         repeat = merged_cells == "fill" or (merged_cells == "header" and in_header)
         return _cell_markdown(origin.text) if repeat else ""
 

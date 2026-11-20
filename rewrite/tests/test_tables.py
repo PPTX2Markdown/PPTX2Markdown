@@ -270,7 +270,7 @@ class CaptionTests(unittest.TestCase):
         self.assertEqual(caption_rows(TITLED[:2]), 0)
         self.assertEqual(caption_rows(BLOCK), 0)
 
-    def test_title_is_written_once_above_the_table_and_sections_are_not_repeated(self) -> None:
+    def test_title_is_written_once_above_the_table(self) -> None:
         self.assertEqual(
             rows_markdown(TITLED, caption_rows=1).splitlines(),
             [
@@ -278,7 +278,7 @@ class CaptionTests(unittest.TestCase):
                 "",
                 "| Region | Q1 | Q2 |",
                 "| --- | --- | --- |",
-                "| Domestic |  |  |",
+                "| Domestic | Domestic | Domestic |",
                 "| Seoul | 10 | 12 |",
             ],
         )

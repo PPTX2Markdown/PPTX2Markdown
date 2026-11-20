@@ -135,8 +135,8 @@
       "repository_path": "__tests__/pptx-templates/GS_Tables_Merged.pptx",
       "source_url": "https://raw.githubusercontent.com/singerla/pptx-automizer/6466d43abc6a9410b10b801d3aa1b510cc128446/__tests__/pptx-templates/GS_Tables_Merged.pptx",
       "sha256": "542eb85493348fa3a49e473434b765d7b7f807ed49fd90fa2a2f0ac56b051faa",
-      "json_sha256": "6b8a945702c7a3de870afa5d1197a6810e50a7e5e83b4a2e84447817699d67a8",
-      "markdown_sha256": "c1536bd5e66ad3e19694df164f7c79fb3f265a5dc04ca76f4eae80c8e316476c",
+      "json_sha256": "f3f107d004a51671bc648b2579abccc6b2706b90d6412d377290757ba0bbe2f6",
+      "markdown_sha256": "2d553e06662f23a9653d9477a73310124108240a5968976fc77a190fbcf625db",
       "coverage": [
         "horizontal merges",
         "vertical merges",
@@ -337,8 +337,8 @@
       "repository_path": "tests/fixtures/golden/synthetic_text_objects.pptx",
       "source_url": null,
       "sha256": "1a50a0e87af9fcfddd4c1c092b9ffd3fcf5751130f16b1976ef327724a69006b",
-      "json_sha256": "7ac2cb89e6c2968151d8bbc649cadfcc1f4df45105f701bf03513ca1d6c0932a",
-      "markdown_sha256": "97cca903f5578f1094a25048c04d0627ed8d5978edbf921802b2e8c64409610e",
+      "json_sha256": "72da4ebfe97801034fac4a00b9f45349a49456c12f10d9be730b6177af82a191",
+      "markdown_sha256": "2d3734578ce0fa53c3b966f7c7e90b935e2e31e289e49852988221da5df49caf",
       "coverage": [
         "rich text",
         "bullets",

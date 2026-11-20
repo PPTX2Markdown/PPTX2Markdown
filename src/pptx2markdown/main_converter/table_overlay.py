@@ -472,6 +472,7 @@ def convert_table_to_markdown(
     resolve_image_path_fn: Callable[
         [Dict[str, str], Optional[Path], Optional[str]], Tuple[str, Optional[str]]
     ],
+    merged_cells: str = "fill",
 ) -> Tuple[Optional[str], Optional[str]]:
     tbl = graphic_frame.find(".//a:tbl", ns)
     if tbl is None:
@@ -514,7 +515,7 @@ def convert_table_to_markdown(
     md = table_render.render_parsed_table_to_markdown(
         parsed_table=parsed,
         header_rows=1,
-        fill_merged=table_render.FILL_HEADER,
+        fill_merged=table_render.fill_mode(merged_cells),
     )
     warnings = list(cell_fill_warnings) + list(overlay_warnings) + list(cell_image_warnings)
     if warnings:
