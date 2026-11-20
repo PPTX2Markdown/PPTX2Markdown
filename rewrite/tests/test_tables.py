@@ -6,8 +6,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pptx2markdown
-from pptx2markdown.model import ImageBlock, TableBlock
-from pptx2markdown.tables import grid_markdown, table_grid
+from pptx2markdown.model import ImageBlock, TableBlock, TableCell
+from pptx2markdown.tables import grid_rows, rows_markdown, table_grid
 
 from .pptx_factory import build_test_pptx
 
@@ -133,9 +133,17 @@ class TableTests(unittest.TestCase):
                 "| Group | Group | col_3 |",
                 "| --- | --- | --- |",
                 r"| Region | - One<br>- Two<br>Plain | a\|b |",
-                "|  | 1. First<br>  1. Inner<br>2. Second | Narrow label<br>[site](https://openai.com) |",
+                "| Region | 1. First<br>  1. Inner<br>2. Second | Narrow label<br>[site](https://openai.com) |",
             ],
         )
+
+    def test_rows_keep_the_grid_with_spans_and_merge_origins(self) -> None:
+        rows = self.blocks["2"].rows
+        self.assertEqual(rows[0][0], TableCell(text="Group", col_span=2))
+        self.assertEqual(rows[0][1], TableCell(merged_from=(0, 0)))
+        self.assertEqual(rows[1][0], TableCell(text="Region", row_span=2))
+        self.assertEqual(rows[2][0], TableCell(merged_from=(1, 0)))
+        self.assertEqual(rows[1][1].text, "- One\n- Two\nPlain")
 
     def test_picture_on_a_cell_is_written_into_that_cell(self) -> None:
         block = self.blocks["3"]
@@ -171,7 +179,77 @@ class GridTests(unittest.TestCase):
         grid = table_grid(table, lines)
         self.assertEqual([cell.merged for cell in grid[1]], [True, False, False])
         self.assertEqual(grid[1][0].origin, (0, 0))
-        self.assertEqual(grid_markdown(grid).splitlines()[0], "| Tall | col_2 | col_3 |")
+        self.assertEqual(
+            rows_markdown(grid_rows(grid)).splitlines()[0], "| Tall | col_2 | col_3 |"
+        )
+
+
+def _cell(text: str = "", **spans: int) -> TableCell:
+    return TableCell(text=text, **spans)
+
+
+def _covered(row: int, column: int) -> TableCell:
+    return TableCell(merged_from=(row, column))
+
+
+# A 2x2 block merge in the body, next to a vertical merge, under a two-row header.
+BLOCK = (
+    (_cell("Year", row_span=2), _cell("2024", col_span=2), _covered(0, 1), _cell("Note")),
+    (_covered(0, 0), _cell("Q1"), _cell("Q2"), _cell()),
+    (_cell("Sales"), _cell("Flat", row_span=2, col_span=2), _covered(2, 1), _cell("x")),
+    (_cell("Cost"), _covered(2, 1), _covered(2, 1), _covered(2, 3)),
+)
+
+
+class MergedCellPolicyTests(unittest.TestCase):
+    def test_merge_origins_must_point_at_an_earlier_merge_start(self) -> None:
+        for broken in (_covered(5, 5), _covered(0, 1), _covered(1, 1)):
+            with self.subTest(origin=broken.merged_from), self.assertRaises(ValueError):
+                TableBlock(markdown="x", rows=((_cell("a"), _covered(0, 0)), (_cell(), broken)))
+
+    def test_fill_repeats_merged_values_in_every_covered_cell(self) -> None:
+        self.assertEqual(
+            rows_markdown(BLOCK, header_rows=1, merged_cells="fill").splitlines(),
+            [
+                "| Year | 2024 | 2024 | Note |",
+                "| --- | --- | --- | --- |",
+                "| Year | Q1 | Q2 |  |",
+                "| Sales | Flat | Flat | x |",
+                "| Cost | Flat | Flat | x |",
+            ],
+        )
+
+    def test_header_repeats_only_in_the_header_row(self) -> None:
+        self.assertEqual(
+            rows_markdown(BLOCK, merged_cells="header").splitlines()[2:],
+            ["|  | Q1 | Q2 |  |", "| Sales | Flat |  | x |", "| Cost |  |  |  |"],
+        )
+
+    def test_blank_leaves_every_covered_cell_empty(self) -> None:
+        self.assertEqual(
+            rows_markdown(BLOCK, merged_cells="blank").splitlines()[0],
+            "| Year | 2024 | col_3 | Note |",
+        )
+
+    def test_header_rows_are_combined_per_column(self) -> None:
+        self.assertEqual(
+            rows_markdown(BLOCK, header_rows=2).splitlines()[:3],
+            [
+                "| Year | 2024 / Q1 | 2024 / Q2 | Note |",
+                "| --- | --- | --- | --- |",
+                "| Sales | Flat | Flat | x |",
+            ],
+        )
+
+    def test_without_a_header_row_columns_are_numbered(self) -> None:
+        self.assertEqual(
+            rows_markdown(BLOCK, header_rows=0).splitlines()[:3],
+            [
+                "| col_1 | col_2 | col_3 | col_4 |",
+                "| --- | --- | --- | --- |",
+                "| Year | 2024 | 2024 | Note |",
+            ],
+        )
 
 
 if __name__ == "__main__":

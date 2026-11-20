@@ -136,8 +136,50 @@ class SmartArtBlock(MarkdownBlockBase):
     kind: Literal["smartart"] = "smartart"
 
 
+class TableCell(BaseModel):
+    """One grid position of a table.
+
+    A cell that starts a merge carries the text and its ``row_span``/``col_span``;
+    the positions it covers have ``merged_from`` set to its ``(row, column)``.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    text: str = ""
+    row_span: int = Field(default=1, ge=1)
+    col_span: int = Field(default=1, ge=1)
+    merged_from: tuple[int, int] | None = None
+
+
 class TableBlock(MarkdownBlockBase):
+    """A native table: ``rows`` is the full grid, ``markdown`` its rendering.
+
+    Cell ``text`` is inline Markdown with one line per paragraph. ``markdown``
+    renders the grid with the first ``header_rows`` rows as the header and merged
+    cells filled according to the conversion's merged-cell policy.
+    """
+
     kind: Literal["table"] = "table"
+    rows: tuple[tuple[TableCell, ...], ...] = ()
+    header_rows: int = Field(default=1, ge=0)
+
+    @model_validator(mode="after")
+    def validate_merges(self) -> "TableBlock":
+        for row_index, row in enumerate(self.rows):
+            for column, cell in enumerate(row):
+                if cell.merged_from is None:
+                    continue
+                origin_row, origin_column = cell.merged_from
+                if (
+                    not (origin_row <= row_index and origin_column <= column)
+                    or (origin_row, origin_column) == (row_index, column)
+                    or origin_column >= len(self.rows[origin_row])
+                    or self.rows[origin_row][origin_column].merged_from is not None
+                ):
+                    raise ValueError(
+                        f"cell ({row_index}, {column}) must be merged from an earlier merge start"
+                    )
+        return self
 
 
 class AttachmentBlock(BlockBase):
