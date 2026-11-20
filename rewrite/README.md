@@ -100,7 +100,10 @@ moved without breaking embedded assets.
 - embedded images
 - embedded audio/video payloads
 - raw OLE and 3D model attachments
-- native tables
+- native tables: the first row is the header, a header merged across columns
+  repeats its text and an empty header becomes `col_N`; merged body cells stay
+  empty; bullets, numbering and links inside cells are kept, and pictures lying
+  on a cell or filling its background are written into that cell
 - charts via chart2md: classic charts from their cached values, Office 2016
   chartEx charts (funnel, waterfall, ...) from their embedded workbook, which is
   checked like the package itself and falls back to cached values when rejected

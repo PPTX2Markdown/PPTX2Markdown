@@ -7,7 +7,7 @@
 ```text
 api / cli
     ↓
-parser → ooxml / inheritance / reading_order / headings / omml / charts
+parser → ooxml / inheritance / reading_order / headings / omml / charts / tables
     ↓
 model + AssetStore
     ↓

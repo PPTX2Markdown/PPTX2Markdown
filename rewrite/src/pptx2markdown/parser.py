@@ -62,6 +62,7 @@ from .ooxml import (
     resolve_relationship_target,
 )
 from .reading_order import LayoutNode, geometry_reading_order
+from .tables import GridCell, cell_at, cell_bounds, cell_in, grid_markdown, table_grid
 
 P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -631,33 +632,107 @@ def _with_template_style(shape: _Shape, template: SlideTemplate) -> _Shape:
     return styled
 
 
-def _markdown_cell(text: str) -> str:
-    normalized = re.sub(r"\s+", " ", text).strip()
-    return normalized.replace("\\", "\\\\").replace("|", r"\|")
+def _cell_list_marker(element: ET.Element, body: ET.Element, level: int) -> str | None:
+    """``ul``/``ol`` from the paragraph or the cell's own list style; tables have no template."""
+
+    direct = element.find("./a:pPr", NS)
+    if direct is not None and direct.find("./a:buNone", NS) is not None:
+        return None
+    for properties in (direct, body.find(f"./a:lstStyle/a:lvl{level + 1}pPr", NS)):
+        if properties is None:
+            continue
+        if properties.find("./a:buAutoNum", NS) is not None:
+            return "ol"
+        if properties.find("./a:buChar", NS) is not None:
+            return "ul"
+    return None
 
 
-def _table_markdown(table: ET.Element) -> str:
-    rows: list[list[str]] = []
-    for row in table.findall("./a:tr", NS):
-        cells: list[str] = []
-        for cell in row.findall("./a:tc", NS):
-            paragraphs: list[str] = []
-            for paragraph in cell.findall("./a:txBody/a:p", NS):
-                text = "".join(node.text or "" for node in paragraph.findall(".//a:t", NS))
-                if text.strip():
-                    paragraphs.append(text.strip())
-            cells.append(_markdown_cell("<br>".join(paragraphs)))
-        rows.append(cells)
-    if not rows:
-        return ""
-    width = max(len(row) for row in rows)
-    normalized_rows = [row + [""] * (width - len(row)) for row in rows]
-    lines = [
-        "| " + " | ".join(normalized_rows[0]) + " |",
-        "| " + " | ".join("---" for _ in range(width)) + " |",
+def _table_cell_lines(
+    cell: ET.Element, relationships: dict[str, Relationship]
+) -> tuple[list[str], int]:
+    """One display line per paragraph, with list markers; and the unconverted equations."""
+
+    body = cell.find("./a:txBody", NS)
+    if body is None:
+        return [], 0
+    lines: list[str] = []
+    counters: dict[int, int] = {}
+    unconverted = 0
+    for element in body.findall("./a:p", NS):
+        paragraph, missing = _parse_paragraph(element, relationships)
+        unconverted += missing
+        # A line break inside a cell paragraph wraps a label to fit a narrow column
+        # ("전자제품 / 사업부"); only paragraphs become separate lines.
+        text = re.sub(r"\s+", " ", paragraph.text).strip()
+        if not text:
+            continue
+        level = max(0, min(_integer(_attr(element.find("./a:pPr", NS), "lvl")), 8))
+        marker = _cell_list_marker(element, body, level)
+        if marker == "ul":
+            text = f"{'  ' * level}- {text}"
+        elif marker == "ol":
+            counters = {key: value for key, value in counters.items() if key <= level}
+            counters[level] = counters.get(level, 0) + 1
+            text = f"{'  ' * level}{counters[level]}. {text}"
+        lines.append(text)
+    return lines, unconverted
+
+
+def _image_markdown(alt_text: str, asset_id: str) -> str:
+    alt = alt_text.replace("\\", "\\\\").replace("[", r"\[").replace("]", r"\]")
+    return f"![{alt}](asset://{asset_id})"
+
+
+def _picture_alt_text(element: ET.Element) -> str:
+    properties = element.find(".//p:cNvPr", NS)
+    if properties is None:
+        return "image"
+    return properties.attrib.get("descr") or properties.attrib.get("name") or "image"
+
+
+def _table_overlays(shapes: list[_Shape]) -> dict[int, list[_Shape]]:
+    """Pictures lying on a table, keyed by the table's element.
+
+    A picture belongs to a table when its centre is inside the table and at least 80% of
+    it overlaps the table; it is then written into the cell under its centre instead of
+    after the table. Pictures that carry audio or video keep their own blocks.
+    """
+
+    tables = [
+        shape
+        for shape in shapes
+        if shape.tag == "graphicFrame"
+        and shape.source_part == "slide"
+        and shape.bbox is not None
+        and (table := shape.element.find(".//a:tbl", NS)) is not None
+        and cell_bounds(table, shape.bbox) is not None
     ]
-    lines.extend("| " + " | ".join(row) + " |" for row in normalized_rows[1:])
-    return "\n".join(lines)
+    overlays: dict[int, list[_Shape]] = {}
+    for picture in shapes:
+        if (
+            picture.tag != "pic"
+            or picture.source_part != "slide"
+            or picture.bbox is None
+            or picture.element.find(".//a:audioFile", NS) is not None
+            or picture.element.find(".//a:videoFile", NS) is not None
+        ):
+            continue
+        left, top, right, bottom = picture.bbox
+        area = (right - left) * (bottom - top)
+        if area <= 0:
+            continue
+        center = ((left + right) // 2, (top + bottom) // 2)
+        for table in tables:
+            t_left, t_top, t_right, t_bottom = table.bbox  # type: ignore[misc]
+            overlap = max(0, min(right, t_right) - max(left, t_left)) * max(
+                0, min(bottom, t_bottom) - max(top, t_top)
+            )
+            inside = t_left <= center[0] <= t_right and t_top <= center[1] <= t_bottom
+            if inside and overlap / area >= 0.8:
+                overlays.setdefault(id(table.element), []).append(picture)
+                break
+    return overlays
 
 
 class _PresentationParser:
@@ -738,8 +813,12 @@ class _PresentationParser:
         )
         hints = heading_hints([_heading_signals(shape) for shape in ordered_shapes])
         detector = HeadingDetector()
+        overlays = _table_overlays(ordered_shapes)
+        in_tables = {id(picture.element) for pictures in overlays.values() for picture in pictures}
         blocks: list[ContentBlock] = []
         for shape, hint in zip(ordered_shapes, hints):
+            if id(shape.element) in in_tables:
+                continue
             if shape.tag in {"sp", "cxnSp"}:
                 shape_relationships = (
                     package.relationships(shape.template_part)
@@ -750,7 +829,15 @@ class _PresentationParser:
                     self._text_shape_blocks(entry, shape, shape_relationships, hint, detector)
                 )
             else:
-                blocks.extend(self._shape_blocks(package, entry, shape, relationships))
+                blocks.extend(
+                    self._shape_blocks(
+                        package,
+                        entry,
+                        shape,
+                        relationships,
+                        overlays.get(id(shape.element), []),
+                    )
+                )
         heading_indexes = [i for i, block in enumerate(blocks) if isinstance(block, HeadingBlock)]
         if len(heading_indexes) == 1:
             # A slide's only heading is its title.
@@ -770,11 +857,12 @@ class _PresentationParser:
         entry: SlideEntry,
         shape: _Shape,
         relationships: dict[str, Relationship],
+        overlays: list[_Shape],
     ) -> list[ContentBlock]:
         if shape.tag == "pic":
             return self._picture_blocks(package, entry, shape, relationships)
         if shape.tag == "graphicFrame":
-            return self._graphic_frame_blocks(package, entry, shape, relationships)
+            return self._graphic_frame_blocks(package, entry, shape, relationships, overlays)
         return []
 
     def _text_shape_blocks(
@@ -983,28 +1071,98 @@ class _PresentationParser:
             return None
         return ChartBlock(markdown=conversion.markdown, shape_id=shape.shape_id, bbox=bbox)
 
+    def _table_block(
+        self,
+        package: OOXMLPackage,
+        entry: SlideEntry,
+        shape: _Shape,
+        table: ET.Element,
+        relationships: dict[str, Relationship],
+        overlays: list[_Shape],
+    ) -> TableBlock | None:
+        unconverted_math = 0
+
+        def cell_lines(cell: ET.Element) -> list[str]:
+            nonlocal unconverted_math
+            lines, missing = _table_cell_lines(cell, relationships)
+            unconverted_math += missing
+            return lines
+
+        grid = table_grid(table, cell_lines)
+        if not grid:
+            return None
+        if unconverted_math:
+            self.warnings.add(
+                "math-unconverted",
+                f"{unconverted_math} equation(s) could not be converted to LaTeX",
+                slide=entry.page,
+                shape_id=shape.shape_id,
+            )
+
+        asset_ids: list[str] = []
+
+        def add_image(cell: GridCell | None, rid: str, alt_text: str, owner: str | None) -> None:
+            relationship = relationships.get(rid)
+            if relationship is None:
+                if rid:
+                    self.warnings.add(
+                        "image-relationship-missing",
+                        f"image relationship not found: {rid}",
+                        slide=entry.page,
+                        shape_id=owner,
+                    )
+                return
+            descriptor = self._register_related_asset(
+                package,
+                source_part=entry.part_name,
+                relationship=relationship,
+                kind="image",
+                slide=entry.page,
+                shape_id=owner,
+            )
+            if descriptor is None or cell is None:
+                return
+            cell.lines.append(_image_markdown(alt_text, descriptor.id))
+            asset_ids.append(descriptor.id)
+
+        bounds = cell_bounds(table, shape.bbox) if shape.bbox is not None else None
+        for picture in overlays:
+            left, top, right, bottom = picture.bbox  # type: ignore[misc]
+            cell = (
+                cell_at(grid, bounds, ((left + right) // 2, (top + bottom) // 2))
+                if bounds
+                else None
+            )
+            blip = picture.element.find(".//a:blip", NS)
+            rid = blip.attrib.get(f"{{{OFFICE_REL_NS}}}embed", "") if blip is not None else ""
+            add_image(cell, rid, _picture_alt_text(picture.element), picture.shape_id)
+        for row_index, row in enumerate(table.findall("./a:tr", NS)):
+            for column, element in enumerate(row.findall("./a:tc", NS)):
+                blip = element.find("./a:tcPr/a:blipFill/a:blip", NS)
+                if blip is not None:
+                    rid = blip.attrib.get(f"{{{OFFICE_REL_NS}}}embed", "")
+                    add_image(cell_in(grid, row_index, column), rid, "image", shape.shape_id)
+
+        return TableBlock(
+            markdown=grid_markdown(grid),
+            asset_ids=tuple(dict.fromkeys(asset_ids)),
+            shape_id=shape.shape_id,
+            bbox=_bbox_model(shape.bbox),
+        )
+
     def _graphic_frame_blocks(
         self,
         package: OOXMLPackage,
         entry: SlideEntry,
         shape: _Shape,
         relationships: dict[str, Relationship],
+        overlays: list[_Shape],
     ) -> list[ContentBlock]:
         bbox = _bbox_model(shape.bbox)
         table = shape.element.find(".//a:tbl", NS)
         if table is not None:
-            markdown = _table_markdown(table)
-            return (
-                [
-                    TableBlock(
-                        markdown=markdown,
-                        shape_id=shape.shape_id,
-                        bbox=bbox,
-                    )
-                ]
-                if markdown
-                else []
-            )
+            block = self._table_block(package, entry, shape, table, relationships, overlays)
+            return [block] if block is not None else []
 
         chart = shape.element.find(".//c:chart", NS)
         if chart is None:
