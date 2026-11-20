@@ -22,6 +22,7 @@ from .errors import (
     SaveConflictError,
     UnsupportedPresentationError,
 )
+from .images import ImageDescription, ImageRequest, describe_images_with
 from .model import (
     AssetDescriptor,
     AttachmentBlock,
@@ -75,6 +76,8 @@ __all__ = [
     "ConversionWarning",
     "HeadingBlock",
     "ImageBlock",
+    "ImageDescription",
+    "ImageRequest",
     "ListBlock",
     "ListItem",
     "MathBlock",
@@ -106,6 +109,7 @@ __all__ = [
     "audit",
     "convert",
     "convert_many",
+    "describe_images_with",
     "explain_recipe",
     "merge_recipes",
     "parse",

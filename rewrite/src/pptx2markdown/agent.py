@@ -18,9 +18,10 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ValidationError
 
 from .errors import PPTX2MarkdownError
-from .model import ImageBlock, PresentationDocument
+from .images import ImageDescription, ImageRequest, describe_images_with
+from .model import PresentationDocument
 from .recipe import SELECTOR_HELP, Recipe, Rule, RuleMatch, explain_recipe
-from .render import render_presentation_markdown, render_slide_markdown
+from .render import render_presentation_markdown
 from .review import ReviewItem, review, review_data
 
 if TYPE_CHECKING:
@@ -332,75 +333,55 @@ def describe_images(
 
     Each image is sent with its slide's Markdown for context. Decorative images
     become ``exclude`` rules, the rest ``description`` rules. Only PNG, JPEG, GIF
-    and WebP payloads up to 5 MB are sent; others are skipped.
+    and WebP payloads up to 5 MB are sent; others are skipped. To use another
+    model, local or not, call ``pptx2markdown.images.describe_images_with``.
     """
 
-    document = presentation.document
-    wanted = (
-        set(block_ids)
-        if block_ids is not None
-        else {item.target for item in review(document) if item.topic == "image-description"}
-    )
     client = _client(client)
-    rules: list[Rule] = []
-    for slide in document.slides:
-        for block in slide.blocks:
-            if not isinstance(block, ImageBlock) or block.id not in wanted:
-                continue
-            descriptor = presentation.assets.descriptor(block.asset_id)
-            if (
-                descriptor.media_type not in _VISION_MEDIA_TYPES
-                or descriptor.size > _MAX_IMAGE_BYTES
-                or not descriptor.payload_available
-            ):
-                continue
-            data = base64.standard_b64encode(presentation.assets.read_bytes(block.asset_id))
-            slide_text = render_slide_markdown(slide, asset_mode="omit")
-            language_line = f" Write it in {language}." if language else ""
-            response = _parse(
-                client,
-                model=model,
-                effort=effort,
-                system=(
-                    "You describe pictures from slides so that a search index can find "
-                    "what they show. A description is one or two sentences of what the "
-                    "picture conveys: chart type and the trend or values it shows, what a "
-                    "diagram or screenshot shows, or who and what a photo shows. Mark "
-                    "logos, backgrounds, icons and other decoration as decorative."
-                ),
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": descriptor.media_type,
-                                    "data": data.decode("ascii"),
-                                },
+    language_line = f" Write it in {language}." if language else ""
+
+    def describe(request: ImageRequest) -> ImageDescription:
+        response = _parse(
+            client,
+            model=model,
+            effort=effort,
+            system=(
+                "You describe pictures from slides so that a search index can find "
+                "what they show. A description is one or two sentences of what the "
+                "picture conveys: chart type and the trend or values it shows, what a "
+                "diagram or screenshot shows, or who and what a photo shows. Mark "
+                "logos, backgrounds, icons and other decoration as decorative."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": request.media_type,
+                                "data": base64.standard_b64encode(request.data).decode("ascii"),
                             },
-                            {
-                                "type": "text",
-                                "text": f"<slide>\n{slide_text}\n</slide>\nDescribe the "
-                                f"picture on this slide.{language_line}",
-                            },
-                        ],
-                    }
-                ],
-                output_format=_ImageDescription,
-                max_tokens=4000,
-            )
-            result: _ImageDescription = response.parsed_output
-            assert block.id is not None
-            if result.decorative:
-                rules.append(Rule(target=block.id, exclude=True, reason="decorative image"))
-            elif result.description and result.description.strip():
-                rules.append(
-                    Rule(
-                        target=block.id,
-                        description=result.description.strip(),
-                        reason="described from the image",
-                    )
-                )
-    return Recipe(rules=tuple(rules))
+                        },
+                        {
+                            "type": "text",
+                            "text": f"<slide>\n{request.slide_markdown}\n</slide>\nDescribe "
+                            f"the picture on this slide.{language_line}",
+                        },
+                    ],
+                }
+            ],
+            output_format=_ImageDescription,
+            max_tokens=4000,
+        )
+        result: _ImageDescription = response.parsed_output
+        return ImageDescription(description=result.description, decorative=result.decorative)
+
+    return describe_images_with(
+        presentation,
+        describe,
+        block_ids=block_ids,
+        media_types=_VISION_MEDIA_TYPES,
+        max_bytes=_MAX_IMAGE_BYTES,
+    )

@@ -152,6 +152,24 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown deck.pptx --review`는 번들을 쓰지 않고 같은 내용을 JSON으로
 출력합니다.
 
+### 이미지 설명(모델 무관)
+
+이미지 설명은 agent extra 없이 로컬이든 아니든 어떤 모델로도 만들 수 있습니다.
+`describe_images_with`는 설명이 필요한 그림마다 슬라이드 Markdown을 맥락으로 붙여
+사용자가 준 함수에 넘기고, 답을 레시피로 돌려줍니다. 그 함수가 보내지 않는 한
+어떤 데이터도 밖으로 나가지 않습니다(사내망·온프레미스 환경).
+
+```python
+from pptx2markdown import ImageDescription, describe_images_with
+
+def describe(request):  # request.data, .media_type, .alt_text, .slide_markdown
+    text = my_local_vision_model(request.data, context=request.slide_markdown)
+    return ImageDescription(description=text)
+
+with pptx2markdown.parse("deck.pptx") as presentation:
+    presentation.apply(describe_images_with(presentation, describe))
+```
+
 ### 감사(audit)
 
 규칙 기반 변환기는 조용히 실패합니다. 이해하지 못한 도형은 출력에서 그냥 빠집니다.
@@ -205,7 +223,9 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pptx2markdown-mcp`(stdio)가 추가되어, Claude 같은 에이전트가 레시피 작업 흐름을 직접
 수행할 수 있습니다. 도구는 `convert_presentation`(블록 id가 표시된 Markdown, 레시피
 적용 가능), `review_presentation`, `audit_presentation`(변환에서 빠진 텍스트),
-`check_recipe`(규칙마다 고르는 대상), `presentation_chunks`, `recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
+`presentation_images`(설명 없는 그림을 이미지로 돌려주어 호스트 모델이 레시피로 설명을
+달 수 있게 함), `check_recipe`(규칙마다 고르는 대상), `presentation_chunks`,
+`recipe_schema`입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
 쓰지 않습니다.
 
 ```bash

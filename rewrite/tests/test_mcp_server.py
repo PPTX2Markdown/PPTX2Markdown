@@ -71,6 +71,19 @@ class ServerTests(unittest.TestCase):
         text = result.content[0].text
         self.assertIn("rules", json.loads(text)["properties"])
 
+    def test_pictures_needing_a_description_are_returned_as_images(self) -> None:
+        from .pptx_factory import SLIDE
+
+        undescribed = SLIDE.replace('name="Picture 1" descr="Sales chart"', 'name="Picture 1"')
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(build_test_pptx(Path(directory) / "deck.pptx", undescribed))
+            result = asyncio.run(
+                mcp_server.build_server().call_tool("presentation_images", {"path": path})
+            )
+        self.assertFalse(result.is_error)
+        self.assertEqual([item.type for item in result.content], ["text", "image"])
+        self.assertTrue(result.content[0].text.startswith("s1.b"))
+
 
 if __name__ == "__main__":
     unittest.main()
