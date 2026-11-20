@@ -814,9 +814,7 @@ class _PresentationParser:
 
     def parse(self) -> ParsedComponents:
         try:
-            with OOXMLPackage(
-                self.source, self.options.package_limits, name=self.name
-            ) as package:
+            with OOXMLPackage(self.source, self.options.package_limits, name=self.name) as package:
                 templates = TemplateResolver(package)
                 slides: list[SlideDocument] = []
                 for entry in package.slide_entries():
