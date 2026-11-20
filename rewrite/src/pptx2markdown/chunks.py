@@ -115,6 +115,7 @@ def slide_chunks(
                         "parts": len(groups),
                         "title": title,
                         "deck_title": deck_title,
+                        "section": slide.section,
                         "hidden": slide.hidden,
                         "block_ids": [block_id for _, block_id, _ in group if block_id],
                         "kinds": sorted({kind for _, _, kind in group}),

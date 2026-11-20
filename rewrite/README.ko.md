@@ -121,6 +121,7 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 | `table`, `image`, `heading` 등 또는 `*` | 해당 종류의 모든 블록 |
 | `table[0]`, `table[-1]` | 슬라이드마다 해당 종류의 첫 번째·마지막 블록 |
 | `slide[3]/table[0]` | 3번 슬라이드의 첫 번째 표 |
+| `section[Appendix]`, `section[Appendix]/image` | PowerPoint 구역(section)의 슬라이드(또는 블록) |
 
 설정: `merged_cells`, `include_notes`, `include_hidden`, 그리고 `headings`
 (`placeholder`는 제목 placeholder에서 나온 제목만 남기며, legacy의

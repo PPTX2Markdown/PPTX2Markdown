@@ -55,11 +55,13 @@ _KINDS = set(BlockKind.__args__)  # type: ignore[attr-defined]
 SELECTOR_HELP = (
     "Block id like 's3.b2'; or '[slide[RANGE]/]KIND[[INDEX]]' where RANGE is N, N-M, N-, * "
     "or hidden, KIND is a block kind or *, and INDEX counts that kind on each slide from 0 "
-    "(-1 is the last); or 'slide[RANGE]' alone for whole slides."
+    "(-1 is the last); or 'slide[RANGE]' alone for whole slides. 'section[NAME]' in place "
+    "of 'slide[RANGE]' picks the slides of a PowerPoint section (case-insensitive)."
 )
 
 _ID = re.compile(BLOCK_ID_PATTERN)
 _SLIDE = re.compile(r"^slide\[(?P<range>[^\]]+)\]$")
+_SECTION = re.compile(r"^section\[(?P<name>[^\]]+)\]$")
 _BLOCK = re.compile(r"^(?P<kind>[a-z]+|\*)(?:\[(?P<index>-?\d+)\])?$")
 _WHOLE_EMPHASIS = re.compile(r"^(?P<mark>\*{1,3})(?P<text>[^*]+)(?P=mark)$")
 _RANGE = re.compile(r"^(?P<start>\d+)(?:(?P<dash>-)(?P<end>\d+)?)?$")
@@ -76,6 +78,7 @@ class Selector:
     kind: str | None = None
     index: int | None = None
     slides_only: bool = False
+    section: str | None = None
 
     @classmethod
     def parse(cls, text: str) -> "Selector":
@@ -83,6 +86,12 @@ class Selector:
         if _ID.match(value):
             return cls(block_id=value)
         slide_part, _, block_part = value.partition("/")
+        section_match = _SECTION.match(slide_part)
+        if section_match is not None:
+            selector = cls(section=section_match.group("name").strip().casefold())
+            if not block_part:
+                return Selector(**{**selector.__dict__, "slides_only": True})
+            return cls._with_block(selector, block_part, text)
         slide_match = _SLIDE.match(slide_part)
         if slide_match is None:
             if "/" in value:
@@ -133,6 +142,8 @@ class Selector:
         if self.block_id is not None:
             return self.block_id.startswith(f"s{slide.page}.")
         if self.hidden_only and not slide.hidden:
+            return False
+        if self.section is not None and (slide.section or "").casefold() != self.section:
             return False
         if self.first_page is not None and slide.page < self.first_page:
             return False
