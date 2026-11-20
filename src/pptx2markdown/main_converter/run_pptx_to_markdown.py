@@ -22,6 +22,7 @@ import logging
 import os
 import posixpath
 import re
+import shutil
 import xml.etree.ElementTree as ET
 import zipfile
 from itertools import count
@@ -33,7 +34,11 @@ from omml2latex import convert_omml
 from smartart2md import ZipContext as SmartArtZipContext
 from smartart2md import convert_smartart
 
-from pptx2markdown.ooxml_security import resolve_relationship_target
+from pptx2markdown.ooxml_security import (
+    find_package_root,
+    resolve_internal_target,
+    resolve_relationship_target,
+)
 from pptx2markdown.workspace_paths import WorkspacePaths, ensure_directory
 
 from .asset_utils import convert_vector_assets_to_png, copy_media_asset
@@ -302,21 +307,24 @@ def build_rels_map(rels_path: Optional[Path]) -> Dict[str, str]:
     return out
 
 
-def _resolve_extracted_relationship_target(source_xml: Path, target: str) -> Path:
-    """Resolve relative and package-absolute OOXML relationship targets."""
-    if not target.startswith("/"):
-        return (source_xml.parent / target).resolve()
+def _resolve_extracted_relationship_target(source_xml: Path, target: str) -> Optional[Path]:
+    """Resolve an internal OOXML relationship target inside its own package.
 
-    for parent in source_xml.parents:
-        if (parent / "[Content_Types].xml").exists():
-            return (parent / target.lstrip("/")).resolve()
-
-    # Extracted PowerPoint parts normally live below a ``ppt`` directory. This
-    # fallback keeps absolute package targets useful for reduced test fixtures.
-    for parent in source_xml.parents:
-        if parent.name == "ppt":
-            return (parent.parent / target.lstrip("/")).resolve()
-    return Path(target).resolve()
+    Returns None for external URLs and for targets that would leave the
+    package, so a crafted deck cannot read files elsewhere on the host.
+    """
+    package_root = find_package_root(source_xml)
+    if package_root is None:
+        # Extracted PowerPoint parts normally live below a ``ppt`` directory.
+        # This fallback keeps reduced test fixtures without
+        # [Content_Types].xml usable.
+        package_root = next(
+            (parent.parent for parent in source_xml.parents if parent.name == "ppt"),
+            None,
+        )
+    if package_root is None:
+        return None
+    return resolve_internal_target(source_xml.parent, package_root, target)
 
 
 def extract_speaker_notes(slide_xml: Path) -> Optional[str]:
@@ -334,6 +342,8 @@ def extract_speaker_notes(slide_xml: Path) -> Optional[str]:
         if not rel.attrib.get("Type", "").endswith("/notesSlide"):
             continue
         target = rel.attrib.get("Target", "").strip()
+        if rel.attrib.get("TargetMode", "").casefold() == "external":
+            break
         if target:
             notes_xml = _resolve_extracted_relationship_target(slide_xml, target)
         break
@@ -1461,6 +1471,38 @@ def _append_package_stage_failure(
     logger.error("[%s] %s failed: %s", package_name, stage_label, error_message)
 
 
+def _clear_previous_package_output(pkg_out: Path, package: PreparedPackage) -> None:
+    """Remove a previous run's output so stale media/attachments do not linger.
+
+    Only folders that contain nothing but pptx2markdown's own output names are
+    cleared; anything else in the folder means it may hold user files, so it
+    is left untouched with a warning.
+    """
+    if pkg_out.is_symlink() or not pkg_out.is_dir():
+        return
+    generated_names = {
+        "media",
+        "attachments",
+        package.output_markdown_name,
+        package.output_json_name,
+    }
+    entries = list(pkg_out.iterdir())
+    unexpected = sorted(entry.name for entry in entries if entry.name not in generated_names)
+    if unexpected:
+        logger.warning(
+            "[%s] output folder has files pptx2markdown did not create; "
+            "previous outputs were not cleared: %s",
+            pkg_out.name,
+            ", ".join(unexpected[:5]),
+        )
+        return
+    for entry in entries:
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
 # 추출된 패키지 하나를 변환하고 결과와 manifest를 누적한다.
 def _convert_package(
     config: ConverterConfig,
@@ -1484,6 +1526,7 @@ def _convert_package(
     copied_media: Dict[str, Path] = {}
     attachments_dir = pkg_out / "attachments"
     copied_attachments: Dict[str, Path] = {}
+    _clear_previous_package_output(pkg_out, package)
     pkg_out.mkdir(parents=True, exist_ok=True)
 
     pkg_row: Dict[str, object] = {
