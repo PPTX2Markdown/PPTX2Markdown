@@ -28,7 +28,11 @@ There is no OCR, VLM, API key, cloud inference or PowerPoint automation in the
 parsing path; the optional agent is a separate layer. A `.ppt` file is converted
 only with `ppt_converter="libreoffice"` (`--ppt-converter libreoffice`), which runs
 LibreOffice headless in temporary directories that are removed afterwards
-(`SOFFICE_PATH` selects the program).
+(`SOFFICE_PATH` selects the program). The same goes for `vector_images="png"`
+(`--vector-images png`): EMF/WMF pictures, which browsers, Markdown viewers and
+vision models cannot read, are drawn as PNG in one LibreOffice run and take the
+original's place under the same asset id; with the `images` extra
+(`pip install "pptx2markdown[images]"`) the page margin LibreOffice adds is trimmed.
 
 ## Python API
 
@@ -243,7 +247,7 @@ pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
 pptx2markdown deck.pptx --audit
-pptx2markdown old-deck.ppt --ppt-converter libreoffice
+pptx2markdown old-deck.ppt --ppt-converter libreoffice --vector-images png
 pptx2markdown deck.pptx --ask "drop the appendix" > recipe.json
 ```
 

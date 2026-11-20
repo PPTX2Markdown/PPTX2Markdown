@@ -17,6 +17,8 @@ from .errors import AssetLimitError, AssetUnavailableError
 from .model import AssetDescriptor
 
 _CHUNK_SIZE = 1024 * 1024
+# Enough leading bytes to recognise a format (an EMF says so at offset 40).
+_PREFIX_BYTES = 64
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,14 @@ def media_type_for(name: str, data_prefix: bytes = b"") -> str:
             if signature == b"RIFF" and data_prefix[8:12] != b"WEBP":
                 continue
             return media_type
+    # Windows metafiles: the platform's MIME table would name them differently per OS.
+    if data_prefix.startswith(b"\x01\x00\x00\x00") and data_prefix[40:44] == b" EMF":
+        return "image/emf"
+    if data_prefix.startswith((b"\xd7\xcd\xc6\x9a", b"\x01\x00\x09\x00", b"\x02\x00\x09\x00")):
+        return "image/wmf"
+    suffix = PurePosixPath(name).suffix.casefold()
+    if suffix in {".emf", ".wmf"}:
+        return f"image/{suffix[1:]}"
     guessed, _ = mimetypes.guess_type(name)
     return guessed or "application/octet-stream"
 
@@ -216,8 +226,8 @@ class AssetStore:
                         raise AssetLimitError(
                             f"asset exceeds {self._limits.max_single_asset_bytes} bytes"
                         )
-                    if len(prefix) < 16:
-                        prefix += chunk[: 16 - len(prefix)]
+                    if len(prefix) < _PREFIX_BYTES:
+                        prefix += chunk[: _PREFIX_BYTES - len(prefix)]
                     digest.update(chunk)
                     if preserve_payload:
                         spool.write(chunk)
@@ -267,6 +277,57 @@ class AssetStore:
             except Exception:
                 spool.close()
                 raise
+
+    def replace(
+        self, asset_id: str, data: bytes, *, original_name: str, media_type: str
+    ) -> AssetDescriptor:
+        """Give an asset another rendition of its payload (an EMF drawn as PNG).
+
+        The id stays, so every block that refers to the asset now gets the new payload.
+        """
+
+        with self._lock:
+            self._ensure_open()
+            previous = self.descriptor(asset_id)
+            size = len(data)
+            if size > self._limits.max_single_asset_bytes:
+                raise AssetLimitError(f"asset exceeds {self._limits.max_single_asset_bytes} bytes")
+            content_hash = hashlib.sha256(data).hexdigest()
+            payload = self._payload_by_hash.get(content_hash)
+            if payload is None:
+                if self._total_unique_bytes + size > self._limits.max_total_asset_bytes:
+                    raise AssetLimitError(
+                        f"unique asset payloads exceed {self._limits.max_total_asset_bytes} bytes"
+                    )
+                spool = tempfile.SpooledTemporaryFile(
+                    max_size=self._limits.spool_threshold_bytes, mode="w+b"
+                )
+                spool.write(data)
+                spool.seek(0)
+                payload = _Payload(spool, size, content_hash)
+                self._payload_by_hash[content_hash] = payload
+                self._total_unique_bytes += size
+            else:
+                payload.references += 1
+            old = self._payload_by_asset.get(asset_id)
+            self._payload_by_asset[asset_id] = payload
+            if old is not None:
+                old.references -= 1
+                if old.references == 0:
+                    del self._payload_by_hash[old.sha256]
+                    self._total_unique_bytes -= old.size
+                    old.stream.close()
+            descriptor = previous.model_copy(
+                update={
+                    "original_name": safe_basename(original_name, fallback="image.bin"),
+                    "media_type": media_type,
+                    "size": size,
+                    "sha256": content_hash,
+                    "payload_available": True,
+                }
+            )
+            self._descriptors[asset_id] = descriptor
+            return descriptor
 
     def descriptor(self, asset_id: str) -> AssetDescriptor:
         with self._lock:

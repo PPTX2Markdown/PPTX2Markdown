@@ -26,7 +26,11 @@
 파싱 경로에는 OCR, VLM, API key, cloud inference, PowerPoint 자동화가 없습니다.
 `.ppt` 파일은 `ppt_converter="libreoffice"`(`--ppt-converter libreoffice`)를 줄 때만
 변환하며, LibreOffice를 headless로 실행하고 작업 후 지워지는 임시 디렉터리만
-사용합니다(`SOFFICE_PATH`로 실행 파일 지정).
+사용합니다(`SOFFICE_PATH`로 실행 파일 지정). `vector_images="png"`
+(`--vector-images png`)도 마찬가지입니다. 브라우저·Markdown 뷰어·비전 모델이 읽지 못하는
+EMF/WMF 그림을 LibreOffice 한 번 실행으로 PNG로 그려 같은 asset id로 원본을 대신하며,
+`images` extra(`pip install "pptx2markdown[images]"`)가 있으면 LibreOffice가 붙이는 페이지
+여백을 잘라냅니다.
 
 ## Python API
 
@@ -235,7 +239,7 @@ pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
 pptx2markdown deck.pptx --review
 pptx2markdown deck.pptx --audit
-pptx2markdown old-deck.ppt --ppt-converter libreoffice
+pptx2markdown old-deck.ppt --ppt-converter libreoffice --vector-images png
 pptx2markdown deck.pptx --ask "부록은 빼줘" > recipe.json
 ```
 
