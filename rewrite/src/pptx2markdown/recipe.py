@@ -351,3 +351,21 @@ def recipe_json_schema() -> dict:
     """JSON Schema of a recipe, for forms and for structured model output."""
 
     return Recipe.model_json_schema()
+
+
+def merge_recipes(*recipes: Recipe) -> Recipe:
+    """One recipe doing what all of them do, later ones winning on conflicts.
+
+    Rules are concatenated in order; a later ``merged_cells`` replaces an earlier
+    one, and notes or hidden slides are kept only if every recipe keeps them.
+    """
+
+    merged = Recipe()
+    for recipe in recipes:
+        merged = Recipe(
+            merged_cells=recipe.merged_cells or merged.merged_cells,
+            include_notes=merged.include_notes and recipe.include_notes,
+            include_hidden=merged.include_hidden and recipe.include_hidden,
+            rules=merged.rules + recipe.rules,
+        )
+    return merged

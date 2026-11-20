@@ -61,6 +61,12 @@ def _parser() -> argparse.ArgumentParser:
         "rules for each answer, instead of writing bundles",
     )
     parser.add_argument(
+        "--ask",
+        metavar="REQUEST",
+        help="Have a language model draft a recipe for the request (needs the agent "
+        "extra and Anthropic credentials) and print it as JSON instead of converting",
+    )
+    parser.add_argument(
         "--recipe-schema",
         action="store_true",
         help="Print the JSON Schema of a recipe and exit",
@@ -103,6 +109,35 @@ def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
     return 1 if failed else 0
 
 
+def _print_draft(args: argparse.Namespace, recipe: Recipe | None) -> int:
+    import sys
+
+    from .agent import draft_recipe
+    from .api import parse
+    from .errors import PPTX2MarkdownError
+
+    if len(args.inputs) != 1:
+        print("--ask takes exactly one input", file=sys.stderr)
+        return 2
+    try:
+        with parse(
+            args.inputs[0],
+            include_assets=False,
+            strict=not args.tolerant,
+            merged_cells=args.merged_cells,
+            recipe=recipe,
+        ) as presentation:
+            draft = draft_recipe(presentation.document, args.ask)
+    except (PPTX2MarkdownError, OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(draft.summary, file=sys.stderr)
+    for target in draft.unmatched:
+        print(f"warning: rule target {target!r} selects nothing", file=sys.stderr)
+    print(draft.recipe.model_dump_json(indent=2, exclude_none=True))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -119,6 +154,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(f"invalid recipe {args.recipe}: {exc}")
     if args.review:
         return _print_review(args, recipe)
+    if args.ask:
+        return _print_draft(args, recipe)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",

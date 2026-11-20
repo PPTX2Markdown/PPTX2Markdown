@@ -17,6 +17,9 @@ dependencies = [
     "smartart2md>=0.1.1",
 ]
 
+[project.optional-dependencies]
+agent = ["anthropic>=2.12"]
+
 [project.scripts]
 pptx2markdown = "pptx2markdown.cli:main"
 
