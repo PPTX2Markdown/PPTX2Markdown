@@ -111,6 +111,25 @@ every selector sees the document as parsed. `recipe_json_schema()` (or
 `pptx2markdown --recipe-schema`) gives the JSON Schema for forms and structured
 model output.
 
+### Review
+
+The converter always decides; `review()` points at the decisions most worth a
+second look and offers each alternative as a ready-made recipe rule: a header
+with merged groups whose next row looks like labels (two header rows?), a first
+row that is all numbers (no header?), a merged first row taken as a table title,
+an image with no description, or a short bold line that introduces a list or
+table (a subheading?). A person, a UI or a language model only picks options, and
+the picks form a recipe.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for item in pptx2markdown.review(presentation.document):
+        print(item.target, item.question, [option.label for option in item.options])
+```
+
+`pptx2markdown deck.pptx --review` prints the same as JSON without writing
+bundles.
+
 Use `convert()` for parse-and-save:
 
 ```python
@@ -129,6 +148,7 @@ pptx2markdown deck.pptx --output-format json
 pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema
+pptx2markdown deck.pptx --review
 ```
 
 Default bundle:

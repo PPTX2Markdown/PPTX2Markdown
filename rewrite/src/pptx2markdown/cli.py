@@ -55,6 +55,12 @@ def _parser() -> argparse.ArgumentParser:
         help="JSON recipe applied after parsing (see --recipe-schema)",
     )
     parser.add_argument(
+        "--review",
+        action="store_true",
+        help="Print, as JSON, the conversion decisions worth checking with recipe "
+        "rules for each answer, instead of writing bundles",
+    )
+    parser.add_argument(
         "--recipe-schema",
         action="store_true",
         help="Print the JSON Schema of a recipe and exit",
@@ -66,6 +72,35 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
+
+
+def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
+    from .api import parse
+    from .errors import PPTX2MarkdownError
+    from .review import review, review_data
+
+    report: list[dict[str, object]] = []
+    failed = False
+    for value in args.inputs:
+        try:
+            with parse(
+                value,
+                include_assets=False,
+                strict=not args.tolerant,
+                merged_cells=args.merged_cells,
+                recipe=recipe,
+            ) as presentation:
+                report.append(
+                    {
+                        "source": Path(value).name,
+                        "items": review_data(review(presentation.document)),
+                    }
+                )
+        except (PPTX2MarkdownError, OSError, ValueError) as exc:
+            failed = True
+            report.append({"source": Path(value).name, "error": str(exc)})
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    return 1 if failed else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -82,6 +117,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             recipe = Recipe.model_validate_json(args.recipe.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             parser.error(f"invalid recipe {args.recipe}: {exc}")
+    if args.review:
+        return _print_review(args, recipe)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",

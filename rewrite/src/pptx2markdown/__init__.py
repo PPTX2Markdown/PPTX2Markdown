@@ -44,6 +44,7 @@ from .model import (
 from .parser import ParseOptions
 from .presentation import ParsedPresentation
 from .recipe import Recipe, Rule, RuleMatch, apply_recipe, explain_recipe, recipe_json_schema
+from .review import Option, ReviewItem, review, review_data
 from .writer import SavedAsset, SaveOptions, SaveResult
 
 __all__ = [
@@ -67,6 +68,7 @@ __all__ = [
     "ListBlock",
     "ListItem",
     "MathBlock",
+    "Option",
     "PPTX2MarkdownError",
     "PackageSecurityError",
     "ParseOptions",
@@ -74,6 +76,7 @@ __all__ = [
     "PresentationDocument",
     "PresentationParseError",
     "Recipe",
+    "ReviewItem",
     "Rule",
     "RuleMatch",
     "SaveConflictError",
@@ -94,5 +97,7 @@ __all__ = [
     "explain_recipe",
     "parse",
     "recipe_json_schema",
+    "review",
+    "review_data",
     "slide_chunks",
 ]

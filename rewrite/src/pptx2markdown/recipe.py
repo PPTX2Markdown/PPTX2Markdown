@@ -61,6 +61,7 @@ SELECTOR_HELP = (
 _ID = re.compile(BLOCK_ID_PATTERN)
 _SLIDE = re.compile(r"^slide\[(?P<range>[^\]]+)\]$")
 _BLOCK = re.compile(r"^(?P<kind>[a-z]+|\*)(?:\[(?P<index>-?\d+)\])?$")
+_WHOLE_EMPHASIS = re.compile(r"^(?P<mark>\*{1,3})(?P<text>[^*]+)(?P=mark)$")
 _RANGE = re.compile(r"^(?P<start>\d+)(?:(?P<dash>-)(?P<end>\d+)?)?$")
 
 
@@ -292,6 +293,8 @@ def _apply_block(block: ContentBlock, rule: Rule, default_merged: MergedCells | 
             return block.model_copy(update={"level": rule.heading_level})
         if isinstance(block, TextBlock):
             text = " ".join(block.text.split("\n"))
+            # A line set entirely in bold or italic is plain once it is a heading.
+            text = _WHOLE_EMPHASIS.sub(r"\g<text>", text)
             return HeadingBlock(text=text, level=rule.heading_level, **provenance)
     if rule.description is not None and isinstance(block, ImageBlock):
         return block.model_copy(update={"description": rule.description})
