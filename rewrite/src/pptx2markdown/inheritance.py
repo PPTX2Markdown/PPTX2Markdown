@@ -328,6 +328,22 @@ class SlideTemplate:
                     inherited.append(InheritedShape(kind, part.name, child))
         return inherited
 
+    def inherited_pictures(self) -> list[InheritedShape]:
+        """Pictures drawn on the slide from its layout and master (logos, artwork)."""
+
+        parts: list[tuple[PartKind, _TemplatePart | None]] = [("layout", self._layout)]
+        if self._shows_master_shapes:
+            parts.append(("master", self._master))
+        return [
+            InheritedShape(kind, part.name, child)
+            for kind, part in parts
+            if part is not None
+            for child in part.drawables
+            if _local_name(child.tag) == "pic"
+            and placeholder_element(child) is None
+            and not _is_rule(child)
+        ]
+
     def _text_style(self, placeholder_type: str | None) -> ET.Element | None:
         """The master's p:txStyles entry that applies to a placeholder type."""
 
@@ -351,6 +367,17 @@ class SlideTemplate:
             if size is not None and size > 0:
                 return size / 100.0
         return None
+
+
+def _is_rule(picture: ET.Element) -> bool:
+    """A picture far thinner than it is long is a decorative line or band."""
+
+    ext = picture.find("./p:spPr/a:xfrm/a:ext", NS)
+    if ext is None:
+        return False
+    width, height = _int(ext.attrib.get("cx")) or 0, _int(ext.attrib.get("cy")) or 0
+    longer, shorter = max(width, height), min(width, height)
+    return longer > 0 and shorter / longer < 0.03
 
 
 def _inherited_bbox(

@@ -218,6 +218,10 @@ class Recipe(BaseModel):
     )
     include_notes: bool = True
     include_hidden: bool = True
+    template_pictures: bool = Field(
+        default=True,
+        description="false drops pictures drawn from the slide layout or master (logos, artwork).",
+    )
     headings: Literal["auto", "placeholder"] = Field(
         default="auto",
         description="placeholder keeps only headings from title placeholders; others become text.",
@@ -321,6 +325,12 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
             source = [_apply_block(block, neutral, recipe.merged_cells) for block in slide.blocks]
         else:
             source = list(slide.blocks)
+        if not recipe.template_pictures:
+            # Dropped blocks become None so `source` stays aligned with slide.blocks.
+            source = [
+                None if isinstance(block, ImageBlock) and block.source_part != "slide" else block
+                for block in source
+            ]
         if recipe.headings == "placeholder":
             source = [
                 TextBlock(
@@ -346,6 +356,8 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
         # what earlier rules changed.
         chosen = [{id(block) for block in selector.blocks(slide)} for selector in selectors]
         for original, block in zip(slide.blocks, source):
+            if block is None:
+                continue
             kept = True
             for rule, picked in zip(recipe.rules, chosen):
                 if id(original) not in picked:
@@ -386,6 +398,7 @@ def merge_recipes(*recipes: Recipe) -> Recipe:
             else "auto",
             include_notes=merged.include_notes and recipe.include_notes,
             include_hidden=merged.include_hidden and recipe.include_hidden,
+            template_pictures=merged.template_pictures and recipe.template_pictures,
             rules=merged.rules + recipe.rules,
         )
     return merged
