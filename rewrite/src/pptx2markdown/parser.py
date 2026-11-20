@@ -875,7 +875,15 @@ class _PresentationParser:
         )
         styled = [_with_template_style(shape, template) for shape in shapes]
         ordered_shapes = geometry_reading_order(
-            LayoutNode(shape, shape.source_order, shape.bbox) for shape in styled
+            LayoutNode(
+                shape,
+                shape.source_order,
+                shape.bbox,
+                structure=not (
+                    _is_footer(shape) or _is_decorative(shape, shape_text(shape.element))
+                ),
+            )
+            for shape in styled
         )
         hints = heading_hints([_heading_signals(shape) for shape in ordered_shapes])
         detector = HeadingDetector()
