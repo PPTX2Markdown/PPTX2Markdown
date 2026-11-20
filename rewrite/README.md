@@ -67,6 +67,10 @@ with pptx2markdown.parse("deck.pptx") as presentation:
         index.add(chunk.text, metadata=chunk.metadata)
 ```
 
+`--output-format chunks` writes the same chunks as JSON lines
+(`<deck>.chunks.jsonl`, `{"text": ..., "metadata": ...}` per line) with image
+links into the bundle; `--max-chunk-chars` sets the split size.
+
 ### Recipes
 
 A recipe adjusts a parsed document without touching the parser: document-wide
@@ -179,6 +183,7 @@ result = pptx2markdown.convert(
 pptx2markdown deck.pptx
 pptx2markdown first.pptx second.pptx --output-dir converted
 pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --output-format chunks --max-chunk-chars 2000
 pptx2markdown deck.pptx --merged-cells blank
 pptx2markdown deck.pptx --recipe recipe.json
 pptx2markdown --recipe-schema

@@ -82,12 +82,13 @@ def convert(
     *,
     output_dir: str | Path = "output",
     bundle_name: str | None = None,
-    output_format: Literal["markdown", "json"] = "markdown",
+    output_format: Literal["markdown", "json", "chunks"] = "markdown",
     assets: Literal["copy", "omit"] = "copy",
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
+    max_chunk_chars: int | None = None,
 ) -> SaveResult:
     """Parse and save one presentation as a portable bundle."""
 
@@ -109,6 +110,7 @@ def convert(
             output_format=output_format,
             assets=assets,
             overwrite=overwrite,
+            max_chunk_chars=max_chunk_chars,
         )
 
 
@@ -116,12 +118,13 @@ def convert_many(
     paths: Iterable[str | Path],
     *,
     output_dir: str | Path = "output",
-    output_format: Literal["markdown", "json"] = "markdown",
+    output_format: Literal["markdown", "json", "chunks"] = "markdown",
     assets: Literal["copy", "omit"] = "copy",
     overwrite: Literal["error", "replace"] = "error",
     strict: bool = True,
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
+    max_chunk_chars: int | None = None,
 ) -> BatchConversionResult:
     """Convert inputs independently and preserve successful bundles."""
 
@@ -154,6 +157,7 @@ def convert_many(
                     strict=strict,
                     merged_cells=merged_cells,
                     recipe=recipe,
+                    max_chunk_chars=max_chunk_chars,
                 )
             )
         except (PPTX2MarkdownError, OSError, ValueError) as exc:
