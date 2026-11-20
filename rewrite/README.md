@@ -148,7 +148,11 @@ moved without breaking embedded assets.
 ## Supported static content
 
 - slide order and hidden-slide metadata
-- geometry-only reading order
+- geometry-only reading order by recursive XY-cut: columns separated by a vertical
+  gap are read one after another, a full-width title or divider is read before
+  the columns below it, a stack of slightly offset boxes stays top to bottom, an
+  overlap of up to one pixel still counts as a gap, and background frames and
+  footers cannot seal a column gap
 - headings from title/subtitle placeholders, section numbering and font size
 - placeholder type, position, font size and bullets inherited from the slide
   layout and master; footer placeholders are dropped

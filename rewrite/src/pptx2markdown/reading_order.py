@@ -1,88 +1,111 @@
-"""Deterministic geometry-only reading order."""
+"""Deterministic geometry-only reading order (recursive XY-cut).
+
+A slide is read column by column: wherever a vertical gap runs through the whole
+region the columns are read left to right, each on its own. Where no column gap
+exists, the topmost horizontal band is read first and the rest is cut again, so
+a full-width title or divider still exposes the columns below it. A plain stack
+of boxes is kept top to bottom even when the boxes are slightly offset.
+"""
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass
 from typing import Generic, Iterable, TypeVar
 
 T = TypeVar("T")
 
+EMU_PER_INCH = 914_400
+# Boxes drawn by hand rarely line up exactly; an overlap of one screen pixel at
+# 96 dpi still counts as a gap.
+MAX_OVERLAP_EMU = EMU_PER_INCH // 96
+# Single boxes whose median gap is at most half their median height form one flow.
+FLOW_GAP_RATIO = 0.5
+
 
 @dataclass(frozen=True)
 class LayoutNode(Generic[T]):
-    """A payload with an optional EMU bounding box and source order."""
+    """A payload with an optional EMU bounding box and source order.
+
+    A node that does not ``structure`` the layout (a background frame, a footer) is
+    ignored when looking for gaps, so it cannot seal a column gap; it is read after
+    the structured nodes.
+    """
 
     payload: T
     source_order: int
     bbox: tuple[int, int, int, int] | None
+    structure: bool = True
 
 
-def _axis_groups(
-    nodes: list[LayoutNode[T]],
-    *,
-    axis: int,
-) -> list[list[LayoutNode[T]]]:
-    """Partition nodes at every positive gap along one axis."""
+def _interval(node: LayoutNode[T], axis: int) -> tuple[int, int]:
+    assert node.bbox is not None
+    start, end = node.bbox[axis], node.bbox[axis + 2]
+    return start, max(end, start + 1)
 
-    intervals = sorted(
+
+def _chunks(nodes: list[LayoutNode[T]], axis: int) -> list[list[LayoutNode[T]]]:
+    """Groups separated by gaps along one axis; empty when there is no gap."""
+
+    other = 1 - axis
+    ordered = sorted(
         nodes,
-        key=lambda node: (
-            node.bbox[axis] if node.bbox is not None else 0,
-            node.bbox[axis + 2] if node.bbox is not None else 0,
-            node.source_order,
-        ),
+        key=lambda node: (node.bbox[axis], node.bbox[other], node.source_order),  # type: ignore[index]
     )
-    if len(intervals) < 2:
-        return [intervals]
-
-    groups: list[list[LayoutNode[T]]] = []
-    current: list[LayoutNode[T]] = []
-    running_end: int | None = None
-    for node in intervals:
-        assert node.bbox is not None
-        start = node.bbox[axis]
-        end = node.bbox[axis + 2]
-        if current and running_end is not None and start > running_end:
-            groups.append(current)
-            current = []
-            running_end = None
-        current.append(node)
-        running_end = end if running_end is None else max(running_end, end)
-    if current:
-        groups.append(current)
-    return groups
+    if not ordered:
+        return []
+    chunks = [[ordered[0]]]
+    _, chunk_end = _interval(ordered[0], axis)
+    for node in ordered[1:]:
+        start, end = _interval(node, axis)
+        if start - chunk_end >= -MAX_OVERLAP_EMU:
+            chunks.append([node])
+            chunk_end = end
+        else:
+            chunks[-1].append(node)
+            chunk_end = max(chunk_end, end)
+    return chunks if len(chunks) > 1 else []
 
 
-def _recursive_order(nodes: list[LayoutNode[T]], *, prefer_vertical: bool) -> list[LayoutNode[T]]:
-    if len(nodes) < 2:
-        return nodes
+def _is_single_flow(rows: list[list[LayoutNode[T]]]) -> bool:
+    """One box per row, closely spaced: a stack read top to bottom."""
 
-    axes = (1, 0) if prefer_vertical else (0, 1)
-    for axis in axes:
-        groups = _axis_groups(nodes, axis=axis)
-        if len(groups) <= 1:
-            continue
-        ordered: list[LayoutNode[T]] = []
-        for group in groups:
-            ordered.extend(_recursive_order(group, prefer_vertical=(axis == 0)))
-        return ordered
+    if len(rows) <= 1 or any(len(row) != 1 for row in rows):
+        return False
+    boxes = [row[0] for row in rows]
+    gaps = [
+        max(0, _interval(lower, 1)[0] - _interval(upper, 1)[1])
+        for upper, lower in zip(boxes, boxes[1:])
+    ]
+    heights = [_interval(box, 1)[1] - _interval(box, 1)[0] for box in boxes]
+    return statistics.median(gaps) <= statistics.median(heights) * FLOW_GAP_RATIO
 
+
+def _xycut(nodes: list[LayoutNode[T]]) -> list[LayoutNode[T]]:
+    if len(nodes) <= 1:
+        return list(nodes)
+    columns = _chunks(nodes, axis=0)
+    rows = _chunks(nodes, axis=1)
+    if columns and _is_single_flow(rows):
+        return [node for row in rows for node in row]
+    if columns:
+        return [node for column in columns for node in _xycut(column)]
+    if rows:
+        return _xycut(rows[0]) + _xycut([node for row in rows[1:] for node in row])
     return sorted(
         nodes,
-        key=lambda node: (
-            node.bbox[1] if node.bbox is not None else 0,
-            node.bbox[0] if node.bbox is not None else 0,
-            node.source_order,
-        ),
+        key=lambda node: (node.bbox[1], node.bbox[0], node.source_order),  # type: ignore[index]
     )
 
 
 def geometry_reading_order(nodes: Iterable[LayoutNode[T]]) -> list[T]:
-    """Order positioned shapes geometrically and append unpositioned shapes."""
+    """Order positioned shapes by XY-cut, then unpositioned and non-structural ones."""
 
     materialized = list(nodes)
-    positioned = [node for node in materialized if node.bbox is not None]
-    unpositioned = [node for node in materialized if node.bbox is None]
-    ordered = _recursive_order(positioned, prefer_vertical=True)
+    positioned = [node for node in materialized if node.bbox is not None and node.structure]
+    unpositioned = [node for node in materialized if node.bbox is None and node.structure]
+    background = [node for node in materialized if not node.structure]
+    ordered = _xycut(positioned)
     ordered.extend(sorted(unpositioned, key=lambda node: node.source_order))
+    ordered.extend(sorted(background, key=lambda node: node.source_order))
     return [node.payload for node in ordered]
