@@ -172,10 +172,9 @@ moved without breaking embedded assets.
   rendered `markdown`; the first row is the header and an empty header becomes
   `col_N`; `merged_cells` decides what a covered cell shows (`fill`, the
   default, repeats the merged value so every row stands alone for retrieval;
-  `header` repeats it only in the header, as the legacy converter does; `blank`
+  `header` repeats it only in the header row; `blank`
   never); a first row merged across the whole table is a title written once
-  above it (`caption_rows`), and a body row merged across the whole width is a
-  section label that is not repeated; bullets, numbering and links inside cells
+  above it (`caption_rows`); bullets, numbering and links inside cells
   are kept, and pictures lying on a cell or filling its background are written
   into that cell
 - charts via chart2md: classic charts from their cached values, Office 2016

@@ -1,5 +1,5 @@
 {
-  "merged_cells": "header",
+  "merged_cells": "fill",
   "rules": [
     {
       "target": "table",
