@@ -293,6 +293,8 @@ ruff check rewrite
 ruff format --check rewrite
 ```
 
+0.1.x에서 옮겨 오는 경우 [MIGRATION.ko.md](MIGRATION.ko.md)를 참고하세요.
+
 소유권, 수명주기, 보안 설계는 [ARCHITECTURE.ko.md](ARCHITECTURE.ko.md)를
 참고하세요.
 

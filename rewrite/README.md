@@ -300,6 +300,8 @@ ruff check rewrite
 ruff format --check rewrite
 ```
 
+Coming from 0.1.x? See [MIGRATION.md](MIGRATION.md).
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, lifecycle and security
 details.
 
