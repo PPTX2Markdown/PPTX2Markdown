@@ -19,6 +19,41 @@ RELATIONSHIPS_NS = "http://schemas.openxmlformats.org/package/2006/relationships
 PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
 OFFICE_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
+# ISO 29500 Strict documents use their own namespace URIs; everything here reads the
+# Transitional ones, so Strict parts are rewritten on read. The relationships
+# namespace also prefixes relationship types, which are rewritten with it.
+_STRICT = b"http://purl.oclc.org/ooxml/"
+_STRICT_NAMESPACES = {
+    _STRICT + strict: b"http://schemas.openxmlformats.org/" + transitional
+    for strict, transitional in (
+        (b"presentationml/main", b"presentationml/2006/main"),
+        (b"drawingml/main", b"drawingml/2006/main"),
+        (b"drawingml/chart", b"drawingml/2006/chart"),
+        (b"drawingml/chartDrawing", b"drawingml/2006/chartDrawing"),
+        (b"drawingml/diagram", b"drawingml/2006/diagram"),
+        (b"drawingml/picture", b"drawingml/2006/picture"),
+        (b"spreadsheetml/main", b"spreadsheetml/2006/main"),
+        (b"wordprocessingml/main", b"wordprocessingml/2006/main"),
+        (b"officeDocument/math", b"officeDocument/2006/math"),
+        (b"officeDocument/relationships", b"officeDocument/2006/relationships"),
+        (b"package/relationships", b"package/2006/relationships"),
+        (b"package/content-types", b"package/2006/content-types"),
+        (b"package/metadata/core-properties", b"package/2006/metadata/core-properties"),
+    )
+}
+_XML_SUFFIXES = (".xml", ".rels", ".vml")
+
+
+def strict_to_transitional(data: bytes) -> bytes:
+    """Rewrite ISO Strict namespace URIs in XML to their Transitional equivalents."""
+
+    if _STRICT not in data:
+        return data
+    # Longest first, so drawingml/chartDrawing is not taken for drawingml/chart.
+    for strict in sorted(_STRICT_NAMESPACES, key=len, reverse=True):
+        data = data.replace(strict, _STRICT_NAMESPACES[strict])
+    return data
+
 
 @dataclass(frozen=True)
 class PackageLimits:
@@ -267,9 +302,10 @@ class OOXMLPackage:
         name = normalize_part_name(part_name)
         try:
             with self.open_part(name) as source:
-                return source.read()
+                data = source.read()
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
             raise PresentationParseError(self.path, f"cannot read {name}: {exc}") from exc
+        return strict_to_transitional(data) if name.lower().endswith(_XML_SUFFIXES) else data
 
     def xml(self, part_name: str) -> ET.Element:
         name = normalize_part_name(part_name)
