@@ -27,6 +27,8 @@ class PackageLimits:
     max_total_uncompressed_bytes: int = 1024 * 1024 * 1024
     max_single_part_bytes: int = 256 * 1024 * 1024
     max_compression_ratio: float = 200.0
+    # Size of a presentation handed over in memory (bytes or a readable stream).
+    max_package_bytes: int = 1024 * 1024 * 1024
 
     def __post_init__(self) -> None:
         for name, value in vars(self).items():
@@ -157,8 +159,17 @@ def validate_embedded_package(data: bytes, limits: PackageLimits, name: str) -> 
 class OOXMLPackage:
     """Validated read-only OOXML package."""
 
-    def __init__(self, path: str | Path, limits: PackageLimits | None = None) -> None:
-        self.path = Path(path)
+    def __init__(
+        self,
+        path: str | Path | bytes,
+        limits: PackageLimits | None = None,
+        *,
+        name: str = "presentation.pptx",
+    ) -> None:
+        """Open a package from a local path, or from bytes shown in errors as ``name``."""
+
+        self._data = bytes(path) if isinstance(path, (bytes, bytearray, memoryview)) else None
+        self.path = Path(name) if self._data is not None else Path(path)  # type: ignore[arg-type]
         self.limits = limits or PackageLimits()
         self._archive: zipfile.ZipFile | None = None
         self._infos: dict[str, zipfile.ZipInfo] = {}
@@ -166,6 +177,8 @@ class OOXMLPackage:
 
     @property
     def source_sha256(self) -> str:
+        if self._data is not None:
+            return hashlib.sha256(self._data).hexdigest()
         digest = hashlib.sha256()
         with self.path.open("rb") as source:
             while chunk := source.read(1024 * 1024):
@@ -176,7 +189,9 @@ class OOXMLPackage:
         if self._archive is not None:
             return self
         try:
-            archive = zipfile.ZipFile(self.path)
+            archive = zipfile.ZipFile(
+                io.BytesIO(self._data) if self._data is not None else self.path
+            )
         except (OSError, zipfile.BadZipFile) as exc:
             raise PresentationParseError(self.path, str(exc)) from exc
         self._archive = archive

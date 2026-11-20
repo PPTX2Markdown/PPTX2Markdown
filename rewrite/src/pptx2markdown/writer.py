@@ -38,7 +38,7 @@ class SavedAsset:
 
 @dataclass(frozen=True)
 class SaveResult:
-    source: Path
+    source: Path | None
     bundle_dir: Path
     document_path: Path
     manifest_path: Path
