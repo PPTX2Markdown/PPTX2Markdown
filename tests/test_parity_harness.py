@@ -190,6 +190,19 @@ class EndToEndTests(unittest.TestCase):
             self.assertTrue((run_dir / "rewrite.txt").is_file())
 
 
+class CollectInputsTests(unittest.TestCase):
+    def test_recursive_collection_finds_nested_decks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a" / "b").mkdir(parents=True)
+            for path in (root / "top.pptx", root / "a" / "b" / "deep.pptx", root / "~$lock.pptx"):
+                path.write_bytes(b"PK")
+            flat = [path.name for path in parity.collect_inputs([str(root)])]
+            nested = [path.name for path in parity.collect_inputs([str(root)], recursive=True)]
+        self.assertEqual(flat, ["top.pptx"])
+        self.assertEqual(sorted(nested), ["deep.pptx", "top.pptx"])
+
+
 class BaselineTests(unittest.TestCase):
     BASE = {
         "slides_passed": 10,
