@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import io
 import posixpath
@@ -27,6 +28,9 @@ class PackageLimits:
     max_total_uncompressed_bytes: int = 1024 * 1024 * 1024
     max_single_part_bytes: int = 256 * 1024 * 1024
     max_compression_ratio: float = 200.0
+    # Small parts cannot exhaust memory whatever their ratio; vector images such as
+    # EMF routinely compress several hundred times.
+    compression_ratio_min_bytes: int = 10 * 1024 * 1024
     # Size of a presentation handed over in memory (bytes or a readable stream).
     max_package_bytes: int = 1024 * 1024 * 1024
 
@@ -122,7 +126,7 @@ def validate_archive_entries(
             raise PackageSecurityError(
                 f"package uncompressed size exceeds {limits.max_total_uncompressed_bytes} bytes"
             )
-        if info.file_size:
+        if info.file_size >= limits.compression_ratio_min_bytes:
             ratio = info.file_size / max(info.compress_size, 1)
             if ratio > limits.max_compression_ratio:
                 raise PackageSecurityError(
@@ -145,9 +149,12 @@ def reject_xml_declarations(data: bytes, name: str) -> None:
 def validate_embedded_package(data: bytes, limits: PackageLimits, name: str) -> None:
     """Apply the package checks to an OOXML file embedded in another package."""
 
+    # A third-party library expands an embedded workbook whole, so every part is
+    # held to the compression-ratio limit, however small.
+    strict = dataclasses.replace(limits, compression_ratio_min_bytes=1)
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            infos = validate_archive_entries(archive, limits)
+            infos = validate_archive_entries(archive, strict)
             for part_name, info in infos.items():
                 if part_name.endswith((".xml", ".rels")):
                     with archive.open(info) as source:
@@ -192,7 +199,9 @@ class OOXMLPackage:
             archive = zipfile.ZipFile(
                 io.BytesIO(self._data) if self._data is not None else self.path
             )
-        except (OSError, zipfile.BadZipFile) as exc:
+        except zipfile.BadZipFile as exc:
+            raise PresentationParseError(self.path, self._not_a_zip_reason()) from exc
+        except OSError as exc:
             raise PresentationParseError(self.path, str(exc)) from exc
         self._archive = archive
         try:
@@ -202,6 +211,36 @@ class OOXMLPackage:
             self._archive = None
             raise
         return self
+
+    def _not_a_zip_reason(self) -> str:
+        """Explain the two common non-ZIP inputs instead of "File is not a zip file"."""
+
+        import olefile
+
+        if self._data is not None:
+            source: io.BytesIO | None = io.BytesIO(self._data)
+        else:
+            try:
+                source = io.BytesIO(self.path.read_bytes()[: 64 * 1024 * 1024])
+            except OSError:
+                source = None
+        if source is None or not source.getvalue().startswith(olefile.MAGIC):
+            return "not a .pptx (ZIP) package"
+        try:
+            with olefile.OleFileIO(source) as ole:
+                if ole.exists("EncryptedPackage"):
+                    return (
+                        "the presentation is password-protected (encrypted); "
+                        "remove the password in PowerPoint and save it again"
+                    )
+                if ole.exists("PowerPoint Document"):
+                    return "this is a legacy .ppt file with a .pptx name; save it as .pptx"
+        except Exception:  # unreadable, but the signature still says what it is
+            pass
+        return (
+            "this is an OLE compound file, not a .pptx package: a password-protected "
+            "presentation or a legacy .ppt; remove the password or save it as .pptx"
+        )
 
     def _validate_archive(self) -> None:
         self._infos = validate_archive_entries(self._require_archive(), self.limits)

@@ -61,3 +61,27 @@ class InMemoryInputTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotAPackageTests(unittest.TestCase):
+    def test_compound_file_gets_an_actionable_error(self) -> None:
+        from pptx2markdown.errors import PresentationParseError
+
+        ole = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 600
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "locked.pptx"
+            path.write_bytes(ole)
+            for source in (path, ole):
+                with self.subTest(source=type(source).__name__):
+                    with self.assertRaisesRegex(PresentationParseError, "password"):
+                        pptx2markdown.parse(source)
+
+    def test_small_parts_may_compress_far_beyond_the_ratio_limit(self) -> None:
+        import zipfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = build_test_pptx(Path(directory) / "deck.pptx")
+            with zipfile.ZipFile(path, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("ppt/media/vector.emf", b"\x00" * 1_500_000)
+            with pptx2markdown.parse(path) as presentation:
+                self.assertTrue(presentation.document.slides)
