@@ -14,6 +14,7 @@ from .ppt import PptConverter, ppt_to_pptx
 from .presentation import ParsedPresentation
 from .recipe import Recipe
 from .tables import MergedCells
+from .vector import VectorImages
 from .writer import SaveResult
 
 
@@ -52,6 +53,7 @@ def parse(
     merged_cells: MergedCells = "fill",
     recipe: Recipe | None = None,
     ppt_converter: PptConverter = "none",
+    vector_images: VectorImages = "keep",
 ) -> ParsedPresentation:
     """Parse one PPTX without creating persistent output.
 
@@ -62,7 +64,8 @@ def parse(
     every cell it covers, ``header`` only in the header row, ``blank`` nowhere.
     ``recipe`` is applied to the parsed document before it is returned.
     ``ppt_converter="libreoffice"`` accepts a legacy ``.ppt`` path by having
-    LibreOffice save it as ``.pptx`` first (see ``pptx2markdown.ppt``).
+    LibreOffice save it as ``.pptx`` first (see ``pptx2markdown.ppt``), and
+    ``vector_images="png"`` has it draw EMF/WMF images as PNG (``pptx2markdown.vector``).
     """
 
     if isinstance(path, (str, Path)) and Path(path).suffix.casefold() == ".ppt":
@@ -84,6 +87,7 @@ def parse(
             include_hidden=include_hidden,
             strict=strict,
             merged_cells=merged_cells,
+            vector_images=vector_images,
         ),
     )
     presentation = ParsedPresentation(
@@ -109,6 +113,7 @@ def convert(
     recipe: Recipe | None = None,
     max_chunk_chars: int | None = None,
     ppt_converter: PptConverter = "none",
+    vector_images: VectorImages = "keep",
 ) -> SaveResult:
     """Parse and save one presentation as a portable bundle."""
 
@@ -125,6 +130,7 @@ def convert(
         merged_cells=merged_cells,
         recipe=recipe,
         ppt_converter=ppt_converter,
+        vector_images=vector_images,
     ) as presentation:
         return presentation.save(
             bundle_dir,
@@ -147,6 +153,7 @@ def convert_many(
     recipe: Recipe | None = None,
     max_chunk_chars: int | None = None,
     ppt_converter: PptConverter = "none",
+    vector_images: VectorImages = "keep",
 ) -> BatchConversionResult:
     """Convert inputs independently and preserve successful bundles."""
 
@@ -181,6 +188,7 @@ def convert_many(
                     recipe=recipe,
                     max_chunk_chars=max_chunk_chars,
                     ppt_converter=ppt_converter,
+                    vector_images=vector_images,
                 )
             )
         except (PPTX2MarkdownError, OSError, ValueError) as exc:

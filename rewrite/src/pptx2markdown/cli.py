@@ -98,6 +98,12 @@ def _parser() -> argparse.ArgumentParser:
         help="libreoffice converts legacy .ppt inputs to .pptx with LibreOffice first",
     )
     parser.add_argument(
+        "--vector-images",
+        choices=("keep", "png"),
+        default="keep",
+        help="png has LibreOffice draw EMF/WMF images as PNG, which viewers and models can read",
+    )
+    parser.add_argument(
         "--tolerant",
         action="store_true",
         help="Keep other slides when one slide cannot be parsed",
@@ -235,6 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         recipe=recipe,
         max_chunk_chars=args.max_chunk_chars,
         ppt_converter=args.ppt_converter,
+        vector_images=args.vector_images,
     )
     for saved in result.succeeded:
         logging.info("wrote %s", saved.document_path)

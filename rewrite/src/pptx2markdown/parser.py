@@ -91,6 +91,7 @@ from .tables import (
     rows_markdown,
     table_grid,
 )
+from .vector import VectorImages, render_vector_images
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,8 @@ class ParseOptions:
     include_hidden: bool = True
     strict: bool = True
     merged_cells: MergedCells = "fill"
+    # "png" has LibreOffice draw EMF/WMF images as PNG (see ``vector``).
+    vector_images: VectorImages = "keep"
     package_limits: PackageLimits = PackageLimits()
     asset_limits: AssetLimits = AssetLimits()
 
@@ -200,6 +203,14 @@ class _PresentationParser:
                     if self.options.include_hidden or not slide.hidden:
                         slides.append(slide)
 
+                if self.options.vector_images == "png" and self.options.include_assets:
+                    _, failed = render_vector_images(self.assets)
+                    for asset_id in failed:
+                        self.warnings.add(
+                            "vector-image-not-converted",
+                            "LibreOffice could not draw this EMF/WMF image; it is kept as is",
+                            asset_id=asset_id,
+                        )
                 document = PresentationDocument(
                     source=SourceDocument(
                         name=safe_basename(self.name, fallback="presentation.pptx"),

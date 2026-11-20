@@ -10,7 +10,7 @@ from unittest import mock
 
 import pptx2markdown
 from pptx2markdown.errors import PresentationParseError, UnsupportedPresentationError
-from pptx2markdown.ppt import find_soffice
+from pptx2markdown.libreoffice import find_soffice
 
 from .pptx_factory import NOTES, build_test_pptx
 
@@ -56,7 +56,7 @@ class PptInputTests(unittest.TestCase):
                     pptx2markdown.parse(self.ppt, ppt_converter="libreoffice")
 
     def test_missing_libreoffice_is_a_clear_error(self) -> None:
-        with mock.patch("pptx2markdown.ppt.find_soffice", return_value=None):
+        with mock.patch("pptx2markdown.libreoffice.find_soffice", return_value=None):
             with self.assertRaisesRegex(UnsupportedPresentationError, "LibreOffice"):
                 pptx2markdown.parse(self.ppt, ppt_converter="libreoffice")
 
