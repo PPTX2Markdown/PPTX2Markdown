@@ -351,11 +351,11 @@ def _cell_list_marker(element: ET.Element, body: ET.Element, level: int) -> str 
     return None
 
 
-def _is_stacked(pieces: list[str], *, paragraphs: bool) -> bool:
-    """One character per line, set upright in a narrow cell ("구" / "분").
+def _is_stacked(pieces: list[str], *, min_narrow: int | None) -> bool:
+    """One character per line, set upright in a narrow box ("구" / "분", "L" / "I" / ...).
 
-    Full-width characters stack by line breaks or by paragraphs. Narrow letters only
-    count when at least three are broken within one paragraph: single letters in
+    Two or more full-width characters always count. Narrow letters count from
+    ``min_narrow`` of them, or never when it is None: in a table, single letters in
     separate paragraphs are as often one value per row ("M" / "M").
     """
 
@@ -366,7 +366,20 @@ def _is_stacked(pieces: list[str], *, paragraphs: bool) -> bool:
         return False
     if all(unicodedata.east_asian_width(piece) in {"W", "F"} for piece in pieces):
         return True
-    return not paragraphs and len(pieces) >= 3
+    return min_narrow is not None and len(pieces) >= min_narrow
+
+
+def join_stacked(paragraphs: list[Paragraph]) -> list[Paragraph]:
+    """A text box typed one character per line (an upright axis label) as one word."""
+
+    if any(p.is_list or p.math for p in paragraphs):
+        return paragraphs
+    lines = [line for p in paragraphs for line in remove_markup(p.text).split("\n")]
+    if not _is_stacked(lines, min_narrow=4):
+        return paragraphs
+    word = "".join(line.strip() for line in lines)
+    # Emphasis is dropped: per-letter markers would not survive being joined.
+    return [replace(paragraphs[0], text=word, plain=word, rich=word, font_lines=None)]
 
 
 def table_cell_lines(
@@ -390,7 +403,7 @@ def table_cell_lines(
         # Bold over a whole cell is the table's styling, not emphasis.
         source = paragraph.text if paragraph.uniform_emphasis else paragraph.rich
         plain = remove_markup(paragraph.text)
-        if _is_stacked(plain.split("\n"), paragraphs=False):
+        if _is_stacked(plain.split("\n"), min_narrow=3):
             source = re.sub(r"\s*\n\s*", "", source)
             plain = re.sub(r"\s*\n\s*", "", plain)
         text = re.sub(r"\s+", " ", source).strip()
@@ -407,6 +420,6 @@ def table_cell_lines(
             text = f"{'  ' * level}{counters[level]}. {text}"
         lines.append(text)
         plain_lines.append(plain.strip() if marker is None else None)
-    if None not in plain_lines and _is_stacked(plain_lines, paragraphs=True):  # type: ignore[arg-type]
+    if None not in plain_lines and _is_stacked(plain_lines, min_narrow=None):  # type: ignore[arg-type]
         return ["".join(lines)], unconverted
     return lines, unconverted

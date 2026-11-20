@@ -60,6 +60,7 @@ from .paragraphs import (
     Paragraph,
     apply_inherited_lists,
     font_sections,
+    join_stacked,
     paragraph_blocks,
     parse_paragraph,
     shape_markdown,
@@ -369,7 +370,7 @@ class _PresentationParser:
         if not paragraphs:
             return []
 
-        paragraphs = apply_inherited_lists(paragraphs, shape.style)
+        paragraphs = join_stacked(apply_inherited_lists(paragraphs, shape.style))
         if all(p.uniform_emphasis for p in paragraphs) and (
             len(paragraphs) > 1 or sum(len(p.plain) for p in paragraphs) > 60
         ):
