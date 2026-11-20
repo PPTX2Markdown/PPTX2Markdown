@@ -189,7 +189,15 @@ class MasterPlaceholderMatchTests(unittest.TestCase):
                 xfrm=xfrm(0, 1_000_000, 4_000_000, 4_000_000),
             ),
         )
-        slide = part("sld", sp(5, para("Agenda item"), ph='<p:ph sz="half" idx="2"/>'))
+        slide = part(
+            "sld",
+            sp(
+                5,
+                para("Agenda item"),
+                ph='<p:ph sz="half" idx="2"/>',
+                xfrm=xfrm(0, 1_000_000, 4_000_000, 4_000_000),
+            ),
+        )
         with tempfile.TemporaryDirectory() as directory:
             source = build_templated_pptx(
                 Path(directory) / "deck.pptx",
