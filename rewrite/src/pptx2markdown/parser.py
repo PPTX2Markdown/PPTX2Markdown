@@ -1204,13 +1204,19 @@ class _PresentationParser:
                         slide=entry.page,
                         shape_id=shape.shape_id,
                     )
-            if unpacked is not None:
+            if len(data) <= limit:
+                if unpacked is not None:
+                    payload, name, key = unpacked.payload, unpacked.name, f"{target}#payload"
+                else:
+                    # Kept as stored, it is still better named after the object
+                    # ("Slide.bin") than after its part ("oleObject2.bin").
+                    payload, name, key = data, f"{stem}.bin", target
                 try:
                     return self.assets.register_bytes(
-                        unpacked.payload,
-                        logical_key=f"{target}#payload",
+                        payload,
+                        logical_key=key,
                         kind="attachment",
-                        original_name=unpacked.name,
+                        original_name=name,
                         source_part=target,
                         preserve_payload=self.options.include_assets,
                     )
