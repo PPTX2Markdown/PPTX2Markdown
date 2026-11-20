@@ -985,6 +985,11 @@ def _handle_graphic_frame_block(
         rels_map=context.rels_map,
         merged_cells=context.merged_cells,
     )
+    if table_md is not None and not table_md.strip():
+        # A table without rows has nothing to show; it must not fail the slide.
+        stats.warnings.append(f"table {shape_id or '?'} has no rows; skipped")
+        stats.table_skipped_blocks += 1
+        return
     if table_md is not None:
         blocks.append(
             ContentBlock(kind="table", content=table_md.strip(), shape_id=shape_id or None)
