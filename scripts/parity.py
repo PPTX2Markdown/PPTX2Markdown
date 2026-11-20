@@ -713,14 +713,14 @@ def build_report(decks: list[dict[str, Any]]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def collect_inputs(raw_inputs: Sequence[str]) -> list[Path]:
+def collect_inputs(raw_inputs: Sequence[str], *, recursive: bool = False) -> list[Path]:
     candidates: list[Path] = []
     roots = [Path(raw) for raw in raw_inputs] or list(DEFAULT_INPUT_DIRS)
     for root in roots:
         if root.is_dir():
             candidates.extend(
                 path
-                for path in sorted(root.glob("*.pptx"))
+                for path in sorted(root.rglob("*.pptx") if recursive else root.glob("*.pptx"))
                 if path.is_file() and not path.name.startswith("~$")
             )
         elif root.is_file() and root.suffix.lower() in {".pptx", ".ppt"}:
@@ -761,6 +761,9 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Extra legacy CLI arguments, e.g. '--placeholder-inheritance none'",
     )
     parser.add_argument("--rewrite-args", default="", help="Extra rewrite CLI arguments")
+    parser.add_argument(
+        "--recursive", action="store_true", help="Also look for decks in subdirectories"
+    )
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1))
     parser.add_argument("--timeout", type=float, default=300.0, help="Seconds per engine run")
     parser.add_argument(
@@ -781,7 +784,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not (src / "pptx2markdown").is_dir():
             print(f"{engine} sources not found: {src}", file=sys.stderr)
             return 2
-    sources = collect_inputs(args.inputs)
+    sources = collect_inputs(args.inputs, recursive=args.recursive)
     if not sources:
         print("no .pptx inputs found", file=sys.stderr)
         return 2
