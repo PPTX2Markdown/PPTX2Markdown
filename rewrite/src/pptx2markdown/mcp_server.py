@@ -30,7 +30,8 @@ Read a deck with convert_presentation: every block is preceded by a comment such
 conversion decisions worth checking; each option carries a ready-made recipe rule.
 audit_presentation reports any text on the slides that the conversion lost.
 presentation_images shows pictures that have no description, so you can write
-description rules for them.
+description rules for them. The prepare_for_retrieval and apply_request prompts
+walk through these steps.
 To change the output (drop slides, set table header rows, turn text into a
 heading, describe an image), write a recipe (see recipe_schema), check it with
 check_recipe so every rule selects something, then pass it to convert_presentation
@@ -195,6 +196,40 @@ def recipe_schema() -> dict[str, Any]:
     return recipe_json_schema()
 
 
+def prepare_for_retrieval(path: str, purpose: str = "a search index") -> str:
+    """Check, refine and chunk a deck for retrieval, ending with a reusable recipe."""
+
+    return f"""Prepare the presentation at {path} for {purpose}.
+
+1. Call audit_presentation. If it reports lost text, list those slides and texts in
+   your final summary: the converter dropped them, and a recipe cannot bring them back.
+2. Call review_presentation. For each item choose an option: the suggested one unless
+   the slide, read with convert_presentation, shows otherwise.
+3. Call presentation_images. Look at each picture: describe what it conveys in one or
+   two sentences (chart type and trend, what a diagram or screenshot shows), or mark
+   logos, backgrounds and other decoration as excluded.
+4. Put every choice into one recipe (see recipe_schema) and call check_recipe; fix any
+   rule that selects nothing.
+5. Call presentation_chunks with the recipe.
+
+Finish with the number of chunks, what you changed and why, and the recipe as JSON so
+it can be saved next to the deck and reused (pptx2markdown deck.pptx --recipe ...)."""
+
+
+def apply_request(path: str, request: str) -> str:
+    """Turn a plain-language request about a deck's conversion into a checked recipe."""
+
+    return f"""Convert the presentation at {path} as requested: {request}
+
+Read it with convert_presentation; each block comes after a comment with its id and
+kind. Read recipe_schema for what rules can do. Write the smallest recipe that does
+what was asked: select blocks by id or by slide and kind, never edit wording beyond
+what was asked. Call check_recipe and fix rules that select nothing, then show the
+result with convert_presentation and the recipe as JSON."""
+
+
+PROMPTS = (prepare_for_retrieval, apply_request)
+
 TOOLS = (
     convert_presentation,
     review_presentation,
@@ -219,6 +254,8 @@ def build_server():
     for tool in TOOLS:
         # Pictures go out as image content, which has no JSON form.
         server.add_tool(tool, structured_output=False if tool is presentation_images else None)
+    for prompt in PROMPTS:
+        server.prompt()(prompt)
     return server
 
 
