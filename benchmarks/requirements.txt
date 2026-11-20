@@ -1,0 +1,5 @@
+python-pptx>=1.0
+lxml>=5
+markitdown[pptx]>=0.1.9
+firecrawl-anydoc>=0.2.5
+-e ../rewrite
