@@ -34,6 +34,25 @@ class EmbeddedAttachmentTests(unittest.TestCase):
         self.assertEqual(extracted_name, "report.pdf")
         self.assertEqual(extracted_payload, payload)
 
+    def test_unicode_label_replaces_the_code_page_name(self) -> None:
+        def utf16(text: str) -> bytes:
+            return struct.pack("<I", len(text)) + text.encode("utf-16-le")
+
+        temp_path = b"C:\\t\x00"
+        body = (
+            b"\x02\x00"
+            + "보고서.hwp".encode("cp949")
+            + b"\x00C:\\x\x00\x00\x00\x03\x00"
+            + struct.pack("<I", len(temp_path))
+            + temp_path
+            + struct.pack("<I", 3)
+            + b"HWP"
+            + utf16("C:\\t\\보고서.hwp")
+            + utf16("보고서.hwp")
+        )
+        name, payload = parse_ole10_native(struct.pack("<I", len(body)) + body)
+        self.assertEqual((name, payload), ("보고서.hwp", b"HWP"))
+
     def test_ooxml_package_payload_extension_is_inferred_from_zip_parts(self) -> None:
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:

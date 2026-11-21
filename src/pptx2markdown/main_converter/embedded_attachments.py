@@ -33,6 +33,29 @@ def _decode_ole_filename(value: bytes) -> str:
     return value.decode("latin-1", errors="replace")
 
 
+def _unicode_label(data: bytes, offset: int) -> str | None:
+    """The UTF-16 label newer Packagers write after the payload, after a UTF-16 temp path.
+
+    The first name is in the embedding machine's Windows code page (GBK, CP949, ...),
+    which the bytes do not reveal; this copy is exact.
+    """
+    strings = []
+    for _ in range(2):
+        if offset + 4 > len(data):
+            return None
+        length = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        end = offset + 2 * length
+        if end > len(data):
+            return None
+        try:
+            strings.append(data[offset:end].decode("utf-16-le"))
+        except UnicodeDecodeError:
+            return None
+        offset = end
+    return strings[1].rstrip("\x00") or None
+
+
 def parse_ole10_native(data: bytes) -> Tuple[str, bytes]:
     """Extract the original filename and payload from a Packager native stream."""
     if len(data) < 18:
@@ -57,7 +80,8 @@ def parse_ole10_native(data: bytes) -> Tuple[str, bytes]:
     offset += 4
     if payload_size > len(data) - offset:
         raise ValueError("invalid Ole10Native payload size")
-    filename = Path(_decode_ole_filename(filename_raw)).name
+    label = _unicode_label(data, offset + payload_size)
+    filename = Path(label or _decode_ole_filename(filename_raw)).name
     if not filename:
         filename = "attachment.bin"
     return filename, data[offset : offset + payload_size]

@@ -47,6 +47,30 @@ def _file_name(raw: bytes) -> str:
     return PurePosixPath(PureWindowsPath(text).name).name.strip()
 
 
+def _unicode_label(data: bytes, offset: int) -> str | None:
+    """The UTF-16 label newer Packagers write after the payload, after a UTF-16 temp path.
+
+    The first name is in the Windows code page of the machine that embedded the file
+    (GBK, CP949, ...), which cannot be told from the bytes; this copy is exact.
+    """
+
+    strings: list[str] = []
+    for _ in range(2):
+        if offset + 4 > len(data):
+            return None
+        length = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        end = offset + 2 * length
+        if end > len(data):
+            return None
+        try:
+            strings.append(data[offset:end].decode("utf-16-le"))
+        except UnicodeDecodeError:
+            return None
+        offset = end
+    return strings[1].rstrip("\x00") or None
+
+
 def parse_ole10_native(data: bytes) -> UnpackedAttachment:
     """The original file name and bytes of a Packager ``Ole10Native`` stream."""
 
@@ -72,7 +96,9 @@ def parse_ole10_native(data: bytes) -> UnpackedAttachment:
     offset += 4
     if size > len(data) - offset:
         raise ValueError("invalid Ole10Native payload size")
-    return UnpackedAttachment(_file_name(name) or "attachment.bin", data[offset : offset + size])
+    label = _unicode_label(data, offset + size)
+    file_name = _file_name(label.encode("utf-8")) if label else _file_name(name)
+    return UnpackedAttachment(file_name or "attachment.bin", data[offset : offset + size])
 
 
 def payload_extension(data: bytes, prog_id: str = "") -> str:
