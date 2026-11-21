@@ -44,6 +44,18 @@ class OleUnpackTests(unittest.TestCase):
         unpacked = parse_ole10_native(_ole10_native(b"C:\\Users\\me\\Result.json", b'{"a": 1}'))
         self.assertEqual((unpacked.name, unpacked.payload), ("Result.json", b'{"a": 1}'))
 
+    def test_unicode_label_after_the_payload_wins_over_the_code_page_name(self) -> None:
+        def utf16(text: str) -> bytes:
+            return struct.pack("<I", len(text)) + text.encode("utf-16-le")
+
+        stream = _ole10_native("보고서.hwp".encode("cp949"), b"HWP")
+        trailer = utf16("C:\\Temp\\보고서.hwp") + utf16("보고서.hwp") + utf16("D:\\보고서.hwp")
+        self.assertEqual(parse_ole10_native(stream + trailer).name, "보고서.hwp")
+        # A cut-off trailer falls back to the code-page name, decoded as well as it can be.
+        fallback = parse_ole10_native(stream + trailer[:7])
+        self.assertEqual(fallback.payload, b"HWP")
+        self.assertTrue(fallback.name.endswith(".hwp"))
+
     def test_truncated_or_oversized_native_streams_are_rejected(self) -> None:
         stream = _ole10_native(b"a.txt", b"payload")
         for broken in (stream[:10], stream[:-3], struct.pack("<I", 10**6) + stream[4:]):
