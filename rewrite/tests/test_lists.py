@@ -59,5 +59,38 @@ class OrderedListTests(unittest.TestCase):
         )
 
 
+BULLET = '<a:pPr lvl="1"><a:buChar char="-"/></a:pPr>'
+
+
+class MixedListTests(unittest.TestCase):
+    def test_bullets_under_numbered_items_stay_one_list(self) -> None:
+        body = (
+            _numbered("Rationale")
+            + f"<a:p>{BULLET}<a:r><a:t>Problem</a:t></a:r></a:p>"
+            + _numbered("Learn")
+            + f"<a:p>{BULLET}<a:r><a:t>Marketing</a:t></a:r></a:p>"
+        )
+        slide = SLIDE.split("<p:txBody><a:bodyPr/><a:lstStyle/>")[0] + (
+            "<p:txBody><a:bodyPr/><a:lstStyle/>"
+            + body
+            + "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_test_pptx(Path(directory) / "mixed.pptx", slide)
+            with pptx2markdown.parse(source) as presentation:
+                (block,) = presentation.document.slides[0].blocks
+        self.assertEqual([item.ordered for item in block.items], [None, False, None, False])
+        self.assertEqual(
+            render_block_markdown(block, asset_resolver=None, asset_mode="omit").splitlines(),
+            ["1. Rationale", "    - Problem", "2. Learn", "    - Marketing"],
+        )
+
+    def test_a_list_starting_deep_is_not_a_code_block(self) -> None:
+        block = ListBlock(items=(ListItem(text="a", level=3), ListItem(text="b", level=4)))
+        self.assertEqual(
+            render_block_markdown(block, asset_resolver=None, asset_mode="omit"), "- a\n  - b"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

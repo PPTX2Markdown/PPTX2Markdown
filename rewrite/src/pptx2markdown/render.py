@@ -89,19 +89,31 @@ def render_block_markdown(
         return f"{'#' * block.level} {block.text.strip()}"
     if isinstance(block, ListBlock):
         lines: list[str] = []
-        counters: dict[int, int] = {}
-        # A nested item must be indented past its parent's marker ("1. " is wider
-        # than "- "), or CommonMark does not nest it.
-        indent = "    " if block.ordered else "  "
+        counters: dict[int, tuple[bool, int]] = {}
+        # Open ancestors as (level, column where their text starts): a nested item must
+        # be indented past its parent's marker ("1. " is wider than "- "), or
+        # CommonMark does not nest it.
+        parents: list[tuple[int, int]] = []
+        top = min(item.level for item in block.items)
         for item in block.items:
-            if block.ordered:
-                counters = {level: n for level, n in counters.items() if level <= item.level}
-                first = block.start if item.level == 0 else 1
-                counters[item.level] = counters.get(item.level, first - 1) + 1
-                marker = f"{counters[item.level]}."
+            ordered = block.ordered if item.ordered is None else item.ordered
+            while parents and parents[-1][0] >= item.level:
+                parents.pop()
+            column = parents[-1][1] if parents else 0
+            counters = {level: c for level, c in counters.items() if level <= item.level}
+            if ordered:
+                kind, count = counters.get(item.level, (True, 0))
+                if not kind:
+                    count = 0
+                if count == 0 and item.level == top:
+                    count = block.start - 1
+                counters[item.level] = (True, count + 1)
+                marker = f"{count + 1}."
             else:
+                counters[item.level] = (False, 0)
                 marker = "-"
-            lines.append(f"{indent * item.level}{marker} {item.text.strip()}")
+            lines.append(f"{' ' * column}{marker} {item.text.strip()}")
+            parents.append((item.level, column + (4 if ordered else 2)))
         return "\n".join(lines)
     if isinstance(block, MathBlock):
         return f"$$\n{block.latex.strip()}\n$$"

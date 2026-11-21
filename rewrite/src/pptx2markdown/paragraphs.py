@@ -269,7 +269,8 @@ def paragraph_blocks(
     provenance = {"shape_id": shape.shape_id, "bbox": bbox, "source_part": shape.source_part}
     blocks: list[ContentBlock] = []
     pending_lines: list[str] = []
-    pending_items: list[tuple[str, int]] = []
+    # Items of the list being built: text, level and whether the item is numbered.
+    pending_items: list[tuple[str, int, bool]] = []
     pending_ordered = False
 
     def flush_text() -> None:
@@ -283,7 +284,12 @@ def paragraph_blocks(
         nonlocal pending_ordered
         if pending_items:
             items = tuple(
-                ListItem(text=finalize(text), level=level) for text, level in pending_items
+                ListItem(
+                    text=finalize(text),
+                    level=level,
+                    ordered=None if ordered == pending_ordered else ordered,
+                )
+                for text, level, ordered in pending_items
             )
             blocks.append(
                 ListBlock(
@@ -299,12 +305,16 @@ def paragraph_blocks(
     def add_item(text: str, *, ordered: bool, level: int, start: int = 1) -> None:
         nonlocal pending_ordered, pending_start
         flush_text()
-        if pending_items and ordered != pending_ordered:
+        # Bullets nested under numbered items (or the reverse) stay in the same list;
+        # a top-level item of the other kind starts a new one.
+        top = min((item_level for _, item_level, _ in pending_items), default=level)
+        if pending_items and level <= top and ordered != pending_ordered:
             flush_list()
+        if not pending_items or level < top:
+            pending_ordered = ordered
         if not pending_items:
             pending_start = start
-        pending_ordered = ordered
-        pending_items.append((text, level))
+        pending_items.append((text, level, ordered))
 
     for paragraph in paragraphs:
         if paragraph.is_list:
@@ -325,8 +335,8 @@ def paragraph_blocks(
             add_item(typed_item, ordered=False, level=paragraph.level)
             continue
         if pending_items and paragraph.indented:
-            text, level = pending_items[-1]
-            pending_items[-1] = (f"{text}\n{paragraph.rich}", level)
+            text, level, ordered = pending_items[-1]
+            pending_items[-1] = (f"{text}\n{paragraph.rich}", level, ordered)
             continue
         flush_list()
         pending_lines.append(paragraph.rich)
