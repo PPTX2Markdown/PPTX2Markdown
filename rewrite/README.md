@@ -273,6 +273,9 @@ pptx2markdown old-deck.ppt --ppt-converter libreoffice --vector-images png
 pptx2markdown deck.pptx --ask "drop the appendix" > recipe.json
 ```
 
+PowerPoint's lock files (`~$deck.pptx`, written while a deck is open) are skipped
+with a warning, so a glob such as `decks/*.pptx` does not fail on them.
+
 Default bundle:
 
 ```text

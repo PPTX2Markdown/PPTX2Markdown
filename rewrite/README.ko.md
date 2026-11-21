@@ -267,6 +267,9 @@ pptx2markdown old-deck.ppt --ppt-converter libreoffice --vector-images png
 pptx2markdown deck.pptx --ask "부록은 빼줘" > recipe.json
 ```
 
+PowerPoint 잠금 파일(`~$deck.pptx`, 덱을 열어 둔 동안 생김)은 경고만 하고 건너뛰므로
+`decks/*.pptx` 같은 글롭이 이 파일 때문에 실패하지 않습니다.
+
 기본 출력:
 
 ```text

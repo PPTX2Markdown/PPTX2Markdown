@@ -6,10 +6,11 @@ import argparse
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Sequence
 
-from .api import convert_many
+from .api import convert_many, is_lock_file
 from .recipe import Recipe, merge_recipes, recipe_json_schema
 from .tables import MERGED_CELL_POLICIES
 
@@ -183,8 +184,6 @@ def _print_audit(args: argparse.Namespace) -> int:
 
 
 def _print_draft(args: argparse.Namespace, recipe: Recipe | None) -> int:
-    import sys
-
     from .agent import draft_recipe
     from .api import parse
     from .errors import PPTX2MarkdownError
@@ -226,6 +225,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             recipe = Recipe.model_validate_json(args.recipe.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             parser.error(f"invalid recipe {args.recipe}: {exc}")
+    lock_files = [value for value in args.inputs if is_lock_file(value)]
+    for value in lock_files:
+        print(
+            f"warning: skipping {value}: an Office lock file (the deck is or was open), "
+            "not a presentation",
+            file=sys.stderr,
+        )
+    args.inputs = [value for value in args.inputs if not is_lock_file(value)]
+    if not args.inputs:
+        return 0
     if args.headings == "strict":
         recipe = merge_recipes(recipe or Recipe(), Recipe(headings="placeholder"))
     if args.review:
