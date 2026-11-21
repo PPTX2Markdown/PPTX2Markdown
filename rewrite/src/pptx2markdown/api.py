@@ -30,10 +30,18 @@ class ConversionFailure:
 class BatchConversionResult:
     succeeded: tuple[SaveResult, ...]
     failed: tuple[ConversionFailure, ...]
+    # Office lock files ("~$deck.pptx") among the inputs, left out without failing.
+    skipped: tuple[Path, ...] = ()
 
     @property
     def exit_code(self) -> int:
         return 1 if self.failed else 0
+
+
+def is_lock_file(path: str | Path) -> bool:
+    """PowerPoint's "~$deck.pptx" owner file, written next to a deck while it is open."""
+
+    return Path(path).name.startswith("~$")
 
 
 def _source_hash_prefix(source: Path) -> str:
@@ -70,6 +78,11 @@ def parse(
     ``vector_images="png"`` has it draw EMF/WMF images as PNG (``pptx2markdown.vector``).
     """
 
+    if isinstance(path, (str, Path)) and is_lock_file(path):
+        raise UnsupportedPresentationError(
+            f"{Path(path).name} is an Office lock file that PowerPoint keeps while the deck "
+            "is open, not a presentation"
+        )
     if isinstance(path, (str, Path)) and Path(path).suffix.casefold() == ".ppt":
         source = Path(path).expanduser()
         if ppt_converter != "libreoffice":
@@ -167,7 +180,10 @@ def convert_many(
     if jobs < 1:
         raise ValueError("jobs must be at least 1")
 
-    sources = [Path(raw_path).expanduser() for raw_path in paths]
+    # Shell globs pick up the lock files of open decks; they are not presentations.
+    candidates = [Path(raw_path).expanduser() for raw_path in paths]
+    skipped = tuple(source for source in candidates if is_lock_file(source))
+    sources = [source for source in candidates if not is_lock_file(source)]
     stem_counts: dict[str, int] = {}
     for source in sources:
         stem = safe_basename(source.stem, fallback="presentation")
@@ -224,4 +240,4 @@ def convert_many(
                     outcomes[index] = ConversionFailure(source=source, error=exc)
     succeeded = tuple(item for item in outcomes if isinstance(item, SaveResult))
     failed = tuple(item for item in outcomes if isinstance(item, ConversionFailure))
-    return BatchConversionResult(succeeded, failed)
+    return BatchConversionResult(succeeded, failed, skipped)
