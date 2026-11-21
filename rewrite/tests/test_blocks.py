@@ -49,6 +49,13 @@ SHAPES = [
     _paragraph("Before") + EQUATION + _paragraph("After"),
     # Indented text with no item before it is ordinary text.
     _paragraph("   Indented only"),
+    # Characters stacked one per paragraph form one word: two full-width ones,
+    # four or more narrow letters; three narrow letters stay lines.
+    _paragraph("구") + _paragraph("분"),
+    "".join(_paragraph(letter) for letter in "LIKE"),
+    _paragraph("a") + _paragraph("b") + _paragraph("c"),
+    # The same by line breaks within one paragraph.
+    "<a:p>" + "<a:br/>".join(f"<a:r><a:t>{letter}</a:t></a:r>" for letter in "AXIS") + "</a:p>",
 ]
 
 SLIDE = f"""\
@@ -89,6 +96,12 @@ class ShapeBlockTests(unittest.TestCase):
         cls.shapes: dict[str, list[tuple]] = {}
         for block in cls.document.slides[0].blocks:
             cls.shapes.setdefault(block.shape_id, []).append(_summary(block))
+
+    def test_stacked_characters_form_one_word(self) -> None:
+        self.assertEqual(
+            [self.shapes[str(shape_id)] for shape_id in range(8, 12)],
+            [[("text", "구분")], [("text", "LIKE")], [("text", "a\nb\nc")], [("text", "AXIS")]],
+        )
 
     def test_plain_text_box_is_one_block(self) -> None:
         self.assertEqual(self.shapes["2"], [("text", "Alpha\nBeta\nGamma")])
