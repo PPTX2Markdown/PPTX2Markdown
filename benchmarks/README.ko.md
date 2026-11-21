@@ -15,6 +15,16 @@ pip install -r benchmarks/requirements.txt
 python benchmarks/run.py --large 300 --keep /tmp/bench   # 덱과 출력 보관
 ```
 
+`reading_order.py`는 객체가 겹치거나 중첩되거나 배경 위에 놓인 슬라이드의 읽기
+순서를 검사합니다(실제 덱처럼 도형 저장 순서는 섞어 둡니다).
+
+```bash
+python benchmarks/reading_order.py --keep /tmp/reading-order --verbose
+```
+
+케이스와 그 결과는 [읽기 순서 설계 문서](../docs/reading_order_design.ko.md)를
+참고하세요.
+
 ## 결과
 
 최신 실행 결과는 [results/results.md](results/results.md)에 있습니다(버전, Python,
