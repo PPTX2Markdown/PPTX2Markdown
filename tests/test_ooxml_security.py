@@ -148,3 +148,22 @@ class OoxmlRelationshipSecurityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChartPointCountTests(unittest.TestCase):
+    def test_forged_point_count_is_rejected_before_conversion(self) -> None:
+        import xml.etree.ElementTree as ET
+
+        from pptx2markdown.main_converter.run_pptx_to_markdown import (
+            _check_chart_point_counts,
+        )
+
+        ns = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+        forged = ET.fromstring(
+            f'<c:chart xmlns:c="{ns}"><c:ptCount val="999999999999"/></c:chart>'
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            _check_chart_point_counts(forged, "chart1.xml")
+        _check_chart_point_counts(
+            ET.fromstring(f'<c:chart xmlns:c="{ns}"><c:ptCount val="8"/></c:chart>'), "chart1.xml"
+        )

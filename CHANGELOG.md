@@ -21,6 +21,8 @@ documented in [rewrite/README.md](rewrite/README.md).
 
 ### Fixed
 
+- A chart declaring an absurd point count (`ptCount="999999999999"`) made the
+  chart converter exhaust memory; such a chart is now reported as failed.
 - A cell inside a 2D merged block (both `hMerge` and `vMerge`) pointed at its
   left neighbour and stayed empty.
 - A table without rows failed its whole slide; it is now skipped with a warning
