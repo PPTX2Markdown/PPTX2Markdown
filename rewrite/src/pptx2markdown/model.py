@@ -116,10 +116,16 @@ class ListItem(BaseModel):
 
     text: str = Field(min_length=1)
     level: int = Field(default=0, ge=0, le=8)
+    # Set when the item's marker differs from its list's: bullets under numbered items.
+    ordered: bool | None = None
 
 
 class ListBlock(BlockBase):
-    """``start`` is the number of an ordered list's first top-level item."""
+    """``start`` is the number of an ordered list's first top-level item.
+
+    ``ordered`` is the kind of the top-level items; a nested item of the other kind
+    says so in its own ``ordered``.
+    """
 
     kind: Literal["list"] = "list"
     items: tuple[ListItem, ...] = Field(min_length=1)
