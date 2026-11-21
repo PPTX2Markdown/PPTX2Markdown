@@ -11,6 +11,26 @@ from .errors import PackageSecurityError
 from .ooxml import OOXMLPackage, validate_embedded_package
 
 _WORKBOOK_SUFFIXES = (".xlsx", ".xlsm")
+# chart2md sizes its series by the declared point count, so a forged count
+# ("999999999999") would exhaust memory before any point is read.
+MAX_CHART_POINTS = 100_000
+
+
+def _check_point_counts(root: ET.Element, part_name: str) -> None:
+    for element in root.iter():
+        declared = (
+            element.attrib.get("val")
+            if element.tag.rsplit("}", 1)[-1] == "ptCount"
+            else element.attrib.get("ptCount")
+        )
+        if declared is None:
+            continue
+        try:
+            count = int(declared)
+        except ValueError:
+            raise ValueError(f"{part_name}: invalid point count {declared!r}") from None
+        if not 0 <= count <= MAX_CHART_POINTS:
+            raise ValueError(f"{part_name}: point count {count} is outside 0..{MAX_CHART_POINTS}")
 
 
 @dataclass
@@ -57,7 +77,9 @@ class _PackageContext:
         return data
 
     def parse_xml(self) -> ET.Element:
-        return self._package.xml(self.path)
+        root = self._package.xml(self.path)
+        _check_point_counts(root, self.path)
+        return root
 
 
 @dataclass(frozen=True)

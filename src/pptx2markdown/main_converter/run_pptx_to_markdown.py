@@ -975,6 +975,28 @@ def _smartart_media_markdown(
     return re.sub(r"@@IMG:\d+@@", "", rendered).strip()
 
 
+# chart2md sizes its series by the declared point count, so a forged count
+# ("999999999999") would exhaust memory before any point is read.
+MAX_CHART_POINTS = 100_000
+
+
+def _check_chart_point_counts(root: ET.Element, part_name: str) -> None:
+    for element in root.iter():
+        declared = (
+            element.attrib.get("val")
+            if element.tag.rsplit("}", 1)[-1] == "ptCount"
+            else element.attrib.get("ptCount")
+        )
+        if declared is None:
+            continue
+        try:
+            count = int(declared)
+        except ValueError:
+            raise ValueError(f"invalid point count {declared!r} in {part_name}") from None
+        if not 0 <= count <= MAX_CHART_POINTS:
+            raise ValueError(f"point count {count} in {part_name} exceeds {MAX_CHART_POINTS}")
+
+
 def convert_chart_to_markdown(
     graphic_frame: ET.Element,
     rels_path: Optional[Path],
@@ -999,6 +1021,7 @@ def convert_chart_to_markdown(
     try:
         with _open_source_zip(source_pptx_path) as zf:
             chart_root = ET.fromstring(zf.read(chart_part_path))
+            _check_chart_point_counts(chart_root, chart_part_path)
             ctx = ZipContext(zf, chart_part_path)
             markdown = convert_chart(chart_root, ctx).strip()
     except KeyError:
