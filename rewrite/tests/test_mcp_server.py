@@ -51,10 +51,37 @@ class ToolFunctionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "file not found"):
             mcp_server.review_presentation(self.path.replace("deck", "missing"))
 
+    def test_review_answers_become_a_recipe(self) -> None:
+        report = mcp_server.review_presentation(self.path)
+        self.assertEqual(report["schema_version"], 1)
+        recipe = mcp_server.answers_to_recipe(self.path, {}, unanswered="suggested")
+        suggested = [
+            option["rule"]
+            for item in report["items"]
+            for option in item["options"]
+            if option["id"] == item["suggested"] and option["rule"]
+        ]
+        self.assertEqual(recipe.get("rules", []), suggested)
+        with self.assertRaisesRegex(ValueError, "no review item"):
+            mcp_server.answers_to_recipe(self.path, {"heading@s9.b1": "keep"})
+
     def test_chunks_and_schema(self) -> None:
         chunks = mcp_server.presentation_chunks(self.path, max_chars=500)
         self.assertEqual(chunks[0]["metadata"]["page"], 1)
         self.assertIn("rules", mcp_server.recipe_schema()["properties"])
+
+
+class BoundaryTests(unittest.TestCase):
+    def test_core_and_server_never_load_the_model_layer(self) -> None:
+        import subprocess
+        import sys
+
+        code = (
+            "import sys, pptx2markdown, pptx2markdown.mcp_server, pptx2markdown.ordering; "
+            "assert 'pptx2markdown.agent' not in sys.modules; "
+            "assert 'anthropic' not in sys.modules"
+        )
+        subprocess.run([sys.executable, "-c", code], check=True)
 
 
 @unittest.skipUnless(importlib.util.find_spec("mcp"), "the mcp extra is not installed")

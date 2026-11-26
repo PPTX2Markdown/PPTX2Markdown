@@ -13,21 +13,22 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .agent import document_view
 from .api import parse
 from .audit import audit
 from .chunks import slide_chunks
 from .model import ImageBlock
 from .presentation import ParsedPresentation
 from .recipe import Recipe, explain_recipe, recipe_json_schema
-from .review import review, review_data
+from .render import annotated_markdown
+from .review import recipe_from_answers, review, review_report
 
 INSTRUCTIONS = """\
 Converts PowerPoint (.pptx) files to Markdown for reading and retrieval.
 
 Read a deck with convert_presentation: every block is preceded by a comment such as
 `<!-- s3.b2 table -->` giving its id and kind. review_presentation lists the
-conversion decisions worth checking; each option carries a ready-made recipe rule.
+conversion decisions worth checking; each option carries a ready-made recipe rule,
+and answers_to_recipe turns {item id: option id} into a recipe.
 audit_presentation reports any text on the slides that the conversion lost.
 presentation_images shows pictures that have no description, so you can write
 description rules for them. The prepare_for_retrieval and apply_request prompts
@@ -62,18 +63,47 @@ def convert_presentation(path: str, recipe: dict[str, Any] | None = None) -> str
     """
 
     with _open(path, recipe) as presentation:
-        return document_view(presentation.document)
+        return annotated_markdown(presentation.document)
 
 
-def review_presentation(path: str) -> list[dict[str, Any]]:
+def review_presentation(path: str) -> dict[str, Any]:
     """List conversion decisions worth checking, each option with its recipe rule.
+
+    Each item has a stable id, reason codes, the page and what to look at to decide
+    ("text": the slide's Markdown is enough, "slide": its rendering, "image": the
+    picture), an impact ("high" items change content, "low" ones formatting) and the
+    suggested option. Answer with answers_to_recipe.
 
     Args:
         path: Local path to the .pptx file.
     """
 
     with _open(path, None) as presentation:
-        return review_data(review(presentation.document))
+        return review_report(review(presentation.document))
+
+
+def answers_to_recipe(
+    path: str, answers: dict[str, str], unanswered: str = "keep"
+) -> dict[str, Any]:
+    """Turn review answers into a recipe.
+
+    Args:
+        path: Local path to the .pptx file.
+        answers: Review item id -> option id. Items with free_text also take free
+            text, e.g. {"image-description@s3.b2": "Bar chart: revenue doubled"}.
+        unanswered: "keep" leaves other items as converted, "suggested" takes their
+            suggested option.
+    """
+
+    if unanswered not in {"keep", "suggested"}:
+        raise ValueError("unanswered must be 'keep' or 'suggested'")
+    with _open(path, None) as presentation:
+        recipe = recipe_from_answers(
+            review(presentation.document),
+            answers,
+            unanswered=unanswered,  # type: ignore[arg-type]
+        )
+    return recipe.model_dump(mode="json", exclude_none=True)
 
 
 def audit_presentation(path: str) -> dict[str, Any]:
@@ -203,12 +233,13 @@ def prepare_for_retrieval(path: str, purpose: str = "a search index") -> str:
 
 1. Call audit_presentation. If it reports lost text, list those slides and texts in
    your final summary: the converter dropped them, and a recipe cannot bring them back.
-2. Call review_presentation. For each item choose an option: the suggested one unless
-   the slide, read with convert_presentation, shows otherwise.
+2. Call review_presentation. For each item choose an option id: the suggested one
+   unless the slide, read with convert_presentation, shows otherwise. Items whose
+   look is "image" are answered in step 3. Call answers_to_recipe with your answers.
 3. Call presentation_images. Look at each picture: describe what it conveys in one or
    two sentences (chart type and trend, what a diagram or screenshot shows), or mark
    logos, backgrounds and other decoration as excluded.
-4. Put every choice into one recipe (see recipe_schema) and call check_recipe; fix any
+4. Merge the rules into one recipe (see recipe_schema) and call check_recipe; fix any
    rule that selects nothing.
 5. Call presentation_chunks with the recipe.
 
@@ -233,6 +264,7 @@ PROMPTS = (prepare_for_retrieval, apply_request)
 TOOLS = (
     convert_presentation,
     review_presentation,
+    answers_to_recipe,
     audit_presentation,
     check_recipe,
     presentation_chunks,

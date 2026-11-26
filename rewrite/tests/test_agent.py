@@ -109,9 +109,9 @@ class AnswerReviewTests(unittest.TestCase):
         client = FakeClient(
             _Answers(
                 answers=[
-                    _Answer(item=0, option=1),
-                    _Answer(item=1, option=0),
-                    _Answer(item=9, option=0),
+                    _Answer(item="subheading@s1.b2", option="heading"),
+                    _Answer(item="image-description@s1.b9", option="An org chart"),
+                    _Answer(item="heading@s9.b9", option="keep"),
                 ]
             )
         )

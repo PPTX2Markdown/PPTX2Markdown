@@ -124,7 +124,7 @@ def _parser() -> argparse.ArgumentParser:
 def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
     from .api import parse
     from .errors import PPTX2MarkdownError
-    from .review import review, review_data
+    from .review import REVIEW_SCHEMA_VERSION, review, review_data
 
     report: list[dict[str, object]] = []
     failed = False
@@ -141,6 +141,7 @@ def _print_review(args: argparse.Namespace, recipe: Recipe | None) -> int:
                 report.append(
                     {
                         "source": Path(value).name,
+                        "schema_version": REVIEW_SCHEMA_VERSION,
                         "items": review_data(review(presentation.document)),
                     }
                 )

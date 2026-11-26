@@ -198,6 +198,14 @@ def render_presentation_markdown(
     return f"{merged}\n" if merged else ""
 
 
+def annotated_markdown(document: PresentationDocument) -> str:
+    """The deck as Markdown with block ids, assets as ``asset/<id>``: what a judge reads."""
+
+    return render_presentation_markdown(
+        document, asset_resolver=lambda asset_id: f"asset/{asset_id}", block_ids=True
+    )
+
+
 def render_presentation_json(document: PresentationDocument) -> str:
     """Render canonical JSON without paths, timestamps or asset payloads."""
 

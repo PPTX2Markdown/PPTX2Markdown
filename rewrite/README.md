@@ -161,14 +161,28 @@ judge)` renders just those slides as one-page PDFs (LibreOffice, locally) and as
 your `judge` function to name a candidate; `agent.choose_reading_orders` does the
 same with Claude. See [the design](../docs/reading_order_design.md).
 
+Every item has the same shape whatever it is about, so a caller can plan
+before it looks: a stable `id` (`table-header-rows@s3.b2`), machine-readable
+`reasons` (`grouped-header`, `two-way-cut`, ...), the `page` and what to `look` at
+to decide (`text`: the slide's Markdown is enough; `slide`: its rendering;
+`image`: the picture, by `asset_id`), an `impact` (`high` when a wrong answer
+corrupts content, `low` for formatting), options with stable ids (the first is
+always `keep`) and the `suggested` one. `recipe_from_answers` turns
+`{item id: option id}` into a recipe; an image description is answered with free
+text. See [the contract](../docs/agent_contract.md).
+
 ```python
 with pptx2markdown.parse("deck.pptx") as presentation:
-    for item in pptx2markdown.review(presentation.document):
-        print(item.target, item.question, [option.label for option in item.options])
+    items = pptx2markdown.review(presentation.document)
+    for item in items:
+        print(item.id, item.look, item.question, [option.id for option in item.options])
+    recipe = pptx2markdown.recipe_from_answers(
+        items, {"table-header-rows@s3.b2": "two-rows"}, unanswered="suggested"
+    )
 ```
 
-`pptx2markdown deck.pptx --review` prints the same as JSON without writing
-bundles.
+`pptx2markdown deck.pptx --review` prints the same as JSON (with
+`schema_version`) without writing bundles.
 
 ### Audit
 
@@ -242,7 +256,8 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pip install "pptx2markdown[mcp]"` adds `pptx2markdown-mcp`, a Model Context
 Protocol server (stdio) so an agent such as Claude can run the recipe workflow
 itself: `convert_presentation` (Markdown with block ids, optionally with a
-recipe applied), `review_presentation`, `audit_presentation` (text the
+recipe applied), `review_presentation`, `answers_to_recipe` (review answers
+to a recipe), `audit_presentation` (text the
 conversion lost), `presentation_images` (pictures without a description, as
 images, so the host model can describe them in a recipe), `check_recipe` (what
 each rule selects), `presentation_chunks` and `recipe_schema`. Two prompts

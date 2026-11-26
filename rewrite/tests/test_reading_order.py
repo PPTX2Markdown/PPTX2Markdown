@@ -260,7 +260,7 @@ class SlideOrderReviewTests(unittest.TestCase):
             self.assertEqual(item.target, "slide[1]")
             rows = next(o for o in item.options if o.label == "Read it rows first")
             self.assertEqual(
-                item.evidence["orders"]["rows first"][:3],
+                item.evidence["orders"]["rows-first"][:3],
                 ["Alpha step 0", "Alpha step 1", "Alpha step 2"],
             )
             presentation.apply(pptx2markdown.Recipe(rules=(rows.rule,)))
