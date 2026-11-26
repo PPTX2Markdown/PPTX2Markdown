@@ -386,11 +386,11 @@ class SlideTemplate:
             if _local_name(child.tag) == "pic"
             and placeholder_element(child) is None
             and not _is_rule(child)
-            and not self._is_backdrop(bbox)
+            and not self.covers_slide(bbox)
         ]
 
-    def _is_backdrop(self, bbox: BBox | None) -> bool:
-        """A template picture covering most of the slide is its background art."""
+    def covers_slide(self, bbox: BBox | None) -> bool:
+        """A box covering most of the slide: background art, a frame or a watermark."""
 
         if bbox is None or self._slide_size is None:
             return False

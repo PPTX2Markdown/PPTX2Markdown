@@ -274,8 +274,12 @@ class _PresentationParser:
                 shape,
                 shape.source_order,
                 shape.bbox,
+                # A background covering the slide overlaps every region and would leave
+                # no gap to cut; it takes no part in finding them and is read last.
                 structure=not (
-                    is_footer(shape) or is_decorative(shape, shape_text(shape.element))
+                    is_footer(shape)
+                    or is_decorative(shape, shape_text(shape.element))
+                    or template.covers_slide(shape.bbox)
                 ),
             )
             for shape in styled
