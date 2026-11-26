@@ -43,6 +43,7 @@ from .model import (
     TextBlock,
     UnsupportedBlock,
 )
+from .ordering import OrderRequest, choose_reading_orders_with
 from .parser import ParseOptions
 from .presentation import ParsedPresentation
 from .recipe import (
@@ -81,6 +82,7 @@ __all__ = [
     "ListBlock",
     "ListItem",
     "MathBlock",
+    "OrderRequest",
     "Option",
     "PPTX2MarkdownError",
     "PackageSecurityError",
@@ -106,6 +108,7 @@ __all__ = [
     "UnsupportedBlock",
     "UnsupportedPresentationError",
     "apply_recipe",
+    "choose_reading_orders_with",
     "audit",
     "convert",
     "convert_many",

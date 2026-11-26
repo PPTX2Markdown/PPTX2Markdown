@@ -168,6 +168,15 @@ overlap" 추가), *아슬아슬한 틈*(각각 상자 2개 이상인 진짜 열 
 벤치마크 케이스는 이제 모두 정답 후보와 함께 표시됩니다(다이어그램 트랙: rows first,
 겹치는 열: columns allowing overlap). 표시 비율: 9.9%(반복 템플릿 덱 제외 시 약 8.8%).
 
+### 4단계: 표시된 슬라이드 판단
+
+`pptx2markdown.ordering.choose_reading_orders_with(presentation, judge)`는 표시된
+슬라이드만 LibreOffice의 페이지 범위 PDF 내보내기로 한 장짜리 PDF로 렌더링하고(장당
+약 1.3초, 새 의존성 없음), 판단 함수에 이유와 후보(순서별로 각 블록의 첫 단어들)를
+넘깁니다. 고른 결과는 `order` 규칙이 됩니다. `agent.choose_reading_orders`는 Claude에
+그 페이지를 PDF 문서로 후보와 함께 보내고, 답이 후보 이름 중 하나인지 확인합니다.
+LibreOffice나 원본 파일이 없으면 판단 함수는 텍스트만 봅니다.
+
 ## 계획
 
 1. 슬라이드를 덮는 배경을 틈 계산에서 제외

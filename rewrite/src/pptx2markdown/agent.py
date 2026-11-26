@@ -13,6 +13,7 @@ import base64
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ValidationError
@@ -20,6 +21,7 @@ from pydantic import BaseModel, ValidationError
 from .errors import PPTX2MarkdownError
 from .images import ImageDescription, ImageRequest, describe_images_with
 from .model import PresentationDocument
+from .ordering import AS_CONVERTED, OrderRequest, choose_reading_orders_with
 from .recipe import SELECTOR_HELP, Recipe, Rule, RuleMatch, explain_recipe
 from .render import render_presentation_markdown
 from .review import ReviewItem, review, review_data
@@ -69,6 +71,11 @@ class _Answer(BaseModel):
 
 class _Answers(BaseModel):
     answers: list[_Answer]
+
+
+class _OrderChoice(BaseModel):
+    reason: str
+    choice: str
 
 
 class _ImageDescription(BaseModel):
@@ -385,3 +392,69 @@ def describe_images(
         media_types=_VISION_MEDIA_TYPES,
         max_bytes=_MAX_IMAGE_BYTES,
     )
+
+
+def choose_reading_orders(
+    presentation: "ParsedPresentation",
+    *,
+    source: str | Path | None = None,
+    client: Any = None,
+    model: str = DEFAULT_MODEL,
+    effort: Effort = "low",
+) -> Recipe:
+    """Pick the reading order of each flagged slide by looking at it.
+
+    Only slides the converter flagged are sent: the slide rendered as a one-page
+    PDF (LibreOffice, locally) with its candidate orders. Without LibreOffice or a
+    source file the model sees the candidates as text only. See
+    ``pptx2markdown.ordering.choose_reading_orders_with`` for other judges.
+    """
+
+    client = _client(client)
+
+    def judge(request: OrderRequest) -> str | None:
+        listing = "\n\n".join(
+            f"<candidate name={json.dumps(label)}>\n"
+            + "\n".join(f"{index}. {words}" for index, words in enumerate(blocks, 1))
+            + "\n</candidate>"
+            for label, blocks in request.candidates.items()
+        )
+        content: list[dict[str, Any]] = []
+        if request.slide_pdf is not None:
+            content.append(
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": base64.standard_b64encode(request.slide_pdf).decode("ascii"),
+                    },
+                }
+            )
+        content.append(
+            {
+                "type": "text",
+                "text": f"Slide {request.page} was flagged ({', '.join(request.reasons)}).\n"
+                f"{listing}\n\nWhich candidate reads the slide the way its author meant? "
+                "Answer with the candidate's name exactly.",
+            }
+        )
+        response = _parse(
+            client,
+            model=model,
+            effort=effort,
+            system=(
+                "You decide the reading order of a presentation slide for a document "
+                "converter. Each candidate lists the slide's text blocks in one order. Pick "
+                "the order a person reading the slide would follow: a card, column or "
+                "diagram step is read through before the next, titles before what they "
+                f"introduce. If the candidates read equally well, choose {AS_CONVERTED!r}."
+            ),
+            messages=[{"role": "user", "content": content}],
+            output_format=_OrderChoice,
+            max_tokens=2000,
+        )
+        choice = response.parsed_output.choice.strip()
+        return choice if choice in request.candidates else None
+
+    return choose_reading_orders_with(presentation, judge, source=source)
