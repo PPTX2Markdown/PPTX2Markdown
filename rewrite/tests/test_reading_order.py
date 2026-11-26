@@ -5,7 +5,12 @@ import unittest
 from pathlib import Path
 
 import pptx2markdown
-from pptx2markdown.reading_order import LayoutNode, geometry_reading_order
+from pptx2markdown.reading_order import (
+    NO_CUT,
+    TWO_WAY_CUT,
+    LayoutNode,
+    geometry_reading_order,
+)
 
 
 class ReadingOrderTests(unittest.TestCase):
@@ -130,6 +135,112 @@ class ContainerTests(unittest.TestCase):
         title = LayoutNode("title", 1, (100, 200, 8_000_100, 900_200), container=True)
         line = LayoutNode("line", 0, (100, 50, 3_000_100, 150))
         self.assertEqual(geometry_reading_order([title, line]), ["line", "title"])
+
+
+class AmbiguityTests(unittest.TestCase):
+    def tracks(self) -> list[LayoutNode[str]]:
+        # Two tracks of three steps: the gaps between tracks and between steps are
+        # alike, so columns and rows are equally plausible.
+        return [
+            _box(f"{track}{step}", 0.5 + 3.5 * step, 1 + 2 * row, 3, 1.2)
+            for row, track in enumerate("ab")
+            for step in range(3)
+        ]
+
+    def test_a_layout_cut_both_ways_is_reported_with_its_other_order(self) -> None:
+        notes: list[str] = []
+        self.assertEqual(
+            geometry_reading_order(self.tracks(), notes=notes),
+            ["a0", "b0", "a1", "b1", "a2", "b2"],
+        )
+        self.assertEqual(notes, [TWO_WAY_CUT])
+        self.assertEqual(
+            geometry_reading_order(self.tracks(), prefer="rows"),
+            ["a0", "a1", "a2", "b0", "b1", "b2"],
+        )
+
+    def test_clear_columns_and_plain_stacks_are_not_doubted(self) -> None:
+        notes: list[str] = []
+        columns = [
+            _box(f"{c}{i}", 0.5 + 5 * c, 1 + 0.5 * i, 3, 0.4) for c in (0, 1) for i in range(4)
+        ]
+        geometry_reading_order(columns, notes=notes)
+        stack = [_box(f"s{i}", 0.5, 1 + 0.5 * i, 6, 0.4) for i in range(4)]
+        geometry_reading_order(stack, notes=notes)
+        self.assertEqual(notes, [])
+
+    def test_side_by_side_text_with_no_gap_is_reported(self) -> None:
+        notes: list[str] = []
+        boxes = [
+            _box("left", 0.5, 1, 4, 2),
+            _box("right", 4.6, 1, 4, 2),
+            _box("across", 2, 2.5, 4, 1),  # overlaps both, sealing every gap
+        ]
+        geometry_reading_order(boxes, notes=notes)
+        self.assertEqual(notes, [NO_CUT])
+
+
+class SlideOrderReviewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        import tempfile
+
+        from .pptx_factory import build_test_pptx
+
+        def text_box(shape_id: int, text: str, x: float, y: float) -> str:
+            inch = 914_400
+            return (
+                f'<p:sp><p:nvSpPr><p:cNvPr id="{shape_id}" name="T{shape_id}"/><p:cNvSpPr/>'
+                f'<p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="{int(x * inch)}" '
+                f'y="{int(y * inch)}"/><a:ext cx="{3 * inch}" cy="{int(1.2 * inch)}"/>'
+                f"</a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>{text}"
+                "</a:t></a:r></a:p></p:txBody></p:sp>"
+            )
+
+        shapes = "".join(
+            text_box(10 + 3 * row + step, f"{track} step {step}", 0.5 + 3.5 * step, 1 + 2 * row)
+            for row, track in enumerate(("Alpha", "Beta"))
+            for step in range(3)
+        )
+        slide = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree>'
+            '<p:nvGrpSpPr><p:cNvPr id="1" name="G"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            f"<p:grpSpPr/>{shapes}</p:spTree></p:cSld></p:sld>"
+        )
+        self.directory = tempfile.TemporaryDirectory()
+        self.source = build_test_pptx(Path(self.directory.name) / "tracks.pptx", slide)
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    def test_review_offers_the_other_order_as_a_recipe_rule(self) -> None:
+        with pptx2markdown.parse(self.source) as presentation:
+            slide = presentation.document.slides[0]
+            self.assertEqual(slide.reading_order.reasons, (TWO_WAY_CUT,))
+            (item,) = [
+                i
+                for i in pptx2markdown.review(presentation.document)
+                if i.topic == "reading-order"
+            ]
+            self.assertEqual(item.target, "slide[1]")
+            rows = next(o for o in item.options if o.label == "Read it rows first")
+            self.assertEqual(
+                item.evidence["orders"]["rows first"][:3],
+                ["Alpha step 0", "Alpha step 1", "Alpha step 2"],
+            )
+            presentation.apply(pptx2markdown.Recipe(rules=(rows.rule,)))
+            texts = [b.text for b in presentation.document.slides[0].blocks]
+        self.assertEqual(texts[:3], ["Alpha step 0", "Alpha step 1", "Alpha step 2"])
+
+    def test_order_rule_needs_a_slide_selector_and_keeps_unlisted_blocks(self) -> None:
+        with self.assertRaises(ValueError):
+            pptx2markdown.Rule(target="text", order=("s1.b1",))
+        with pptx2markdown.parse(self.source) as presentation:
+            ids = [b.id for b in presentation.document.slides[0].blocks]
+            presentation.apply({"rules": [{"target": "slide[1]", "order": [ids[-1]]}]})
+            after = [b.id for b in presentation.document.slides[0].blocks]
+        self.assertEqual(after, [ids[-1], *ids[:-1]])
 
 
 def _first_lines(slide) -> list[str]:

@@ -131,8 +131,9 @@ converter's `--headings strict`).
 
 Rule actions: `exclude`, `merged_cells`, `header_rows`, `caption_rows` (tables),
 `heading_level` (set a heading's level or turn text into a heading), `as_text`
-(headings and lists), `description` (image alt text), `notes` (slide
-selectors), and `reason`, which is kept for review only. Later rules win, and
+(headings and lists), `description` (image alt text), `notes` and `order`
+(slide selectors: keep or drop notes; read the blocks in a given order of block
+ids), and `reason`, which is kept for review only. Later rules win, and
 every selector sees the document as parsed. `recipe_json_schema()` (or
 `pptx2markdown --recipe-schema`) gives the JSON Schema for forms and structured
 model output.
@@ -144,9 +145,19 @@ second look and offers each alternative as a ready-made recipe rule: a header
 with merged groups whose next row looks like labels (two header rows?), a first
 row that is all numbers (no header?), a merged first row taken as a table title,
 an image with no description, a heading decided by font size alone (a
-heading?), or a short bold line that introduces a list or table (a
-subheading?). A person, a UI or a language model only picks options, and
-the picks form a recipe.
+heading?), a short bold line that introduces a list or table (a
+subheading?), or a slide whose layout can be read in more than one order. A
+person, a UI or a language model only picks options, and the picks form a
+recipe.
+
+Reading order follows the slide's structure: groups and shapes that enclose
+other shapes (a card's frame, a labelled box, a picture with callouts) are read
+as units, and backgrounds covering the slide are ignored. Where the geometry
+cannot settle the order (a grid that reads as well by rows as by columns, side
+by side text with no gap between), the slide gets a `reading-order` review item
+whose options are the candidate orders as `order` rules, so only those slides
+need a person or a model to look at them. See
+[the design](../docs/reading_order_design.md).
 
 ```python
 with pptx2markdown.parse("deck.pptx") as presentation:

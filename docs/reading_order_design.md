@@ -138,6 +138,36 @@ be offered as an explicit, costly option.
 - The legacy parity order score is expected to move; the baseline is updated
   only after the changed slides have been reviewed.
 
+## Results (stages 1–3)
+
+Benchmark: rewrite 6/11 → **9/11** (MarkItDown 3/11, anydoc 1/11). Of the two
+still failing, the diagram tracks are flagged and their "rows first" candidate is
+correct; overlapping columns need the partial-overlap signal and a tolerance
+change.
+
+Corpus (2,786 slides): 171 slides change text order versus the XY-cut alone.
+Checked against their renderings, nearly all improve: card grids, KPI tiles,
+newspaper stories and diagram panels read as units, and the Kubernetes tracks
+read track by track. The remaining regressions found (a header date read last,
+numbers in ovals) are both flagged for review. Five slides change a font-size
+heading because a different block now comes first.
+
+Ambiguity: 229 slides (8.2%; about 6% without one templated 369-slide deck) are
+flagged, 152 for "no gap to cut" and 88 for "two-way cut". Implemented signals:
+two-way cut (gaps within 2×, with each candidate following its own preference all
+the way down) and no cut (only when two text boxes sit side by side; pictures do
+not count). Partial overlap, containers across a cut and fragile gaps are not
+yet implemented.
+
+What did not work: cutting along the widest gap first (instead of columns first)
+broke the timeline and still failed the diagram tracks (7/11): gap width alone
+cannot tell columns from tracks, which is why that choice is delegated.
+
+Lessons from the corpus: decorative groups (a panel made of two rectangles) and
+brackets inside a frame must not take part in gap finding at any depth, and a
+tiny box just outside a placeholder must not be treated as enclosed (the
+containment tolerance is relative to the box's own size).
+
 ## Plan
 
 1. Leave slide-covering backgrounds out of gap finding.

@@ -40,7 +40,9 @@ from .model import (
     ConversionWarning,
     HeadingBlock,
     ImageBlock,
+    OrderAlternative,
     PresentationDocument,
+    ReadingOrderReview,
     SlideDocument,
     SmartArtBlock,
     SourceDocument,
@@ -269,7 +271,7 @@ class _PresentationParser:
             for offset, inherited in enumerate(template.inherited_pictures())
         )
         styled = [with_template_style(shape, template) for shape in shapes]
-        ordered_shapes = geometry_reading_order(
+        layout = [
             LayoutNode(
                 shape,
                 shape.source_order,
@@ -290,15 +292,28 @@ class _PresentationParser:
                 annotated=shape.tag == "pic",
             )
             for shape in styled
+        ]
+        order_notes: list[str] = []
+        ordered_shapes = geometry_reading_order(layout, notes=order_notes)
+        # Where the geometry allows another order, keep the candidates for review.
+        candidates = (
+            [
+                ("rows first", geometry_reading_order(layout, prefer="rows")),
+                ("as stored in the file", list(styled)),
+            ]
+            if order_notes
+            else []
         )
         hints = heading_hints([heading_signals(shape) for shape in ordered_shapes])
         detector = HeadingDetector()
         overlays = table_overlays(ordered_shapes)
         in_tables = {id(picture.element) for pictures in overlays.values() for picture in pictures}
         blocks: list[ContentBlock] = []
+        shape_blocks: dict[int, range] = {}
         for shape, hint in zip(ordered_shapes, hints):
             if id(shape.element) in in_tables:
                 continue
+            first = len(blocks)
             if shape.tag in {"sp", "cxnSp"}:
                 shape_relationships = (
                     package.relationships(shape.template_part)
@@ -323,20 +338,36 @@ class _PresentationParser:
                         overlays.get(id(shape.element), []),
                     )
                 )
+            shape_blocks[id(shape.element)] = range(first, len(blocks))
         heading_indexes = [i for i, block in enumerate(blocks) if isinstance(block, HeadingBlock)]
         if len(heading_indexes) == 1:
             # A slide's only heading is its title.
             index = heading_indexes[0]
             blocks[index] = blocks[index].model_copy(update={"level": 1})
         notes = self._notes(package, entry.part_name) if self.options.include_notes else None
+        ids = [f"s{entry.page}.b{index}" for index in range(1, len(blocks) + 1)]
+        alternatives: list[OrderAlternative] = []
+        for label, shapes_in_order in candidates:
+            order = tuple(
+                ids[index]
+                for shape in shapes_in_order
+                for index in shape_blocks.get(id(shape.element), ())
+            )
+            known = [tuple(ids), *(alternative.block_ids for alternative in alternatives)]
+            if len(order) == len(ids) and order not in known:
+                alternatives.append(OrderAlternative(label=label, block_ids=order))
         return SlideDocument(
             page=entry.page,
             hidden=hidden,
             blocks=tuple(
-                block.model_copy(update={"id": f"s{entry.page}.b{index}"})
-                for index, block in enumerate(blocks, 1)
+                block.model_copy(update={"id": block_id}) for block_id, block in zip(ids, blocks)
             ),
             notes=notes,
+            reading_order=(
+                ReadingOrderReview(reasons=tuple(order_notes), alternatives=tuple(alternatives))
+                if alternatives
+                else None
+            ),
         )
 
     def _shape_blocks(

@@ -15,10 +15,28 @@ own text comes first. See docs/reading_order_design.md.
 from __future__ import annotations
 
 import statistics
-from dataclasses import dataclass
-from typing import Generic, Iterable, TypeVar
+from dataclasses import dataclass, field
+from typing import Generic, Iterable, Literal, TypeVar
 
 T = TypeVar("T")
+Prefer = Literal["columns", "rows"]
+
+# Reasons ``geometry_reading_order`` reports when the layout allows another order.
+TWO_WAY_CUT = "two-way cut"
+NO_CUT = "no gap to cut"
+# Gaps within this factor of each other give no reason to cut one way first.
+SIMILAR_GAP_RATIO = 2.0
+
+
+@dataclass
+class _Policy:
+    prefer: Prefer = "columns"
+    notes: list[str] | None = field(default=None)
+
+    def note(self, reason: str) -> None:
+        if self.notes is not None and reason not in self.notes:
+            self.notes.append(reason)
+
 
 EMU_PER_INCH = 914_400
 # Boxes drawn by hand rarely line up exactly; an overlap of one screen pixel at
@@ -95,17 +113,68 @@ def _is_single_flow(rows: list[list[LayoutNode[T]]]) -> bool:
     return statistics.median(gaps) <= statistics.median(heights) * FLOW_GAP_RATIO
 
 
-def _xycut(nodes: list[LayoutNode[T]]) -> list[LayoutNode[T]]:
+def _widest_gap(chunks: list[list[LayoutNode[T]]], axis: int) -> int:
+    spans = [
+        (min(_interval(n, axis)[0] for n in chunk), max(_interval(n, axis)[1] for n in chunk))
+        for chunk in chunks
+    ]
+    return max((later[0] - earlier[1] for earlier, later in zip(spans, spans[1:])), default=0)
+
+
+def _by_columns(columns: list[list[LayoutNode[T]]], policy: _Policy) -> list[LayoutNode[T]]:
+    return [node for column in columns for node in _xycut(column, policy)]
+
+
+def _by_rows(rows: list[list[LayoutNode[T]]], policy: _Policy) -> list[LayoutNode[T]]:
+    return _xycut(rows[0], policy) + _xycut([node for row in rows[1:] for node in row], policy)
+
+
+def _side_by_side(nodes: list[LayoutNode[T]]) -> bool:
+    """Two boxes next to each other, sharing rows: sorting by position interleaves them.
+
+    Pictures do not count: text beside a picture reads the same either way.
+    """
+
+    texts = [
+        node
+        for node in nodes
+        if not (
+            isinstance(node.payload, _Unit) and node.payload.node and node.payload.node.annotated
+        )
+        and not node.annotated
+    ]
+    for index, a in enumerate(texts):
+        for b in texts[index + 1 :]:
+            ax, bx = _interval(a, 0), _interval(b, 0)
+            ay, by = _interval(a, 1), _interval(b, 1)
+            apart = ax[1] <= bx[0] + MAX_OVERLAP_EMU or bx[1] <= ax[0] + MAX_OVERLAP_EMU
+            shared = min(ay[1], by[1]) - max(ay[0], by[0])
+            if apart and shared > min(ay[1] - ay[0], by[1] - by[0]) // 2:
+                return True
+    return False
+
+
+def _xycut(nodes: list[LayoutNode[T]], policy: _Policy | None = None) -> list[LayoutNode[T]]:
+    policy = policy or _Policy()
     if len(nodes) <= 1:
         return list(nodes)
     columns = _chunks(nodes, axis=0)
     rows = _chunks(nodes, axis=1)
     if columns and _is_single_flow(rows):
         return [node for row in rows for node in row]
+    if columns and rows and policy.notes is not None:
+        column_gap, row_gap = _widest_gap(columns, 0), _widest_gap(rows, 1)
+        similar = min(column_gap, row_gap) * SIMILAR_GAP_RATIO >= max(column_gap, row_gap)
+        if similar and _by_columns(columns, _Policy("columns")) != _by_rows(rows, _Policy("rows")):
+            policy.note(TWO_WAY_CUT)
+    if columns and rows and policy.prefer == "rows":
+        return _by_rows(rows, policy)
     if columns:
-        return [node for column in columns for node in _xycut(column)]
+        return _by_columns(columns, policy)
     if rows:
-        return _xycut(rows[0]) + _xycut([node for row in rows[1:] for node in row])
+        return _by_rows(rows, policy)
+    if len(nodes) >= 3 and _side_by_side(nodes):
+        policy.note(NO_CUT)
     return sorted(
         nodes,
         key=lambda node: (node.bbox[1], node.bbox[0], node.source_order),  # type: ignore[index]
@@ -130,7 +199,7 @@ class _Unit(Generic[T]):
 
         return any(node.structure for node in self.all_nodes())
 
-    def nodes(self) -> list[LayoutNode[T]]:
+    def nodes(self, policy: _Policy) -> list[LayoutNode[T]]:
         head = [self.node] if self.node is not None else []
         if not self.members:
             return head
@@ -142,8 +211,8 @@ class _Unit(Generic[T]):
         if self.node is not None and self.node.annotated:
             members = sorted(readable, key=lambda u: (u.bbox[1], u.bbox[0], u.source_order))
         else:
-            members = _order_units(readable)
-        return head + [node for unit in members for node in unit.nodes()] + decoration
+            members = _order_units(readable, policy)
+        return head + [node for unit in members for node in unit.nodes(policy)] + decoration
 
 
 def _area(bbox: tuple[int, int, int, int]) -> int:
@@ -224,19 +293,29 @@ def _units(
     return kept
 
 
-def _order_units(units: list[_Unit[T]]) -> list[_Unit[T]]:
+def _order_units(units: list[_Unit[T]], policy: _Policy) -> list[_Unit[T]]:
     nodes = [LayoutNode(unit, unit.source_order, unit.bbox) for unit in units]
-    return [node.payload for node in _xycut(nodes)]
+    return [node.payload for node in _xycut(nodes, policy)]
 
 
-def geometry_reading_order(nodes: Iterable[LayoutNode[T]]) -> list[T]:
+def geometry_reading_order(
+    nodes: Iterable[LayoutNode[T]],
+    *,
+    prefer: Prefer = "columns",
+    notes: list[str] | None = None,
+) -> list[T]:
     """Order positioned shapes by containers and XY-cut, then the rest.
 
     Unpositioned nodes follow in source order, and nodes that do not structure the
     layout (backgrounds, footers) come last, unless they are containers: a frame
     holding text is read where its contents are.
+
+    Where a region can be cut both ways, columns go first unless ``prefer`` is
+    ``"rows"``. Reasons to doubt the order (``TWO_WAY_CUT``, ``NO_CUT``) are added
+    to ``notes`` when it is given.
     """
 
+    policy = _Policy(prefer, notes)
     materialized = list(nodes)
     placed = [
         node
@@ -249,7 +328,11 @@ def geometry_reading_order(nodes: Iterable[LayoutNode[T]]) -> list[T]:
         for node in materialized
         if not node.structure and not (node.container and node.bbox is not None)
     ]
-    ordered = [node for unit in _order_units(_units(placed, background)) for node in unit.nodes()]
+    ordered = [
+        node
+        for unit in _order_units(_units(placed, background), policy)
+        for node in unit.nodes(policy)
+    ]
     ordered.extend(sorted(unpositioned, key=lambda node: node.source_order))
     ordered.extend(sorted(background, key=lambda node: node.source_order))
     return [node.payload for node in ordered]
