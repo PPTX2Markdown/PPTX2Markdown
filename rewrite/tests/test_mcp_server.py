@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from pptx2markdown import mcp_server
+from pptx2markdown.libreoffice import find_soffice
 
 from .pptx_factory import build_test_pptx
 
@@ -69,6 +70,31 @@ class ToolFunctionTests(unittest.TestCase):
         chunks = mcp_server.presentation_chunks(self.path, max_chars=500)
         self.assertEqual(chunks[0]["metadata"]["page"], 1)
         self.assertIn("rules", mcp_server.recipe_schema()["properties"])
+
+
+@unittest.skipUnless(importlib.util.find_spec("mcp"), "the mcp extra is not installed")
+class SlideTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from .test_ordering import build_tracks
+
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = str(build_tracks(Path(self.directory.name) / "tracks.pptx"))
+
+    def tearDown(self) -> None:
+        self.directory.cleanup()
+
+    @unittest.skipUnless(find_soffice(), "LibreOffice is not installed")
+    def test_slides_review_asks_to_look_at_are_rendered(self) -> None:
+        label, image = mcp_server.presentation_slides(self.path)
+        self.assertEqual(label, "Slide 1:")
+        self.assertTrue(image.data.startswith(b"\x89PNG"))
+
+    def test_without_libreoffice_the_tool_says_so(self) -> None:
+        from unittest import mock
+
+        with mock.patch.object(mcp_server, "find_soffice", return_value=None):
+            (message,) = mcp_server.presentation_slides(self.path)
+        self.assertIn("LibreOffice is not installed", message)
 
 
 class BoundaryTests(unittest.TestCase):

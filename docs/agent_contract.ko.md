@@ -94,6 +94,10 @@ pptx2markdown은 확신이 없는 곳을 스스로 알려 주는 결정적 PPTX 
 - `choose_reading_orders_with(presentation, judge)`: 플래그된 슬라이드마다 한 쪽
   PDF(LibreOffice), 사유, 후보를 넘기고 후보 이름을 받습니다.
 
+`pptx2markdown.snapshot.slide_pdf` / `slide_png`는 다른 판단자를 위해 슬라이드 한 장을
+렌더링하고, MCP 도구 `presentation_slides`는 `look: "slide"` 항목의 슬라이드를 호스트
+모델에게 보여 주므로 별도 API 키 없이도 답할 수 있습니다.
+
 `pptx2markdown.agent`(선택적 `[agent]` extra)는 이 루프에 Claude를 붙인 것입니다.
 모델 SDK를 import하는 유일한 모듈이며, 코어와 MCP 서버는 이를 불러오지 않습니다
 (테스트로 강제).
