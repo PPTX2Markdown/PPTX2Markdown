@@ -55,7 +55,16 @@ from .recipe import (
     merge_recipes,
     recipe_json_schema,
 )
-from .review import Option, ReviewItem, review, review_data
+from .review import (
+    REVIEW_SCHEMA_VERSION,
+    Option,
+    ReviewItem,
+    recipe_from_answers,
+    review,
+    review_data,
+    review_json_schema,
+    review_report,
+)
 from .writer import SavedAsset, SaveOptions, SaveResult
 
 __all__ = [
@@ -91,6 +100,7 @@ __all__ = [
     "PresentationDocument",
     "PresentationParseError",
     "Recipe",
+    "REVIEW_SCHEMA_VERSION",
     "ReviewItem",
     "Rule",
     "RuleMatch",
@@ -116,8 +126,11 @@ __all__ = [
     "explain_recipe",
     "merge_recipes",
     "parse",
+    "recipe_from_answers",
     "recipe_json_schema",
     "review",
     "review_data",
+    "review_json_schema",
+    "review_report",
     "slide_chunks",
 ]

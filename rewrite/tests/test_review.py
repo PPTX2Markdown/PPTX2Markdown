@@ -15,8 +15,8 @@ from pptx2markdown.model import (
     TableCell,
     TextBlock,
 )
-from pptx2markdown.recipe import Recipe, apply_recipe
-from pptx2markdown.review import review
+from pptx2markdown.recipe import apply_recipe
+from pptx2markdown.review import recipe_from_answers, review, review_data
 from pptx2markdown.tables import rows_markdown
 
 ASSET = "asset-" + "b" * 16
@@ -99,19 +99,15 @@ class ReviewTests(unittest.TestCase):
     def test_grouped_header_suggests_two_header_rows(self) -> None:
         item = self.items[("s1.b6", "table-header-rows")]
         self.assertTrue(item.evidence["header_spans_rows"])
-        self.assertEqual(item.options[item.suggested].rule.header_rows, 2)
+        self.assertEqual(item.option(item.suggested).rule.header_rows, 2)
 
     def test_numeric_first_row_suggests_no_header(self) -> None:
         item = self.items[("s1.b7", "table-header-rows")]
-        self.assertEqual(item.options[item.suggested].rule.header_rows, 0)
+        self.assertEqual(item.option(item.suggested).rule.header_rows, 0)
 
     def test_suggested_options_form_a_recipe(self) -> None:
-        rules = [
-            item.options[item.suggested].rule
-            for item in self.items.values()
-            if item.options[item.suggested].rule is not None
-        ]
-        result = apply_recipe(_document(), Recipe(rules=tuple(rules)))
+        recipe = recipe_from_answers(tuple(self.items.values()), {}, unanswered="suggested")
+        result = apply_recipe(_document(), recipe)
         blocks = {block.id: block for block in result.slides[0].blocks}
         self.assertEqual(
             blocks["s1.b2"], HeadingBlock(id="s1.b2", text="Key points", level=2, shape_id="5")
@@ -121,9 +117,77 @@ class ReviewTests(unittest.TestCase):
         )
         self.assertEqual(blocks["s1.b7"].markdown.splitlines()[0], "| col_1 | col_2 |")
 
+    def test_items_have_stable_ids_pages_and_what_to_look_at(self) -> None:
+        image = self.items[("s1.b9", "image-description")]
+        self.assertEqual(image.id, "image-description@s1.b9")
+        self.assertEqual((image.page, image.look, image.impact), (1, "image", "high"))
+        self.assertEqual(image.reasons, ("default-picture-name",))
+        self.assertEqual(image.asset_id, ASSET)
+        heading = self.items[("s1.b2", "subheading")]
+        self.assertEqual((heading.look, heading.impact), ("text", "low"))
+        for item in self.items.values():
+            self.assertIsNotNone(item.option(item.suggested))
+            self.assertEqual(item.options[0].id, "keep")
+            self.assertIsNone(item.options[0].rule)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_answers_become_rules_and_free_text_describes(self) -> None:
+        items = tuple(self.items.values())
+        recipe = recipe_from_answers(
+            items,
+            {
+                "subheading@s1.b2": "keep",
+                "table-header-rows@s1.b7": "no-header",
+                "image-description@s1.b9": "Org chart of the sales team",
+            },
+        )
+        self.assertEqual([rule.target for rule in recipe.rules], ["s1.b7", "s1.b9"])
+        self.assertEqual(recipe.rules[1].description, "Org chart of the sales team")
+
+    def test_wrong_answers_are_all_reported(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            recipe_from_answers(
+                tuple(self.items.values()),
+                {"heading@s9.b1": "keep", "table-header-rows@s1.b7": "Org chart"},
+            )
+        self.assertIn("heading@s9.b1", str(caught.exception))
+        self.assertIn("not one of keep, no-header", str(caught.exception))
+
+    def test_data_is_json_with_option_ids_and_rules(self) -> None:
+        import json
+
+        data = review_data(tuple(self.items.values()))
+        json.dumps(data)
+        first = next(entry for entry in data if entry["topic"] == "table-header-rows")
+        self.assertEqual(
+            first["options"][1],
+            {
+                "id": "two-rows",
+                "label": "Two header rows",
+                "rule": {"target": "s1.b6", "header_rows": 2, "reason": "grouped two-row header"},
+            },
+        )
+
+
+class ReadingOrderItemTests(unittest.TestCase):
+    def test_flagged_slide_offers_candidate_orders_by_id(self) -> None:
+        from pptx2markdown.model import OrderAlternative, ReadingOrderReview
+
+        slide = SlideDocument(
+            page=2,
+            blocks=(TextBlock(id="s2.b1", text="Left"), TextBlock(id="s2.b2", text="Right")),
+            reading_order=ReadingOrderReview(
+                reasons=("two-way cut",),
+                alternatives=(OrderAlternative(label="rows first", block_ids=("s2.b2", "s2.b1")),),
+            ),
+        )
+        document = _document().model_copy(update={"slides": (slide,)})
+        (item,) = review(document)
+        self.assertEqual(item.id, "reading-order@slide[2]")
+        self.assertEqual((item.reasons, item.look), (("two-way-cut",), "slide"))
+        self.assertEqual([option.id for option in item.options], ["keep", "rows-first"])
+        self.assertEqual(item.evidence["orders"]["rows-first"], ["Right", "Left"])
+        recipe = recipe_from_answers((item,), {item.id: "rows-first"})
+        self.assertEqual(recipe.rules[0].order, ("s2.b2", "s2.b1"))
 
 
 class CliReviewTests(unittest.TestCase):
@@ -147,5 +211,10 @@ class CliReviewTests(unittest.TestCase):
             self.assertFalse((Path(directory) / "out").exists())
         report = json.loads(output.getvalue())
         self.assertEqual(report[0]["source"], "deck.pptx")
+        self.assertEqual(report[0]["schema_version"], 1)
         for item in report[0]["items"]:
-            self.assertIn(item["suggested"], range(len(item["options"])))
+            self.assertIn(item["suggested"], [option["id"] for option in item["options"]])
+
+
+if __name__ == "__main__":
+    unittest.main()

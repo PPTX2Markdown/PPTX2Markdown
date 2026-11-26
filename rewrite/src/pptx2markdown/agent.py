@@ -23,8 +23,8 @@ from .images import ImageDescription, ImageRequest, describe_images_with
 from .model import PresentationDocument
 from .ordering import AS_CONVERTED, OrderRequest, choose_reading_orders_with
 from .recipe import SELECTOR_HELP, Recipe, Rule, RuleMatch, explain_recipe
-from .render import render_presentation_markdown
-from .review import ReviewItem, review, review_data
+from .render import annotated_markdown
+from .review import ReviewItem, recipe_from_answers, review, review_data
 
 if TYPE_CHECKING:
     from .presentation import ParsedPresentation
@@ -65,8 +65,8 @@ class _RecipeDraft(BaseModel):
 
 
 class _Answer(BaseModel):
-    item: int
-    option: int
+    item: str
+    option: str
 
 
 class _Answers(BaseModel):
@@ -135,11 +135,7 @@ summary tells the user in one or two sentences what the recipe changes.
 def document_view(document: PresentationDocument) -> str:
     """The deck as annotated Markdown, the way the model sees it."""
 
-    view = render_presentation_markdown(
-        document,
-        asset_resolver=lambda asset_id: f"asset/{asset_id}",
-        block_ids=True,
-    )
+    view = annotated_markdown(document)
     if len(view) > _MAX_VIEW_CHARS:
         raise AgentError(
             f"the deck's Markdown has {len(view)} characters, more than the "
@@ -287,16 +283,15 @@ def answer_review(
     if not items:
         return Recipe()
     client = _client(client)
-    numbered = [{"item": index, **data} for index, data in enumerate(review_data(tuple(items)))]
     response = _parse(
         client,
         model=model,
         effort=effort,
         system=(
             "You check decisions a converter made while turning a PowerPoint deck into "
-            "Markdown. For each numbered question pick the option that is right for the "
-            "deck shown, using the evidence and the surrounding blocks. When the deck "
-            "does not settle a question, pick the suggested option."
+            "Markdown. For each question, answer with its id and the id of the option "
+            "that is right for the deck shown, using the evidence and the surrounding "
+            "blocks. When the deck does not settle a question, pick the suggested option."
         ),
         messages=[
             {
@@ -309,7 +304,8 @@ def answer_review(
                     },
                     {
                         "type": "text",
-                        "text": f"<questions>\n{json.dumps(numbered, ensure_ascii=False)}\n"
+                        "text": "<questions>\n"
+                        f"{json.dumps(review_data(items), ensure_ascii=False)}\n"
                         f"</questions>\n<guidance>\n{guidance}\n</guidance>",
                     },
                 ],
@@ -317,14 +313,14 @@ def answer_review(
         ],
         output_format=_Answers,
     )
-    rules: list[Rule] = []
-    for answer in response.parsed_output.answers:
-        if not 0 <= answer.item < len(items):
-            continue
-        options = items[answer.item].options
-        if 0 <= answer.option < len(options) and options[answer.option].rule is not None:
-            rules.append(options[answer.option].rule)
-    return Recipe(rules=tuple(rules))
+    # Answers naming no known item or option are dropped: the converter's decision stands.
+    by_id = {item.id: item for item in items}
+    answers = {
+        answer.item: answer.option
+        for answer in response.parsed_output.answers
+        if answer.item in by_id and by_id[answer.item].option(answer.option) is not None
+    }
+    return recipe_from_answers(items, answers)
 
 
 def describe_images(
