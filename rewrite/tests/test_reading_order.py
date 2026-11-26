@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pptx2markdown
 from pptx2markdown.reading_order import (
+    CONTAINER_ACROSS,
+    FRAGILE_GAP,
     NO_CUT,
+    OVERLAPPING,
     TWO_WAY_CUT,
     LayoutNode,
     geometry_reading_order,
@@ -178,6 +181,37 @@ class AmbiguityTests(unittest.TestCase):
         ]
         geometry_reading_order(boxes, notes=notes)
         self.assertEqual(notes, [NO_CUT])
+
+
+class MoreSignalTests(unittest.TestCase):
+    def test_slightly_overlapping_columns_are_flagged_and_cut_loosely(self) -> None:
+        nodes = [_box(f"w{i}", 0.6, 1.6 + 0.45 * i, 6.3, 0.4) for i in range(3)]
+        nodes += [_box(f"e{i}", 6.6, 1.7 + 0.45 * i, 6.0, 0.4) for i in range(3)]
+        notes: list[str] = []
+        geometry_reading_order(nodes, notes=notes)
+        self.assertEqual(notes, [OVERLAPPING])
+        self.assertEqual(
+            geometry_reading_order(nodes, loose=True), ["w0", "w1", "w2", "e0", "e1", "e2"]
+        )
+
+    def test_columns_parted_by_a_pixel_are_flagged(self) -> None:
+        nodes = [_box(f"l{i}", 0.5, 1 + 0.5 * i, 4, 0.4) for i in range(2)]
+        nodes += [_box(f"r{i}", 4.501, 1 + 0.5 * i, 4, 0.4) for i in range(2)]
+        notes: list[str] = []
+        geometry_reading_order(nodes, notes=notes)
+        self.assertIn(FRAGILE_GAP, notes)
+
+    def test_a_bare_frame_cutting_through_text_is_flagged(self) -> None:
+        nodes = [
+            _box("highlight", 0.4, 2.9, 9, 0.7, structure=False, container=True),
+            _box("left-a", 0.5, 1, 4, 0.4),
+            _box("left-b", 0.5, 3, 4, 0.4),
+            _box("right-a", 5, 1, 4, 0.4),
+            _box("right-b", 5, 3.3, 4, 0.8),  # sticks out below the highlight
+        ]
+        notes: list[str] = []
+        geometry_reading_order(nodes, notes=notes)
+        self.assertIn(CONTAINER_ACROSS, notes)
 
 
 class SlideOrderReviewTests(unittest.TestCase):

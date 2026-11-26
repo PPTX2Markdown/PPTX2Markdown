@@ -168,6 +168,18 @@ brackets inside a frame must not take part in gap finding at any depth, and a
 tiny box just outside a placeholder must not be treated as enclosed (the
 containment tolerance is relative to the box's own size).
 
+### All five signals
+
+The remaining signals were added without changing any default order (0 of 2,786
+slides change): *overlapping boxes* (side-by-side text overlapping by up to 15% of
+the narrower box, with a "columns allowing overlap" candidate), *fragile gap*
+(two real columns, two boxes or more each, parted by under two pixels) and
+*container across content* (a bare frame such as a highlight box cutting through
+text; text boxes and pictures overlapping text were mostly ordinary layout and
+are not counted). Every failing benchmark case is now flagged with a correct
+candidate (diagram tracks: rows first; overlapping columns: columns allowing
+overlap). Flagged share: 9.9% (about 8.8% without the templated deck).
+
 ## Plan
 
 1. Leave slide-covering backgrounds out of gap finding.
