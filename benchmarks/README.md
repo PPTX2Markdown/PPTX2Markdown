@@ -15,6 +15,16 @@ pip install -r benchmarks/requirements.txt
 python benchmarks/run.py --large 300 --keep /tmp/bench   # keep decks and outputs
 ```
 
+`reading_order.py` checks reading order on slides whose objects overlap, nest or
+sit on a background (shapes are stored in a shuffled order, as in real decks):
+
+```bash
+python benchmarks/reading_order.py --keep /tmp/reading-order --verbose
+```
+
+See [the reading-order design](../docs/reading_order_design.md) for the cases and
+what they found.
+
 ## Results
 
 See [results/results.md](results/results.md) for the latest run (versions,
