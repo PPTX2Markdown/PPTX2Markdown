@@ -180,6 +180,16 @@ are not counted). Every failing benchmark case is now flagged with a correct
 candidate (diagram tracks: rows first; overlapping columns: columns allowing
 overlap). Flagged share: 9.9% (about 8.8% without the templated deck).
 
+### Stage 4: judging flagged slides
+
+`pptx2markdown.ordering.choose_reading_orders_with(presentation, judge)` renders
+only flagged slides, each as a one-page PDF through LibreOffice's PDF export with
+a page range (about 1.3 s per slide, no new dependency), and hands the judge the
+reasons and candidates (first words of each block, in each order). The pick
+becomes an `order` rule. `agent.choose_reading_orders` uses Claude, sending the
+page as a PDF document with the candidates and validating that the answer names
+one of them. Without LibreOffice or a source file the judge sees text only.
+
 ## Plan
 
 1. Leave slide-covering backgrounds out of gap finding.

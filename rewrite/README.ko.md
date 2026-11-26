@@ -150,6 +150,9 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 배경은 무시합니다. 기하 정보만으로 순서를 정할 수 없는 곳(행으로도 열로도 읽히는
 격자, 틈 없이 나란한 텍스트)은 `reading-order` 검토 항목이 되고, 그 선택지는 후보
 순서를 담은 `order` 규칙입니다. 그래서 사람이나 모델은 그런 슬라이드만 보면 됩니다.
+`choose_reading_orders_with(presentation, judge)`는 그 슬라이드만 LibreOffice로 로컬에서
+한 장짜리 PDF로 렌더링해, 사용자가 준 `judge` 함수에 후보 중 하나를 고르게 합니다.
+`agent.choose_reading_orders`는 같은 일을 Claude로 합니다.
 [설계 문서](../docs/reading_order_design.ko.md)를 참고하세요.
 
 ```python
@@ -220,7 +223,8 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     print(draft.summary, draft.unmatched)
     answers = agent.answer_review(presentation.document)  # 검토 선택지 고르기
     images = agent.describe_images(presentation, language="Korean")  # 이미지 설명
-    presentation.apply(merge_recipes(draft.recipe, answers, images))
+    order = agent.choose_reading_orders(presentation)  # 표시된 슬라이드만
+    presentation.apply(merge_recipes(draft.recipe, answers, images, order))
 ```
 
 `pptx2markdown deck.pptx --ask "부록은 빼줘"`는 작성된 레시피를 JSON으로 출력하므로,

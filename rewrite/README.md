@@ -156,8 +156,10 @@ as units, and backgrounds covering the slide are ignored. Where the geometry
 cannot settle the order (a grid that reads as well by rows as by columns, side
 by side text with no gap between), the slide gets a `reading-order` review item
 whose options are the candidate orders as `order` rules, so only those slides
-need a person or a model to look at them. See
-[the design](../docs/reading_order_design.md).
+need a person or a model to look at them. `choose_reading_orders_with(presentation,
+judge)` renders just those slides as one-page PDFs (LibreOffice, locally) and asks
+your `judge` function to name a candidate; `agent.choose_reading_orders` does the
+same with Claude. See [the design](../docs/reading_order_design.md).
 
 ```python
 with pptx2markdown.parse("deck.pptx") as presentation:
@@ -212,7 +214,8 @@ with pptx2markdown.parse("deck.pptx") as presentation:
     print(draft.summary, draft.unmatched)
     answers = agent.answer_review(presentation.document)  # picks review options
     images = agent.describe_images(presentation, language="Korean")  # vision
-    presentation.apply(merge_recipes(draft.recipe, answers, images))
+    order = agent.choose_reading_orders(presentation)  # flagged slides only
+    presentation.apply(merge_recipes(draft.recipe, answers, images, order))
 ```
 
 `pptx2markdown deck.pptx --ask "drop the appendix"` prints the drafted recipe as
