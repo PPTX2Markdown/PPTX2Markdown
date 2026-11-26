@@ -299,6 +299,7 @@ class _PresentationParser:
         candidates = (
             [
                 ("rows first", geometry_reading_order(layout, prefer="rows")),
+                ("columns allowing overlap", geometry_reading_order(layout, loose=True)),
                 ("as stored in the file", list(styled)),
             ]
             if order_notes

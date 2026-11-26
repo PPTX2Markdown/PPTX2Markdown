@@ -24,6 +24,12 @@ Prefer = Literal["columns", "rows"]
 # Reasons ``geometry_reading_order`` reports when the layout allows another order.
 TWO_WAY_CUT = "two-way cut"
 NO_CUT = "no gap to cut"
+OVERLAPPING = "overlapping boxes"
+FRAGILE_GAP = "fragile gap"
+CONTAINER_ACROSS = "container across content"
+# Boxes overlapping by up to this share of the narrower one are still side by side,
+# and the "loose" candidate order cuts columns through such overlaps.
+LOOSE_OVERLAP_SHARE = 0.15
 # Gaps within this factor of each other give no reason to cut one way first.
 SIMILAR_GAP_RATIO = 2.0
 
@@ -32,6 +38,8 @@ SIMILAR_GAP_RATIO = 2.0
 class _Policy:
     prefer: Prefer = "columns"
     notes: list[str] | None = field(default=None)
+    # Cut columns through small overlaps (the "loose" candidate order).
+    loose: bool = False
 
     def note(self, reason: str) -> None:
         if self.notes is not None and reason not in self.notes:
@@ -76,8 +84,14 @@ def _interval(node: LayoutNode[T], axis: int) -> tuple[int, int]:
     return start, max(end, start + 1)
 
 
-def _chunks(nodes: list[LayoutNode[T]], axis: int) -> list[list[LayoutNode[T]]]:
-    """Groups separated by gaps along one axis; empty when there is no gap."""
+def _chunks(
+    nodes: list[LayoutNode[T]], axis: int, loose: bool = False
+) -> list[list[LayoutNode[T]]]:
+    """Groups separated by gaps along one axis; empty when there is no gap.
+
+    With ``loose``, boxes may overlap by a small share of their width and still be
+    cut apart (columns whose text boxes were drawn a little too wide).
+    """
 
     other = 1 - axis
     ordered = sorted(
@@ -88,9 +102,15 @@ def _chunks(nodes: list[LayoutNode[T]], axis: int) -> list[list[LayoutNode[T]]]:
         return []
     chunks = [[ordered[0]]]
     _, chunk_end = _interval(ordered[0], axis)
+    chunk_start = _interval(ordered[0], axis)[0]
     for node in ordered[1:]:
         start, end = _interval(node, axis)
-        if start - chunk_end >= -MAX_OVERLAP_EMU:
+        allowed = MAX_OVERLAP_EMU
+        if loose:
+            narrower = min(end - start, chunk_end - chunk_start)
+            allowed = max(allowed, int(narrower * LOOSE_OVERLAP_SHARE))
+        if start - chunk_end >= -allowed:
+            chunk_start = start
             chunks.append([node])
             chunk_end = end
         else:
@@ -121,6 +141,19 @@ def _widest_gap(chunks: list[list[LayoutNode[T]]], axis: int) -> int:
     return max((later[0] - earlier[1] for earlier, later in zip(spans, spans[1:])), default=0)
 
 
+def _fragile(chunks: list[list[LayoutNode[T]]], axis: int) -> bool:
+    """Two real columns (two boxes or more each) parted by a pixel or two."""
+
+    spans = [
+        (min(_interval(n, axis)[0] for n in chunk), max(_interval(n, axis)[1] for n in chunk))
+        for chunk in chunks
+    ]
+    return any(
+        later[0] - earlier[1] < 2 * MAX_OVERLAP_EMU and len(left) >= 2 and len(right) >= 2
+        for (earlier, later), (left, right) in zip(zip(spans, spans[1:]), zip(chunks, chunks[1:]))
+    )
+
+
 def _by_columns(columns: list[list[LayoutNode[T]]], policy: _Policy) -> list[LayoutNode[T]]:
     return [node for column in columns for node in _xycut(column, policy)]
 
@@ -129,27 +162,32 @@ def _by_rows(rows: list[list[LayoutNode[T]]], policy: _Policy) -> list[LayoutNod
     return _xycut(rows[0], policy) + _xycut([node for row in rows[1:] for node in row], policy)
 
 
-def _side_by_side(nodes: list[LayoutNode[T]]) -> bool:
+def _is_picture(node: LayoutNode[T]) -> bool:
+    payload = node.payload
+    inner = payload.node if isinstance(payload, _Unit) else None
+    return node.annotated or bool(inner is not None and inner.annotated)
+
+
+def _side_by_side(nodes: list[LayoutNode[T]], loose: bool = False) -> bool:
     """Two boxes next to each other, sharing rows: sorting by position interleaves them.
 
     Pictures do not count: text beside a picture reads the same either way.
     """
 
-    texts = [
-        node
-        for node in nodes
-        if not (
-            isinstance(node.payload, _Unit) and node.payload.node and node.payload.node.annotated
-        )
-        and not node.annotated
-    ]
+    texts = [node for node in nodes if not _is_picture(node)]
     for index, a in enumerate(texts):
         for b in texts[index + 1 :]:
             ax, bx = _interval(a, 0), _interval(b, 0)
             ay, by = _interval(a, 1), _interval(b, 1)
-            apart = ax[1] <= bx[0] + MAX_OVERLAP_EMU or bx[1] <= ax[0] + MAX_OVERLAP_EMU
+            overlap = min(ax[1], bx[1]) - max(ax[0], bx[0])
+            narrower = min(ax[1] - ax[0], bx[1] - bx[0])
+            limit = (
+                MAX_OVERLAP_EMU
+                if not loose
+                else max(MAX_OVERLAP_EMU, int(narrower * LOOSE_OVERLAP_SHARE))
+            )
             shared = min(ay[1], by[1]) - max(ay[0], by[0])
-            if apart and shared > min(ay[1] - ay[0], by[1] - by[0]) // 2:
+            if overlap <= limit and shared > min(ay[1] - ay[0], by[1] - by[0]) // 2:
                 return True
     return False
 
@@ -158,7 +196,7 @@ def _xycut(nodes: list[LayoutNode[T]], policy: _Policy | None = None) -> list[La
     policy = policy or _Policy()
     if len(nodes) <= 1:
         return list(nodes)
-    columns = _chunks(nodes, axis=0)
+    columns = _chunks(nodes, axis=0, loose=policy.loose)
     rows = _chunks(nodes, axis=1)
     if columns and _is_single_flow(rows):
         return [node for row in rows for node in row]
@@ -167,6 +205,10 @@ def _xycut(nodes: list[LayoutNode[T]], policy: _Policy | None = None) -> list[La
         similar = min(column_gap, row_gap) * SIMILAR_GAP_RATIO >= max(column_gap, row_gap)
         if similar and _by_columns(columns, _Policy("columns")) != _by_rows(rows, _Policy("rows")):
             policy.note(TWO_WAY_CUT)
+    if columns and not (rows and policy.prefer == "rows") and not policy.loose:
+        # A column gap of a pixel or two may be an accident of drawing.
+        if _fragile(columns, 0) and _side_by_side(nodes):
+            policy.note(FRAGILE_GAP)
     if columns and rows and policy.prefer == "rows":
         return _by_rows(rows, policy)
     if columns:
@@ -175,6 +217,8 @@ def _xycut(nodes: list[LayoutNode[T]], policy: _Policy | None = None) -> list[La
         return _by_rows(rows, policy)
     if len(nodes) >= 3 and _side_by_side(nodes):
         policy.note(NO_CUT)
+    elif len(nodes) >= 2 and _side_by_side(nodes, loose=True):
+        policy.note(OVERLAPPING)
     return sorted(
         nodes,
         key=lambda node: (node.bbox[1], node.bbox[0], node.source_order),  # type: ignore[index]
@@ -293,7 +337,35 @@ def _units(
     return kept
 
 
+def _crosses(container: _Unit[T], other: _Unit[T]) -> bool:
+    """``container`` holds text and cuts through ``other`` instead of enclosing it."""
+
+    a, b = container.bbox, other.bbox
+    across = min(a[2], b[2]) - max(a[0], b[0])
+    down = min(a[3], b[3]) - max(a[1], b[1])
+    if across <= MAX_OVERLAP_EMU or down <= MAX_OVERLAP_EMU:
+        return False
+    return across * down >= _area(b) // 4 and not _encloses(a, b)
+
+
 def _order_units(units: list[_Unit[T]], policy: _Policy) -> list[_Unit[T]]:
+    if policy.notes is not None:
+        # Only a bare frame (a highlight box) says nothing itself; a text box or a
+        # picture overlapping text is ordinary layout.
+        holders = [
+            u
+            for u in units
+            if u.members and u.node is not None and u.node.container and not u.node.structure
+        ]
+        if any(
+            _crosses(holder, other)
+            for holder in holders
+            for other in units
+            if other is not holder
+            and other.structured()
+            and not (other.node is not None and other.node.annotated)
+        ):
+            policy.note(CONTAINER_ACROSS)
     nodes = [LayoutNode(unit, unit.source_order, unit.bbox) for unit in units]
     return [node.payload for node in _xycut(nodes, policy)]
 
@@ -303,6 +375,7 @@ def geometry_reading_order(
     *,
     prefer: Prefer = "columns",
     notes: list[str] | None = None,
+    loose: bool = False,
 ) -> list[T]:
     """Order positioned shapes by containers and XY-cut, then the rest.
 
@@ -315,7 +388,7 @@ def geometry_reading_order(
     to ``notes`` when it is given.
     """
 
-    policy = _Policy(prefer, notes)
+    policy = _Policy(prefer, notes, loose)
     materialized = list(nodes)
     placed = [
         node
