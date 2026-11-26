@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .model import (
     BLOCK_ID_PATTERN,
@@ -207,6 +207,11 @@ class Rule(BaseModel):
     notes: bool | None = Field(
         default=None, description="Slide selectors: keep (true) or drop (false) speaker notes."
     )
+    order: tuple[str, ...] | None = Field(
+        default=None,
+        description="Slide selectors: read the slide's blocks in this order of block ids; "
+        "blocks left out follow in their current order.",
+    )
     reason: str | None = Field(
         default=None, description="Why the rule exists; kept for review, never applied."
     )
@@ -216,6 +221,12 @@ class Rule(BaseModel):
     def validate_target(cls, value: str) -> str:
         Selector.parse(value)
         return value.strip()
+
+    @model_validator(mode="after")
+    def validate_order(self) -> "Rule":
+        if self.order is not None and not Selector.parse(self.target).slides_only:
+            raise ValueError("order needs a slide selector such as 'slide[4]'")
+        return self
 
 
 class Recipe(BaseModel):
@@ -330,6 +341,7 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
             continue
         keep_slide = True
         keep_notes = recipe.include_notes
+        order: tuple[str, ...] | None = None
         blocks: list[ContentBlock] = []
         if recipe.merged_cells is not None:
             neutral = Rule(target="*")
@@ -361,6 +373,8 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
                     keep_slide = False
                 if rule.notes is not None:
                     keep_notes = rule.notes
+                if rule.order is not None:
+                    order = rule.order
         if not keep_slide:
             continue
         # Selectors always see the parsed slide, so a rule's targets do not depend on
@@ -379,6 +393,9 @@ def apply_recipe(document: PresentationDocument, recipe: Recipe) -> Presentation
                 block = _apply_block(block, rule, None)
             if kept:
                 blocks.append(block)
+        if order is not None:
+            rank = {block_id: index for index, block_id in enumerate(order)}
+            blocks.sort(key=lambda block: rank.get(block.id or "", len(rank)))
         slides.append(
             slide.model_copy(
                 update={"blocks": tuple(blocks), "notes": slide.notes if keep_notes else None}

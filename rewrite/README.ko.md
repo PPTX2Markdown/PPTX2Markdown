@@ -129,7 +129,8 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 
 규칙 동작: `exclude`, `merged_cells`, `header_rows`, `caption_rows`(표), `heading_level`(제목 수준
 변경 또는 텍스트를 제목으로), `as_text`(제목·목록), `description`(이미지 대체
-텍스트), `notes`(슬라이드 selector), 그리고 검토용으로만 남는 `reason`. 뒤의
+텍스트), `notes`와 `order`(슬라이드 selector: 발표자 노트 유지·제거, 블록 id 순서대로
+읽기), 그리고 검토용으로만 남는 `reason`. 뒤의
 규칙이 앞의 규칙보다 우선하며, 모든 selector는 파싱된 그대로의 문서를 봅니다.
 `recipe_json_schema()`(또는 `pptx2markdown --recipe-schema`)는 입력 폼이나 모델의
 구조화 출력에 쓸 JSON Schema를 돌려줍니다.
@@ -141,8 +142,15 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 머리글 아래 행이 라벨처럼 보이는 경우(머리글 두 줄?), 첫 행이 모두 숫자인
 경우(머리글 없음?), 병합된 첫 행을 표 제목으로 본 경우, 설명이 없는 이미지,
 글꼴 크기만으로 판정한 제목(제목이 맞나?), 목록이나 표를 이끄는 짧은 굵은
-줄(소제목?)이 그 대상입니다. 사람이나 UI, 언어
-모델은 선택지만 고르면 되고, 고른 결과가 곧 레시피가 됩니다.
+줄(소제목?), 그리고 여러 순서로 읽힐 수 있는 배치의 슬라이드가 그 대상입니다.
+사람이나 UI, 언어 모델은 선택지만 고르면 되고, 고른 결과가 곧 레시피가 됩니다.
+
+읽기 순서는 슬라이드의 구조를 따릅니다. 그룹과 다른 도형을 감싸는 도형(카드
+테두리, 라벨이 붙은 상자, 콜아웃이 올라간 그림)은 한 단위로 읽고, 슬라이드를 덮는
+배경은 무시합니다. 기하 정보만으로 순서를 정할 수 없는 곳(행으로도 열로도 읽히는
+격자, 틈 없이 나란한 텍스트)은 `reading-order` 검토 항목이 되고, 그 선택지는 후보
+순서를 담은 `order` 규칙입니다. 그래서 사람이나 모델은 그런 슬라이드만 보면 됩니다.
+[설계 문서](../docs/reading_order_design.ko.md)를 참고하세요.
 
 ```python
 with pptx2markdown.parse("deck.pptx") as presentation:

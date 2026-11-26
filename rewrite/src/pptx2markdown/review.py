@@ -11,10 +11,12 @@ import re
 from dataclasses import dataclass, field
 
 from .model import (
+    ContentBlock,
     HeadingBlock,
     ImageBlock,
     ListBlock,
     PresentationDocument,
+    SlideDocument,
     TableBlock,
     TableCell,
     TextBlock,
@@ -146,11 +148,57 @@ def _table_items(block: TableBlock) -> list[ReviewItem]:
     return items
 
 
+def _first_words(block: ContentBlock) -> str:
+    text = getattr(block, "text", None) or " ".join(
+        getattr(item, "text", "") for item in getattr(block, "items", ())
+    )
+    text = " ".join((text or block.kind).replace("*", "").replace("\\", "").split())
+    return text if len(text) <= 40 else text[:37] + "..."
+
+
+def _reading_order_item(slide: SlideDocument) -> ReviewItem | None:
+    review_ = slide.reading_order
+    if review_ is None:
+        return None
+    by_id = {block.id: block for block in slide.blocks if block.id}
+    target = f"slide[{slide.page}]"
+    orders = {"as converted": [block.id for block in slide.blocks if block.id]}
+    options = [Option("Keep the converter's order")]
+    for alternative in review_.alternatives:
+        orders[alternative.label] = list(alternative.block_ids)
+        options.append(
+            Option(
+                f"Read it {alternative.label}",
+                Rule(
+                    target=target,
+                    order=alternative.block_ids,
+                    reason=f"reading order: {alternative.label}",
+                ),
+            )
+        )
+    return ReviewItem(
+        topic="reading-order",
+        target=target,
+        question="The layout can be read in more than one order "
+        f"({', '.join(review_.reasons)}). Which order is right?",
+        options=tuple(options),
+        evidence={
+            "reasons": list(review_.reasons),
+            "orders": {
+                label: [_first_words(by_id[block_id]) for block_id in ids if block_id in by_id]
+                for label, ids in orders.items()
+            },
+        },
+    )
+
+
 def review(document: PresentationDocument) -> tuple[ReviewItem, ...]:
     """Questions about the conversion, in reading order."""
 
     items: list[ReviewItem] = []
     for slide in document.slides:
+        if (order_item := _reading_order_item(slide)) is not None:
+            items.append(order_item)
         blocks = slide.blocks
         for index, block in enumerate(blocks):
             if block.id is None:

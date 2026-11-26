@@ -239,6 +239,28 @@ ContentBlock = Annotated[
 ]
 
 
+class OrderAlternative(BaseModel):
+    """Another way to read a slide: its block ids in that order."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    label: str = Field(min_length=1)
+    block_ids: tuple[str, ...]
+
+
+class ReadingOrderReview(BaseModel):
+    """Why the converter's reading order may be wrong, and the other candidates.
+
+    Set only on slides whose layout the geometry cannot settle; see
+    docs/reading_order_design.md.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    reasons: tuple[str, ...] = Field(min_length=1)
+    alternatives: tuple[OrderAlternative, ...] = Field(min_length=1)
+
+
 class SlideDocument(BaseModel):
     """Canonical content for one slide."""
 
@@ -250,6 +272,7 @@ class SlideDocument(BaseModel):
     notes: str | None = None
     # The PowerPoint section the slide belongs to, when the deck has sections.
     section: str | None = None
+    reading_order: ReadingOrderReview | None = None
 
 
 class PresentationDocument(BaseModel):
