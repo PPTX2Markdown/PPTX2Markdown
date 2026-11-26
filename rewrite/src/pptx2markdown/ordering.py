@@ -3,8 +3,9 @@
 The parser flags slides whose layout the geometry cannot settle and keeps their
 candidate orders (``SlideDocument.reading_order``). ``choose_reading_orders_with``
 hands each flagged slide to a function you supply: the slide rendered as a
-one-page PDF by LibreOffice (when a source file and LibreOffice are available),
-the reasons, and each candidate order as the first words of its blocks. The
+one-page PDF by LibreOffice (``snapshot.slide_pdf``, when a source file and
+LibreOffice are available), the reasons, and each candidate order as the first
+words of its blocks. The
 function names the candidate it picks, and the picks come back as ``order``
 recipe rules. Slides that are not flagged are never rendered, so the cost stays
 with the few slides that need a look. ``pptx2markdown.agent.choose_reading_orders``
@@ -13,22 +14,19 @@ is this loop with Claude as the judge.
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .libreoffice import convert_files, find_soffice
 from .model import ContentBlock, SlideDocument
 from .recipe import Recipe, Rule
+from .snapshot import slide_pdf
 
 if TYPE_CHECKING:
     from .presentation import ParsedPresentation
 
 AS_CONVERTED = "as converted"
-RENDER_TIMEOUT_SECONDS = 120
 
 
 @dataclass(frozen=True)
@@ -45,26 +43,6 @@ class OrderRequest:
 
 
 Judge = Callable[[OrderRequest], "str | None"]
-
-
-def render_slide_pdf(
-    source: str | Path, page: int, *, timeout: float = RENDER_TIMEOUT_SECONDS
-) -> bytes | None:
-    """Slide ``page`` of ``source`` as a one-page PDF, or None without LibreOffice."""
-
-    if find_soffice() is None:
-        return None
-    source = Path(source)
-    target = 'pdf:impress_pdf_Export:{"PageRange":{"type":"string","value":"%d"}}' % page
-    with tempfile.TemporaryDirectory(prefix="pptx2markdown-slide-") as work:
-        try:
-            convert_files(
-                [source], target, Path(work), purpose="rendering a slide", timeout=timeout
-            )
-        except subprocess.TimeoutExpired:
-            return None
-        pdf = Path(work) / f"{source.stem}.pdf"
-        return pdf.read_bytes() if pdf.is_file() else None
 
 
 def _words(block: ContentBlock) -> str:
@@ -113,9 +91,7 @@ def choose_reading_orders_with(
                 label: [_words(by_id[block_id]) for block_id in ids if block_id in by_id]
                 for label, ids in orders.items()
             },
-            slide_pdf=(
-                render_slide_pdf(source, slide.page) if render and source is not None else None
-            ),
+            slide_pdf=(slide_pdf(source, slide.page) if render and source is not None else None),
         )
         choice = judge(request)
         if choice is None or choice == AS_CONVERTED or choice not in orders:

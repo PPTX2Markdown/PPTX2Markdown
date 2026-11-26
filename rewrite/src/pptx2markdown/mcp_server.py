@@ -16,11 +16,13 @@ from pydantic import ValidationError
 from .api import parse
 from .audit import audit
 from .chunks import slide_chunks
+from .libreoffice import find_soffice
 from .model import ImageBlock
 from .presentation import ParsedPresentation
 from .recipe import Recipe, explain_recipe, recipe_json_schema
 from .render import annotated_markdown
 from .review import recipe_from_answers, review, review_report
+from .snapshot import slide_png
 
 INSTRUCTIONS = """\
 Converts PowerPoint (.pptx) files to Markdown for reading and retrieval.
@@ -31,7 +33,8 @@ conversion decisions worth checking; each option carries a ready-made recipe rul
 and answers_to_recipe turns {item id: option id} into a recipe.
 audit_presentation reports any text on the slides that the conversion lost.
 presentation_images shows pictures that have no description, so you can write
-description rules for them. The prepare_for_retrieval and apply_request prompts
+description rules for them; presentation_slides shows the slides whose reading
+order is in question. The prepare_for_retrieval and apply_request prompts
 walk through these steps.
 To change the output (drop slides, set table header rows, turn text into a
 heading, describe an image), write a recipe (see recipe_schema), check it with
@@ -220,6 +223,50 @@ def presentation_images(
         return content or ["No picture needs a description."]
 
 
+def presentation_slides(
+    path: str, pages: list[int] | None = None, max_slides: int = 6
+) -> list[Any]:
+    """Slides rendered as pictures, for review items that need the layout seen.
+
+    By default these are the slides of review items whose look is "slide" (reading
+    order): compare each picture with the item's evidence orders and answer with
+    an option id. Rendering needs LibreOffice and takes a few seconds per slide.
+
+    Args:
+        path: Local path to the .pptx file.
+        pages: Slide numbers to render; by default those review asks to look at.
+        max_slides: At most this many slides per call.
+    """
+
+    from mcp.server.mcpserver import Image
+
+    if find_soffice() is None:
+        return ["Slides cannot be rendered: LibreOffice is not installed."]
+    with _open(path, None) as presentation:
+        wanted = (
+            sorted(set(pages))
+            if pages is not None
+            else sorted(
+                {item.page for item in review(presentation.document) if item.look == "slide"}
+            )
+        )
+        source = presentation.source_path or Path(path).expanduser()
+    content: list[Any] = []
+    skipped: list[str] = []
+    for page in wanted:
+        if len(content) // 2 >= max_slides:
+            skipped.append(f"{page} (over max_slides)")
+            continue
+        png = slide_png(source, page)
+        if png is None:
+            skipped.append(f"{page} (could not be rendered)")
+            continue
+        content.extend([f"Slide {page}:", Image(data=png, format="png")])
+    if skipped:
+        content.append("Not shown: slides " + ", ".join(skipped))
+    return content or ["No slide needs to be looked at."]
+
+
 def recipe_schema() -> dict[str, Any]:
     """The JSON Schema of a recipe, with the selector syntax and every rule action."""
 
@@ -235,7 +282,9 @@ def prepare_for_retrieval(path: str, purpose: str = "a search index") -> str:
    your final summary: the converter dropped them, and a recipe cannot bring them back.
 2. Call review_presentation. For each item choose an option id: the suggested one
    unless the slide, read with convert_presentation, shows otherwise. Items whose
-   look is "image" are answered in step 3. Call answers_to_recipe with your answers.
+   look is "image" are answered in step 3. For items whose look is "slide" (reading
+   order), call presentation_slides and pick the order the picture supports. Call
+   answers_to_recipe with your answers.
 3. Call presentation_images. Look at each picture: describe what it conveys in one or
    two sentences (chart type and trend, what a diagram or screenshot shows), or mark
    logos, backgrounds and other decoration as excluded.
@@ -269,8 +318,12 @@ TOOLS = (
     check_recipe,
     presentation_chunks,
     presentation_images,
+    presentation_slides,
     recipe_schema,
 )
+
+# Pictures go out as image content, which has no JSON form.
+_PICTURE_TOOLS = (presentation_images, presentation_slides)
 
 
 def build_server():
@@ -284,8 +337,7 @@ def build_server():
         ) from exc
     server = MCPServer("pptx2markdown", instructions=INSTRUCTIONS)
     for tool in TOOLS:
-        # Pictures go out as image content, which has no JSON form.
-        server.add_tool(tool, structured_output=False if tool is presentation_images else None)
+        server.add_tool(tool, structured_output=False if tool in _PICTURE_TOOLS else None)
     for prompt in PROMPTS:
         server.prompt()(prompt)
     return server

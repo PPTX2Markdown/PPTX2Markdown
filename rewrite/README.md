@@ -259,7 +259,9 @@ itself: `convert_presentation` (Markdown with block ids, optionally with a
 recipe applied), `review_presentation`, `answers_to_recipe` (review answers
 to a recipe), `audit_presentation` (text the
 conversion lost), `presentation_images` (pictures without a description, as
-images, so the host model can describe them in a recipe), `check_recipe` (what
+images, so the host model can describe them in a recipe), `presentation_slides`
+(the slides whose reading order is in question, rendered locally by LibreOffice,
+so the host model can pick the order), `check_recipe` (what
 each rule selects), `presentation_chunks` and `recipe_schema`. Two prompts
 walk a host model through the workflow: `prepare_for_retrieval` (audit, answer the
 review, describe pictures, check the recipe, chunk) and `apply_request` (turn a
