@@ -52,6 +52,8 @@ class Shape:
     # Package part holding the element when it is inherited from a layout or master.
     template_part: str | None = None
     style: ShapeStyle = ShapeStyle()
+    # The groups holding the shape, outermost first, each numbered in slide order.
+    groups: tuple[int, ...] = ()
 
 
 def local_name(tag: str) -> str:
@@ -68,9 +70,10 @@ def element_shape_id(element: ET.Element) -> str | None:
 def flatten_shapes(sp_tree: ET.Element) -> list[Shape]:
     shapes: list[Shape] = []
     source_order = 0
+    group_count = 0
 
-    def walk(parent: ET.Element, transform: Transform) -> None:
-        nonlocal source_order
+    def walk(parent: ET.Element, transform: Transform, groups: tuple[int, ...] = ()) -> None:
+        nonlocal source_order, group_count
         for element in list(parent):
             tag = local_name(element.tag)
             if tag == "AlternateContent":
@@ -92,10 +95,11 @@ def flatten_shapes(sp_tree: ET.Element) -> list[Shape]:
                 )
                 selected = choice if choice is not None else fallback
                 if selected is not None:
-                    walk(selected, transform)
+                    walk(selected, transform, groups)
                 continue
             if tag == "grpSp":
-                walk(element, transform.compose(group_transform(element)))
+                group_count += 1
+                walk(element, transform.compose(group_transform(element)), (*groups, group_count))
                 continue
             if tag not in {"sp", "pic", "graphicFrame", "cxnSp"}:
                 continue
@@ -109,6 +113,7 @@ def flatten_shapes(sp_tree: ET.Element) -> list[Shape]:
                     shape_id=element_shape_id(element),
                     bbox=bbox,
                     source_order=source_order,
+                    groups=groups,
                 )
             )
             source_order += 1

@@ -281,6 +281,13 @@ class _PresentationParser:
                     or is_decorative(shape, shape_text(shape.element))
                     or template.covers_slide(shape.bbox)
                 ),
+                groups=shape.groups,
+                # Frames, labelled shapes and pictures hold what they enclose.
+                container=shape.tag in {"sp", "pic"}
+                and shape.source_part == "slide"
+                and not is_footer(shape)
+                and not template.covers_slide(shape.bbox),
+                annotated=shape.tag == "pic",
             )
             for shape in styled
         )

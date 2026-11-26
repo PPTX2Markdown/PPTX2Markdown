@@ -64,6 +64,74 @@ class StructureTests(unittest.TestCase):
 FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 
 
+def _box(name: str, x: float, y: float, w: float, h: float, **flags) -> LayoutNode[str]:
+    inch = 914_400
+    bbox = (int(x * inch), int(y * inch), int((x + w) * inch), int((y + h) * inch))
+    return LayoutNode(name, _box.order.__next__(), bbox, **flags)
+
+
+_box.order = iter(range(10_000))  # type: ignore[attr-defined]
+
+
+class ContainerTests(unittest.TestCase):
+    def test_cards_on_a_slide_covering_picture_are_read_card_by_card(self) -> None:
+        nodes = [_box("background", 0, 0, 13.3, 7.5, structure=False)]
+        for column, x in enumerate((0.5, 4.5, 8.5)):
+            nodes.append(_box(f"frame{column}", x, 1, 3.6, 1.5, structure=False, container=True))
+            nodes += [
+                _box(f"head{column}", x + 0.2, 1.1, 3, 0.4),
+                _box(f"body{column}", x + 0.2, 1.6, 3, 0.4),
+            ]
+        order = [n for n in geometry_reading_order(nodes) if n.startswith(("head", "body"))]
+        self.assertEqual(order, ["head0", "body0", "head1", "body1", "head2", "body2"])
+
+    def test_a_group_is_read_as_one_unit(self) -> None:
+        # Staggered rows leave no column gap; each group still reads as a whole.
+        a = [_box(f"a{i}", 0.5, 1 + 0.5 * i, 4, 0.4, groups=(1,)) for i in range(2)]
+        b = [_box(f"b{i}", 5, 1 + 0.5 * i, 4, 0.4, groups=(2,)) for i in range(2)]
+        c = [_box(f"c{i}", 2.5, 3 + 0.5 * i, 4, 0.4, groups=(3,)) for i in range(2)]
+        order = geometry_reading_order([*c, *b, *a])
+        self.assertEqual(order, ["a0", "a1", "b0", "b1", "c0", "c1"])
+
+    def test_a_labelled_shape_reads_its_own_text_before_what_it_holds(self) -> None:
+        nodes = [
+            _box("inner", 1, 2, 3, 0.4),
+            _box("label", 0.5, 1, 5, 3, container=True),
+            _box("outside", 7, 1, 3, 0.4),
+        ]
+        self.assertEqual(geometry_reading_order(nodes), ["label", "inner", "outside"])
+
+    def test_labels_on_a_picture_are_read_top_to_bottom(self) -> None:
+        nodes = [
+            _box("picture", 1, 1, 9, 5, container=True, annotated=True),
+            _box("low-left", 1.5, 4, 2, 0.4),
+            _box("high-left", 1.5, 1.5, 2, 0.4),
+            _box("middle-right", 7, 2.5, 2, 0.4),
+        ]
+        self.assertEqual(
+            geometry_reading_order(nodes), ["picture", "high-left", "middle-right", "low-left"]
+        )
+
+    def test_decoration_never_splits_columns(self) -> None:
+        # An empty decorative group across the slide, and a bracket inside a container.
+        nodes = [
+            _box("panel", 0.2, 0.8, 12, 4, structure=False, groups=(1,)),
+            _box("panel-edge", 0.2, 0.8, 2, 2, structure=False, groups=(1,)),
+            _box("left-head", 0.5, 1, 3, 0.4),
+            _box("right-head", 6, 1, 3, 0.4),
+            _box("left-body", 0.5, 1.6, 3, 1),
+            _box("right-body", 6, 1.6, 3, 1),
+        ]
+        order = [n for n in geometry_reading_order(nodes) if "panel" not in n]
+        self.assertEqual(order, ["left-head", "left-body", "right-head", "right-body"])
+
+    def test_a_tiny_box_barely_outside_is_not_held(self) -> None:
+        # A 100-EMU-high line just above a title placeholder stays outside it.
+        title = LayoutNode("title", 1, (100, 200, 8_000_100, 900_200), container=True)
+        line = LayoutNode("line", 0, (100, 50, 3_000_100, 150))
+        self.assertEqual(geometry_reading_order([title, line]), ["line", "title"])
+
+
 def _first_lines(slide) -> list[str]:
     lines = []
     for block in slide.blocks:
