@@ -4,8 +4,7 @@
 those ``review`` asks about) to a function you supply, with the slide's Markdown
 for context, and turns the answers into recipe rules. The function can call a
 local vision model, an OCR engine or an internal service; nothing leaves the
-machine unless it sends it. ``pptx2markdown.agent.describe_images`` is the same
-loop with Claude as the describer.
+machine unless it sends it.
 """
 
 from __future__ import annotations

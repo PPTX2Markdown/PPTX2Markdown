@@ -8,8 +8,7 @@ LibreOffice are available), the reasons, and each candidate order as the first
 words of its blocks. The
 function names the candidate it picks, and the picks come back as ``order``
 recipe rules. Slides that are not flagged are never rendered, so the cost stays
-with the few slides that need a look. ``pptx2markdown.agent.choose_reading_orders``
-is this loop with Claude as the judge.
+with the few slides that need a look.
 """
 
 from __future__ import annotations

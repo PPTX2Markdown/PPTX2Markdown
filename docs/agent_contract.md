@@ -107,9 +107,9 @@ callable:
 judge, and the MCP tool `presentation_slides` shows the slides of `look: "slide"`
 items to the host model, so it can answer them without an API key of its own.
 
-`pptx2markdown.agent` (the optional `[agent]` extra) is these loops with Claude.
-It is the only module that imports a model SDK; the core and the MCP server
-never load it (a test enforces this).
+The package imports no model SDK (a test enforces this). An agent that calls a
+model, Claude or any other, lives in its own project and plugs into these loops
+or the MCP tools.
 
 ## Versioning
 

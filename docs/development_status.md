@@ -71,7 +71,7 @@ CI dependency. See the [golden suite](../tests/fixtures/golden/README.md).
 `0.2.0.dev0`) built to replace `src/` once it covers the same content. It keeps
 the static pipeline and adds escaped inline Markdown with emphasis, structured
 tables, block ids with declarative recipes, a review of uncertain decisions, an
-optional agent and MCP server, slide chunks, and in-memory input. It also reads
+MCP server, slide chunks, and in-memory input. It also reads
 ISO Strict decks, audits every conversion for lost text (`--audit`), converts
 `.ppt` input and EMF/WMF images through LibreOffice when asked to, and describes
 images with any model (`describe_images_with`). See

@@ -30,7 +30,7 @@ presentation in the current directory.
 | --- | --- |
 | `convert(inputs, output_dir=...) -> int` (exit code) | `convert(path, output_dir=...) -> SaveResult`; `convert_many(paths) -> BatchConversionResult` with `.exit_code` |
 | — | `parse(path \| bytes \| stream) -> ParsedPresentation`: the document in memory, nothing written |
-| — | `slide_chunks()`, `Recipe`, `review()`, `pptx2markdown.agent`, `pptx2markdown-mcp` |
+| — | `slide_chunks()`, `Recipe`, `review()`, `recipe_from_answers()`, `pptx2markdown-mcp` |
 
 `convert()` no longer configures logging.
 

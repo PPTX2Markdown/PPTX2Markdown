@@ -130,7 +130,6 @@ class BoundaryTests(unittest.TestCase):
 
         code = (
             "import sys, pptx2markdown, pptx2markdown.mcp_server, pptx2markdown.ordering; "
-            "assert 'pptx2markdown.agent' not in sys.modules; "
             "assert 'anthropic' not in sys.modules"
         )
         subprocess.run([sys.executable, "-c", code], check=True)

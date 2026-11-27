@@ -186,9 +186,8 @@ overlap). Flagged share: 9.9% (about 8.8% without the templated deck).
 only flagged slides, each as a one-page PDF through LibreOffice's PDF export with
 a page range (about 1.3 s per slide, no new dependency), and hands the judge the
 reasons and candidates (first words of each block, in each order). The pick
-becomes an `order` rule. `agent.choose_reading_orders` uses Claude, sending the
-page as a PDF document with the candidates and validating that the answer names
-one of them. Without LibreOffice or a source file the judge sees text only.
+becomes an `order` rule; a pick that names no candidate adds none. The MCP tool
+`presentation_slides` shows the same slides to the host model as pictures. Without LibreOffice or a source file the judge sees text only.
 
 ## Plan
 

@@ -29,7 +29,7 @@ rewrite는 같은 패키지 이름 `pptx2markdown`으로 배포되므로, 업그
 | --- | --- |
 | `convert(inputs, output_dir=...) -> int`(종료 코드) | `convert(path, output_dir=...) -> SaveResult`, `convert_many(paths) -> BatchConversionResult`(`.exit_code` 제공) |
 | — | `parse(경로 \| bytes \| 스트림) -> ParsedPresentation`: 메모리의 문서, 파일을 쓰지 않음 |
-| — | `slide_chunks()`, `Recipe`, `review()`, `pptx2markdown.agent`, `pptx2markdown-mcp` |
+| — | `slide_chunks()`, `Recipe`, `review()`, `recipe_from_answers()`, `pptx2markdown-mcp` |
 
 `convert()`는 더 이상 logging 설정을 바꾸지 않습니다.
 

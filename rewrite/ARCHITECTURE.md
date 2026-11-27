@@ -5,8 +5,8 @@
 ## Dependency direction
 
 ```text
-api / cli                                agent (optional, anthropic)
-    ↓                                        ↓ writes recipes only
+api / cli / mcp_server
+    ↓
 parser → shapes (geometry, footers, decoration) / paragraphs (runs, lists)
        → ooxml / inheritance / reading_order / headings / inline
        → omml / charts / smartart / tables / attachments
@@ -38,12 +38,9 @@ only:
 - `audit.audit` re-reads the slide XML without the parser's rules and reports
   typed text the document does not contain: a check on the parser that shares
   none of its code paths for text, so it catches what the parser silently drops.
-- `agent` (optional) only produces recipes: a request, review questions or an
-  image go in, a validated recipe comes out, and `explain_recipe` checks that
-  every rule selects something. The model never edits text or the parser.
 - `images.describe_images_with` is the model-neutral image loop: pictures and
-  their slide go to any describer function, rules come back. `agent` plugs Claude
-  into it; a local model or OCR engine plugs in the same way.
+  their slide go to any describer function, rules come back. A hosted model, a local
+  model or an OCR engine plugs in the same way; the package imports no model SDK.
 
 Because tables keep their full grid (`rows`, merge spans, `merged_from`) and
 headings keep the signal that made them headings (`source`), a recipe can

@@ -5,8 +5,8 @@
 ## 의존성 방향
 
 ```text
-api / cli                                agent (선택, anthropic)
-    ↓                                        ↓ 레시피만 작성
+api / cli / mcp_server
+    ↓
 parser → shapes (geometry, footers, decoration) / paragraphs (runs, lists)
        → ooxml / inheritance / reading_order / headings / inline
        → omml / charts / smartart / tables / attachments
@@ -38,12 +38,9 @@ transactional bundle writer
 - `audit.audit`는 파서의 규칙 없이 슬라이드 XML을 다시 읽어, 문서에 없는 입력
   텍스트를 보고합니다. 텍스트 경로를 파서와 공유하지 않으므로 파서가 조용히 버린
   내용을 잡아냅니다.
-- `agent`(선택)는 레시피만 만듭니다. 요청·검토 질문·이미지를 받아 검증된 레시피를
-  내놓고, `explain_recipe`로 모든 규칙이 무언가를 고르는지 확인합니다. 모델은
-  본문이나 parser를 고치지 않습니다.
 - `images.describe_images_with`는 모델에 묶이지 않은 이미지 루프입니다. 그림과
-  슬라이드를 아무 설명 함수에 넘기고 규칙을 받습니다. `agent`는 여기에 Claude를
-  끼우며, 로컬 모델이나 OCR 엔진도 같은 방식으로 끼웁니다.
+  슬라이드를 아무 설명 함수에 넘기고 규칙을 받습니다. 호스팅 모델, 로컬
+  모델, OCR 엔진 모두 같은 방식으로 끼우며, 패키지는 모델 SDK를 import하지 않습니다.
 
 표는 전체 격자(`rows`, 병합 범위, `merged_from`)를, 제목은 제목이 된 근거
 (`source`)를 남기므로, 레시피는 패키지를 다시 파싱하지 않고 블록을 다시
