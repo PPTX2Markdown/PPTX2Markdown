@@ -1,65 +1,106 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "python-pptx_txt-text.pptx",
-    "format": "pptx"
-  },
+  "assets": [],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "text",
-          "content": "Foo Bar\nBaz Zoo\n[yahoo.com](http://yahoo.com)",
-          "shape_id": "2",
-          "heading_level": null,
           "bbox": {
-            "x": 899592,
-            "y": 1124744,
-            "width": 1226455,
             "height": 1200329,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 1226455,
+            "x": 899592,
+            "y": 1124744
           },
-          "source_part": "slide"
+          "id": "s1.b1",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "Foo Bar\nBaz Zoo\n[yahoo.com](http://yahoo.com)"
         },
         {
-          "kind": "text",
-          "content": "abc\na\nb\nc",
-          "shape_id": "3",
-          "heading_level": null,
           "bbox": {
-            "x": 3995936,
-            "y": 1124744,
-            "width": 514885,
             "height": 1200329,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 514885,
+            "x": 3995936,
+            "y": 1124744
           },
-          "source_part": "slide"
+          "id": "s1.b2",
+          "kind": "text",
+          "shape_id": "3",
+          "source_part": "slide",
+          "text": "abc\na\nb\nc"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 2,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "table",
-          "content": "| Text run in table cell | col_2 |\n|---|---|\n|  |  |",
-          "shape_id": "2",
-          "heading_level": null,
+          "asset_ids": [],
           "bbox": {
-            "x": 1524000,
-            "y": 1397000,
-            "width": 6096000,
             "height": 741680,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 6096000,
+            "x": 1524000,
+            "y": 1397000
           },
+          "caption_rows": 0,
+          "header_rows": 1,
+          "id": "s2.b1",
+          "kind": "table",
+          "markdown": "| Text run in table cell | col_2 |\n| --- | --- |\n|  |  |",
+          "merged_cells": "fill",
+          "rows": [
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "Text run in table cell"
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              }
+            ],
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              }
+            ]
+          ],
+          "shape_id": "2",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 2,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "python-pptx_txt-text.pptx",
+    "sha256": "cef8bba88769e3799cab29299860bffdf598bab178d3efb8666ac83686614c68"
+  },
+  "warnings": []
 }

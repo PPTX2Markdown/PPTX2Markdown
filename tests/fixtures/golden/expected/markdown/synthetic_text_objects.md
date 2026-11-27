@@ -2,24 +2,26 @@
 
 # Rich text, bullets, and links stay semantic
 
-Bold lead followed by plain text
+**Bold lead** followed by plain text
+
 - level-one bullet
 - level-two bullet
+
 Open [example.com](https://example.com/docs) for documentation
 
 [Page_2]
 
 # Numeric labels are content, not synthetic slide numbers
 
-0
+**0**
 
-1
+**1**
 
-2
+**2**
 
-3
+**3**
 
-4
+**4**
 
 [Page_3]
 
@@ -43,9 +45,10 @@ emoji 😀
 
 # Merged headers fill columns; merged body stays singular
 
-| Merged table title | Merged table title | Merged table title |
-|---|---|---|
+**Merged table title**
+
 | Column A | Column B | Column C |
+| --- | --- | --- |
 | alpha<br>beta | plain cell | gamma |
 | merged body | merged body | tail |
 
@@ -70,7 +73,7 @@ The chart title, categories, series, and values must survive conversion.
 
 # Speaker notes remain separate from visible blocks
 
-visible-slide-body
+**visible-slide-body**
 
 [Speaker_Notes]
 
@@ -91,5 +94,5 @@ rotation-270
 
 # Mixed font sizes remain one coherent text block
 
-Mixed-style heading
+**Mixed-style heading**
 The smaller explanatory line remains body content.

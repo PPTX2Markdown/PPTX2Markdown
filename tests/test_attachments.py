@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+import io
+import struct
+import unittest
+import zipfile
+from pathlib import Path
+
+import pptx2markdown
+from pptx2markdown.assets import media_type_for
+from pptx2markdown.attachments import parse_ole10_native, payload_extension, unpack_ole
+from pptx2markdown.model import AttachmentBlock
+
+GOLDEN = Path(__file__).resolve().parent / "fixtures" / "golden"
+
+
+def _ole10_native(name: bytes, payload: bytes, temp_path: bytes = b"C:\\tmp\\x") -> bytes:
+    body = (
+        b"\x02\x00"
+        + name
+        + b"\x00"
+        + b"C:\\src\\"
+        + name
+        + b"\x00"
+        + b"\x00\x00\x03\x00"
+        + struct.pack("<I", len(temp_path))
+        + temp_path
+        + struct.pack("<I", len(payload))
+        + payload
+    )
+    return struct.pack("<I", len(body)) + body
+
+
+def _zip(*names: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name in names:
+            archive.writestr(name, "x")
+    return buffer.getvalue()
+
+
+class OleUnpackTests(unittest.TestCase):
+    def test_ole10_native_yields_original_name_and_bytes(self) -> None:
+        unpacked = parse_ole10_native(_ole10_native(b"C:\\Users\\me\\Result.json", b'{"a": 1}'))
+        self.assertEqual((unpacked.name, unpacked.payload), ("Result.json", b'{"a": 1}'))
+
+    def test_unicode_label_after_the_payload_wins_over_the_code_page_name(self) -> None:
+        def utf16(text: str) -> bytes:
+            return struct.pack("<I", len(text)) + text.encode("utf-16-le")
+
+        stream = _ole10_native("보고서.hwp".encode("cp949"), b"HWP")
+        trailer = utf16("C:\\Temp\\보고서.hwp") + utf16("보고서.hwp") + utf16("D:\\보고서.hwp")
+        self.assertEqual(parse_ole10_native(stream + trailer).name, "보고서.hwp")
+        # A cut-off trailer falls back to the code-page name, decoded as well as it can be.
+        fallback = parse_ole10_native(stream + trailer[:7])
+        self.assertEqual(fallback.payload, b"HWP")
+        self.assertTrue(fallback.name.endswith(".hwp"))
+
+    def test_truncated_or_oversized_native_streams_are_rejected(self) -> None:
+        stream = _ole10_native(b"a.txt", b"payload")
+        for broken in (stream[:10], stream[:-3], struct.pack("<I", 10**6) + stream[4:]):
+            with self.subTest(size=len(broken)), self.assertRaises(ValueError):
+                parse_ole10_native(broken)
+
+    def test_non_ole_data_is_not_unpacked(self) -> None:
+        self.assertIsNone(unpack_ole(b"PK\x03\x04plain zip", prog_id="", stem="x"))
+
+    def test_short_payload_is_never_opened_as_a_local_path(self) -> None:
+        local = Path(__file__).resolve()
+        self.assertIsNone(unpack_ole(bytes(local), prog_id="", stem="x"))
+        with self.assertRaises(ValueError):
+            unpack_ole(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1truncated", prog_id="", stem="x")
+
+    def test_document_stream_extension_comes_from_its_bytes_then_program(self) -> None:
+        self.assertEqual(payload_extension(_zip("word/document.xml")), ".docx")
+        self.assertEqual(payload_extension(_zip("xl/workbook.xml")), ".xlsx")
+        self.assertEqual(payload_extension(b"%PDF-1.7"), ".pdf")
+        self.assertEqual(payload_extension(b"\xd0\xcf", "Excel.Sheet.8"), ".xls")
+        self.assertEqual(payload_extension(b"??"), ".bin")
+
+    def test_office_documents_keep_their_media_type_over_zip(self) -> None:
+        self.assertEqual(
+            media_type_for("a.xlsx", b"PK\x03\x04"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        self.assertEqual(media_type_for("a.zip", b"PK\x03\x04"), "application/zip")
+
+
+@unittest.skipUnless(GOLDEN.is_dir(), "repository fixtures are not available")
+class FixtureAttachmentTests(unittest.TestCase):
+    def _attachments(self, name: str) -> list[tuple[str, str | None, str]]:
+        with pptx2markdown.parse(GOLDEN / name) as presentation:
+            assets = {asset.id: asset for asset in presentation.document.assets}
+            return [
+                (block.label, block.program, assets[block.asset_id].media_type)
+                for slide in presentation.document.slides
+                for block in slide.blocks
+                if isinstance(block, AttachmentBlock)
+            ]
+
+    def test_packager_object_is_unpacked_to_the_attached_file(self) -> None:
+        attachments = self._attachments("shapecrawler_table-chart-ole.pptx")
+        self.assertIn(("Result.json", "Package", "application/json"), attachments)
+
+    def test_embedded_document_is_labelled_by_its_file_name(self) -> None:
+        self.assertEqual(
+            self._attachments("python-pptx_ole-object.pptx"),
+            [
+                (
+                    "Microsoft_Excel_Worksheet.xlsx",
+                    "Excel.Sheet.12",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            ],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+OLE_SLIDE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+    <p:grpSpPr/>
+    <p:graphicFrame>
+      <p:nvGraphicFramePr><p:cNvPr id="4" name="Object 3"/><p:cNvGraphicFramePr/><p:nvPr/>
+      </p:nvGraphicFramePr>
+      <p:xfrm><a:off x="0" y="0"/><a:ext cx="1000000" cy="1000000"/></p:xfrm>
+      <a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole">
+        <p:oleObj name="Slide" progId="PowerPoint.Slide.8" r:id="rIdOle"/>
+      </a:graphicData></a:graphic>
+    </p:graphicFrame>
+  </p:spTree></p:cSld>
+</p:sld>"""
+
+
+class KeptOleNameTests(unittest.TestCase):
+    def test_object_kept_as_stored_is_named_after_the_object(self) -> None:
+        import tempfile
+
+        from .pptx_factory import build_test_pptx
+
+        relationship = (
+            '<Relationship Id="rIdOle" Type="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships/oleObject" Target="../embeddings/oleObject2.bin"/>'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            source = build_test_pptx(
+                Path(directory) / "ole.pptx",
+                OLE_SLIDE,
+                extra_slide_relationships=relationship,
+                extra_parts={
+                    "ppt/embeddings/oleObject2.bin": b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1x"
+                },
+            )
+            with pptx2markdown.parse(source) as presentation:
+                (block,) = presentation.document.slides[0].blocks
+                codes = [warning.code for warning in presentation.document.warnings]
+        self.assertEqual((block.label, block.program), ("Slide.bin", "PowerPoint.Slide.8"))
+        self.assertIn("ole-unpack-failed", codes)

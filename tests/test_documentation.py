@@ -11,21 +11,23 @@ AUTHORED_DOCUMENT_DIRS = (
     REPO_ROOT / ".github",
     REPO_ROOT / "docs",
     REPO_ROOT / "tests" / "fixtures" / "golden",
+    REPO_ROOT / "benchmarks",
 )
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 FENCED_CODE = re.compile(r"```.*?```", re.DOTALL)
 INLINE_CODE = re.compile(r"`[^`\n]*`")
 PUBLIC_FLAGS = (
     "--output-dir",
-    "--work-dir",
     "--output-format",
-    "--headings",
+    "--max-chunk-chars",
+    "--jobs",
     "--merged-cells",
-    "--placeholder-inheritance",
-    "--inherited-shapes",
+    "--recipe",
+    "--recipe-schema",
+    "--review",
+    "--audit",
     "--ppt-converter",
-    "--convert-vector-images",
-    "--verbose",
+    "--vector-images",
 )
 PROJECT_PEOPLE = [
     {"name": "Moonyoung Lee", "email": "happy518596@gmail.com"},
@@ -51,6 +53,7 @@ def korean_path(path: Path) -> Path:
     return path.with_name(path.stem + ".ko.md")
 
 
+@unittest.skipUnless((REPO_ROOT / "NOTICE").is_file(), "the repository is not available")
 class DocumentationPolicyTests(unittest.TestCase):
     def test_copyright_owners_are_present_in_notice(self) -> None:
         notice = (REPO_ROOT / "NOTICE").read_text(encoding="utf-8")
@@ -93,6 +96,14 @@ class DocumentationPolicyTests(unittest.TestCase):
             for flag in PUBLIC_FLAGS:
                 with self.subTest(path=relative_path, flag=flag):
                     self.assertIn(flag, text)
+
+    def test_every_public_flag_is_a_real_cli_option(self) -> None:
+        from pptx2markdown.cli import _parser
+
+        options = {option for action in _parser()._actions for option in action.option_strings}
+        for flag in PUBLIC_FLAGS:
+            with self.subTest(flag=flag):
+                self.assertIn(flag, options)
 
 
 if __name__ == "__main__":

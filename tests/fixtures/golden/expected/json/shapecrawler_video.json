@@ -1,44 +1,74 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "shapecrawler_video.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-0c522678421dd4d2",
+      "kind": "attachment",
+      "media_type": "video/mp4",
+      "original_name": "media1.mp4",
+      "payload_available": true,
+      "sha256": "63bcb544afb9e43b694dd54d82edc08f109ad24cd1e52fc1fbf544b5c5189eac",
+      "size": 417138,
+      "source_part": "ppt/media/media1.mp4"
+    },
+    {
+      "id": "asset-c81c8c9c77ff6df8",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image1.png",
+      "payload_available": true,
+      "sha256": "77565ef5835599422cb99e32ba5134525c9e3c323cd4c221ebe40e8d9d05f534",
+      "size": 21211,
+      "source_part": "ppt/media/image1.png"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "image",
-          "content": "![image](media/image1.png)",
-          "shape_id": "5",
-          "heading_level": null,
+          "alt_text": "Video 1",
+          "asset_id": "asset-c81c8c9c77ff6df8",
           "bbox": {
-            "x": 4064000,
-            "y": 2286000,
-            "width": 4064000,
             "height": 2286000,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 4064000,
+            "x": 4064000,
+            "y": 2286000
           },
+          "description": null,
+          "id": "s1.b1",
+          "kind": "image",
+          "shape_id": "5",
           "source_part": "slide"
         },
         {
-          "kind": "attachment",
-          "content": "[attachment: media1.mp4](attachments/media1.mp4)",
-          "shape_id": "5",
-          "heading_level": null,
+          "asset_id": "asset-0c522678421dd4d2",
           "bbox": {
-            "x": 4064000,
-            "y": 2286000,
-            "width": 4064000,
             "height": 2286000,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 4064000,
+            "x": 4064000,
+            "y": 2286000
           },
+          "id": "s1.b2",
+          "kind": "attachment",
+          "label": "media1.mp4",
+          "program": null,
+          "shape_id": "5",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "shapecrawler_video.pptx",
+    "sha256": "7062761c2e07ba0c81b34f50e4ab3f9192b49ac3d252d4ec594c1f5cafbd3c56"
+  },
+  "warnings": []
 }

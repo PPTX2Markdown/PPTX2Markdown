@@ -2,7 +2,7 @@
 
 [English](agent_contract.md)
 
-상태: `rewrite/`의 차세대 엔진에 적용 중 (review 스키마 버전 1).
+상태: 0.2.0부터 적용 (review 스키마 버전 1).
 
 ## 역할
 

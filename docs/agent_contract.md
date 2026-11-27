@@ -2,8 +2,7 @@
 
 [한국어](agent_contract.ko.md)
 
-Status: in effect for the next-generation engine in `rewrite/` (review schema
-version 1).
+Status: in effect since 0.2.0 (review schema version 1).
 
 ## Roles
 

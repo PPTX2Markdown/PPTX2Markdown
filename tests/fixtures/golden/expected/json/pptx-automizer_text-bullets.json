@@ -1,51 +1,153 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "pptx-automizer_text-bullets.pptx",
-    "format": "pptx"
-  },
+  "assets": [],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "list",
-          "content": "Static Text\n1. {{bullet1}}\nNext Line with static text.\n- {{bullet2}}\n  - {{bullet2-1}}\nFinal Line",
-          "shape_id": "15",
-          "heading_level": null,
           "bbox": {
-            "x": 969171,
-            "y": 1249789,
-            "width": 4998720,
             "height": 5008771,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
           },
-          "source_part": "slide"
+          "id": "s1.b1",
+          "kind": "text",
+          "shape_id": "15",
+          "source_part": "slide",
+          "text": "**Static Text**"
+        },
+        {
+          "bbox": {
+            "height": 5008771,
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
+          },
+          "id": "s1.b2",
+          "items": [
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "{{bullet1}}"
+            }
+          ],
+          "kind": "list",
+          "ordered": true,
+          "shape_id": "15",
+          "source_part": "slide",
+          "start": 1
+        },
+        {
+          "bbox": {
+            "height": 5008771,
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
+          },
+          "id": "s1.b3",
+          "kind": "text",
+          "shape_id": "15",
+          "source_part": "slide",
+          "text": "Next Line with static text."
+        },
+        {
+          "bbox": {
+            "height": 5008771,
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
+          },
+          "id": "s1.b4",
+          "items": [
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "{{bullet2}}"
+            },
+            {
+              "level": 1,
+              "ordered": null,
+              "text": "{{bullet2-1}}"
+            }
+          ],
+          "kind": "list",
+          "ordered": false,
+          "shape_id": "15",
+          "source_part": "slide",
+          "start": 1
+        },
+        {
+          "bbox": {
+            "height": 5008771,
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
+          },
+          "id": "s1.b5",
+          "kind": "text",
+          "shape_id": "15",
+          "source_part": "slide",
+          "text": "Final Line"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 2,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "list",
-          "content": "- Placeholder\n  - Test Level 2\n    - Test Level 3",
-          "shape_id": "15",
-          "heading_level": null,
           "bbox": {
-            "x": 969171,
-            "y": 1249789,
-            "width": 4998720,
             "height": 5008771,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 4998720,
+            "x": 969171,
+            "y": 1249789
           },
-          "source_part": "slide"
+          "id": "s2.b1",
+          "items": [
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "Placeholder"
+            },
+            {
+              "level": 1,
+              "ordered": null,
+              "text": "Test Level 2"
+            },
+            {
+              "level": 2,
+              "ordered": null,
+              "text": "Test Level 3"
+            }
+          ],
+          "kind": "list",
+          "ordered": false,
+          "shape_id": "15",
+          "source_part": "slide",
+          "start": 1
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 2,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "pptx-automizer_text-bullets.pptx",
+    "sha256": "27c8e646619ea967dcb228ba957a448d22aafbfb8bd7f2109c5a2e8233c70b32"
+  },
+  "warnings": []
 }

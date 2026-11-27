@@ -2,7 +2,7 @@
 
 English | [한국어](development_status.ko.md)
 
-Last verified: 2026-11-21
+Last verified: 2026-11-27
 
 This document records the current engineering state. Read it together with
 `git status --short --branch` before changing the worktree.
@@ -10,147 +10,67 @@ This document records the current engineering state. Read it together with
 ## Repository state
 
 - Active development branch: `dev` (pull requests merge into `dev`; releases
-  go `dev` -> `main`)
-- Released: `0.1.2` on PyPI; unreleased changes on `dev` are listed in
+  go `dev` -> `main`, then a GitHub release publishes to PyPI)
+- Released: `0.2.0`, the engine that replaced the 0.1 converter; changes are in
   [CHANGELOG.md](../CHANGELOG.md)
-- Next-generation engine: `rewrite/`, unreleased, see below
-- Public package layout: `src/pptx2markdown/`
-- Packaging backend: Hatchling
-- Supported Python: 3.12 and newer
-- Local sample, output, work, and archive directories are not release sources
-
-The source state before the PyPI restructure is preserved by branch
-`archive-pre-pypi-restructure` and annotated tag `pre-pypi-restructure`.
+- The 0.1 converter is kept on branch `legacy-0.1` (bug fixes only, no release
+  planned); the removed Claude agent layer is kept on `archive/agent` for a
+  separate multi-format agent project
+- Package layout: `src/pptx2markdown/`, Hatchling, Python 3.12 and newer
 
 ## Product contract
 
-- Conversion is static: no Surya, OCR, VLM, model provider, API key, or cloud
-  inference path remains.
-- XY-cut over native shape geometry is the only reading-order algorithm.
-- Markdown and JSON are rendered from one `PresentationDocument 1.0`.
-- No pre-release compatibility layer is maintained.
-- Normal `.pptx` conversion is local. Legacy `.ppt` conversion may invoke
-  PowerPoint on Windows or LibreOffice.
-- Final output and intermediate work use separate configurable roots.
-- Office lock files matching `~$*.pptx` are skipped; a named one is reported
-  with a warning.
+- Conversion is static and model-free: the package imports no model SDK (a test
+  enforces it). Judgement plugs in through recipes, `review()` answers and the
+  judge loops; see [the converter–agent contract](agent_contract.md).
+- The same input and options give the same bytes on every supported OS.
+- `.pptx` conversion is local. LibreOffice runs only when asked for: `.ppt`
+  input, EMF/WMF as PNG, rendering flagged slides.
+- Nothing is written outside the output bundle.
 
-## Output contract
-
-The packaged JSON Schema is
-`src/pptx2markdown/presentation_document.schema.json`. It defines:
-
-- basename-only source identity
-- ordered positive slide pages
-- hidden slides and speaker notes
-- closed content-block kinds
-- heading-level invariants
-- optional EMU geometry
-- slide/layout/master provenance
-- deterministic relative asset links
-
-See [Output schema](output_schema.md).
+See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, lifecycle and security,
+and [the reading-order design](reading_order_design.md).
 
 ## Regression assets
 
-The always-on repository suite contains 17 PPTX files:
+- `tests/fixtures/golden/`: 17 PPTX files (two project-owned synthetic decks,
+  15 pinned MIT-licensed upstream decks) with reviewed Markdown and JSON
+  snapshots and asset hashes; `scripts/update_goldens.py --check` and
+  `tests/test_goldens.py` compare them byte for byte. See the
+  [golden suite](../tests/fixtures/golden/README.md).
+- `tests/fixtures/xycut_*`: expected reading orders.
+- `benchmarks/`: feature checks against MarkItDown and anydoc (20 of 20 kept,
+  anydoc 13, MarkItDown 8) and synthetic reading-order cases (9 of 11, the
+  other two flagged with the right candidate).
+- An ignored local corpus (`.pptx2markdown/corpus/`, 966 decks) for broad
+  qualification; not a CI dependency.
 
-- two project-owned synthetic presentations
-- 15 pinned MIT-licensed upstream presentations
-- complete reviewed JSON snapshots
-- complete reviewed Markdown snapshots
-- input, output, and emitted-asset SHA-256 hashes
-- pinned provenance and third-party notices
-
-An additional ignored corpus is used for broad local qualification but is not a
-CI dependency. See the [golden suite](../tests/fixtures/golden/README.md).
-
-## Next-generation engine (`rewrite/`)
-
-`rewrite/` is a separate package (also named `pptx2markdown`, version
-`0.2.0.dev0`) built to replace `src/` once it covers the same content. It keeps
-the static pipeline and adds escaped inline Markdown with emphasis, structured
-tables, block ids with declarative recipes, a review of uncertain decisions, an
-MCP server, slide chunks, and in-memory input. It also reads
-ISO Strict decks, audits every conversion for lost text (`--audit`), converts
-`.ppt` input and EMF/WMF images through LibreOffice when asked to, and describes
-images with any model (`describe_images_with`). See
-[rewrite/README.md](../rewrite/README.md) and
-[rewrite/ARCHITECTURE.md](../rewrite/ARCHITECTURE.md).
-
-`scripts/parity.py` converts the same decks with both engines and compares them
-shape by shape (legacy is the reference). CI fails when the rewrite does worse
-than `scripts/parity_baseline.json`; deliberate differences are set back to
-legacy behaviour through `scripts/parity_legacy_recipe.json`. On the repository
-fixtures 60 of 62 slides match; the two remaining differences are deliberate.
-
-On the local corpus (952 decks compared, 2,657 slides) the rewrite keeps 99.8% of
-legacy's words at 99.9% precision, and its audit finds no lost text in any of
-984 corpus, sample and fixture decks (20,641 text runs). Every deck it cannot
-open (fuzzed, encrypted or damaged files) fails in legacy as well. Most of the
-remaining per-shape differences are deliberate: paragraphs with only a level and
-no bullet are text, not lists; legacy turns numbered lists into headings;
-attachment names keep their spaces; template background pictures are left out.
-In the feature benchmark (`benchmarks/`) the rewrite passes 20 of 20 checks,
-anydoc 13 and MarkItDown 8.
-
-## Latest verification baseline
-
-The following completed successfully on 2026-11-21:
-
-- Ruff lint and format checks for `src/`, `tests/`, `scripts/` and `rewrite/`
-- 127 legacy unit and regression tests, 17 golden PPTX files in both modes
-- about 185 rewrite tests on Python 3.12, 3.13 and 3.14
-- legacy/rewrite parity gate (60/62 fixture slides)
-- GitHub Actions on Ubuntu, macOS and Windows
-
-## Security boundaries
-
-Shared OOXML extraction rejects traversal, symlinks, encrypted entries,
-relationship escape, excessive entry counts, excessive uncompressed size, and
-suspicious compression ratios. Extracted attachments remain untrusted input
-data and should not be opened automatically.
+Before 0.2.0 the engine was checked shape by shape against the 0.1 converter
+(`scripts/parity.py`, now on `legacy-0.1`): 99.8% of legacy's words kept on
+the corpus, and no lost text found by `audit()` in any corpus deck.
 
 ## Known limitations
 
-1. Text inside images is not OCRed.
-2. Audio and video are not transcribed.
-3. Connector semantics, animations, and transitions are not reconstructed.
-4. Output preserves document structure, not pixel-perfect slide appearance.
-5. PowerPoint review comments are intentionally excluded.
-6. Broad local-corpus tests skip when ignored source files are unavailable.
+1. Text inside images is not OCRed; audio and video are not transcribed.
+2. Connector semantics, animations and transitions are not reconstructed.
+3. Tables drawn from the slide layout or master are not read.
+4. PowerPoint review comments are intentionally excluded.
 
 ## Next steps
 
-1. Review `dev` and release the unreleased changes in CHANGELOG.md as `0.1.3`
-   (merge `dev` into `main`, tag, publish).
-2. Decide when `rewrite/` replaces `src/`. Corpus parity, `.ppt` input and
-   vector images are covered and MIGRATION.md lists the remaining differences;
-   what is left is a release decision (JSON schema 2.0 notice, version number).
-3. Make omml2latex run on Python 3.10/3.11 (one f-string with a backslash in
-   its expression) to widen supported Python versions.
-
-## Important files
-
-- `src/pptx2markdown/api.py`: public Python API
-- `src/pptx2markdown/main_converter/run_pptx_to_markdown.py`: orchestration and CLI
-- `src/pptx2markdown/main_converter/slide_converter.py`: slide-to-document parsing
-- `src/pptx2markdown/main_converter/converter_models.py`: document models and renderer
-- `src/pptx2markdown/structure_analyzer/structure.py`: XY-cut and heading analysis
-- `src/pptx2markdown/ooxml_security.py`: shared package security policy
-- `scripts/update_goldens.py`: golden verification and controlled refresh
-- `tests/test_repository_goldens.py`: repository golden regression suite
+1. Build the multi-format agent as its own project on the decision-point
+   contract (start from `archive/agent`).
+2. Validate reading order and review items on Korean business decks; the local
+   corpus has almost none.
+3. Make omml2latex run on Python 3.10/3.11 to widen supported versions.
 
 ## New-context checklist
 
 ```bash
 git status --short --branch
+python -m pip install -e ".[mcp]"
 python -m unittest discover -v
 python scripts/update_goldens.py --check
-ruff check src tests scripts
-ruff format --check src tests scripts
+ruff check src tests scripts benchmarks
+ruff format --check src tests scripts benchmarks
 ```
-
-Use fresh temporary output and work directories for manual conversion checks.
-Preserve unrelated local changes. When a parser or schema change alters output,
-review both JSON and Markdown diffs before accepting snapshots.
