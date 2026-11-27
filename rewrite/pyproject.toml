@@ -18,7 +18,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-agent = ["anthropic>=2.12"]
 mcp = ["mcp>=2.3"]
 # Trims the page margin LibreOffice leaves around EMF/WMF drawn as PNG.
 images = ["pillow>=10"]

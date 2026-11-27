@@ -103,9 +103,8 @@ pptx2markdown은 확신이 없는 곳을 스스로 알려 주는 결정적 PPTX 
 렌더링하고, MCP 도구 `presentation_slides`는 `look: "slide"` 항목의 슬라이드를 호스트
 모델에게 보여 주므로 별도 API 키 없이도 답할 수 있습니다.
 
-`pptx2markdown.agent`(선택적 `[agent]` extra)는 이 루프에 Claude를 붙인 것입니다.
-모델 SDK를 import하는 유일한 모듈이며, 코어와 MCP 서버는 이를 불러오지 않습니다
-(테스트로 강제).
+패키지는 어떤 모델 SDK도 import하지 않습니다(테스트로 강제). Claude든 다른 모델이든
+모델을 부르는 에이전트는 별도 프로젝트에 두고 이 루프나 MCP 도구에 연결합니다.
 
 ## 버전
 

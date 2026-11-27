@@ -25,7 +25,7 @@ The rewrite separates four responsibilities:
 - local `.pptx` input; legacy `.ppt` only when asked for, through LibreOffice
 
 There is no OCR, VLM, API key, cloud inference or PowerPoint automation in the
-parsing path; the optional agent is a separate layer. A `.ppt` file is converted
+parsing path; models only ever see what you hand them. A `.ppt` file is converted
 only with `ppt_converter="libreoffice"` (`--ppt-converter libreoffice`), which runs
 LibreOffice headless in temporary directories that are removed afterwards
 (`SOFFICE_PATH` selects the program). The same goes for `vector_images="png"`
@@ -158,8 +158,7 @@ by side text with no gap between), the slide gets a `reading-order` review item
 whose options are the candidate orders as `order` rules, so only those slides
 need a person or a model to look at them. `choose_reading_orders_with(presentation,
 judge)` renders just those slides as one-page PDFs (LibreOffice, locally) and asks
-your `judge` function to name a candidate; `agent.choose_reading_orders` does the
-same with Claude. See [the design](../docs/reading_order_design.md).
+your `judge` function to name a candidate. See [the design](../docs/reading_order_design.md).
 
 Every item has the same shape whatever it is about, so a caller can plan
 before it looks: a stable `id` (`table-header-rows@s3.b2`), machine-readable
@@ -205,37 +204,18 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 bundles and exits with 1 when text was lost. Content removed by a recipe would
 be reported too, so the CLI and MCP tool audit the conversion without one.
 
-### Agent (optional)
+### Judging with a model
 
-`pip install "pptx2markdown[agent]"` adds a language-model layer on top of
-recipes and review. The model never edits the parser or the text: it reads the
-deck with block ids and writes a recipe, which is validated, checked so that every
-rule selects something (a failing recipe is sent back once with the problem), and
-applied like a hand-written one. It uses Claude (`claude-opus-5-5` by default,
-with the API's refusal fallback on) through the Anthropic SDK and the usual
-`ANTHROPIC_API_KEY` or `ant auth login` credentials. Nothing in the parsing path
-calls a model.
+Nothing in the package calls a model. Where judgement helps, it hands a function
+you supply exactly what that judgement needs and turns the answers into recipe
+rules: `answer` review items with `recipe_from_answers`, describe pictures with
+`describe_images_with`, pick reading orders with `choose_reading_orders_with`.
+The function can be a person, a local model or a hosted one. Through the MCP
+server below, the host model (Claude Code, for example) does the same with no API
+key of its own. A multi-format agent can sit on top through
+[the contract](../docs/agent_contract.md).
 
-```python
-from pptx2markdown import agent, merge_recipes
-
-with pptx2markdown.parse("deck.pptx") as presentation:
-    draft = agent.draft_recipe(
-        presentation.document,
-        "This goes into a search index: drop the appendix after slide 20 and "
-        "treat grouped table headers as two rows.",
-    )
-    print(draft.summary, draft.unmatched)
-    answers = agent.answer_review(presentation.document)  # picks review options
-    images = agent.describe_images(presentation, language="Korean")  # vision
-    order = agent.choose_reading_orders(presentation)  # flagged slides only
-    presentation.apply(merge_recipes(draft.recipe, answers, images, order))
-```
-
-`pptx2markdown deck.pptx --ask "drop the appendix"` prints the drafted recipe as
-JSON for review; apply it with `--recipe`.
-
-Images can be described by any model, local or not, with no agent extra:
+Images can be described by any model, local or not, with nothing extra to install:
 `describe_images_with` hands each picture that needs a description to a function
 you supply, with the slide's Markdown for context, and returns a recipe. Nothing
 leaves the machine unless that function sends it.
@@ -376,9 +356,8 @@ moved without breaking embedded assets.
 Unsupported or unavailable content produces a structured warning or an
 `UnsupportedBlock`; it is not silently treated as successfully converted.
 
-Legacy `.ppt`, tables drawn from the layout or master, OCR and vector image
-rasterization are not part of the rewrite; image descriptions come only from the
-optional agent.
+OCR and tables drawn from the layout or master are not part of the rewrite;
+image descriptions come from a describer you supply.
 
 ## Development
 

@@ -152,7 +152,6 @@ with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
 순서를 담은 `order` 규칙입니다. 그래서 사람이나 모델은 그런 슬라이드만 보면 됩니다.
 `choose_reading_orders_with(presentation, judge)`는 그 슬라이드만 LibreOffice로 로컬에서
 한 장짜리 PDF로 렌더링해, 사용자가 준 `judge` 함수에 후보 중 하나를 고르게 합니다.
-`agent.choose_reading_orders`는 같은 일을 Claude로 합니다.
 [설계 문서](../docs/reading_order_design.ko.md)를 참고하세요.
 
 ```python
@@ -166,7 +165,7 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 
 ### 이미지 설명(모델 무관)
 
-이미지 설명은 agent extra 없이 로컬이든 아니든 어떤 모델로도 만들 수 있습니다.
+이미지 설명은 추가 설치 없이 로컬이든 아니든 어떤 모델로도 만들 수 있습니다.
 `describe_images_with`는 설명이 필요한 그림마다 슬라이드 Markdown을 맥락으로 붙여
 사용자가 준 함수에 넘기고, 답을 레시피로 돌려줍니다. 그 함수가 보내지 않는 한
 어떤 데이터도 밖으로 나가지 않습니다(사내망·온프레미스 환경).
@@ -201,34 +200,15 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 손실이 있으면 종료 코드 1을 돌려줍니다. 레시피가 지운 내용도 손실로 보이므로 CLI와
 MCP 도구는 레시피 없이 변환 결과를 감사합니다.
 
-### 에이전트(선택)
+### 모델로 판단하기
 
-`pip install "pptx2markdown[agent]"`를 설치하면 레시피와 검토 위에 언어 모델
-계층이 추가됩니다. 모델은 파서나 본문을 직접 고치지 않습니다. 블록 id가 표시된
-덱을 읽고 레시피를 쓰며, 그 레시피는 검증을 거치고 모든 규칙이 무언가를
-고르는지 확인한 뒤(문제가 있으면 한 번 되돌려 고치게 함) 손으로 쓴 레시피와
-똑같이 적용됩니다. Anthropic SDK로 Claude(기본 `claude-opus-5-5`, API의 거절
-시 fallback 사용)를 호출하며, 자격 증명은 `ANTHROPIC_API_KEY`나 `ant auth login`을
-씁니다. 파싱 경로에서는 모델을 호출하지 않습니다.
-
-```python
-from pptx2markdown import agent, merge_recipes
-
-with pptx2markdown.parse("deck.pptx") as presentation:
-    draft = agent.draft_recipe(
-        presentation.document,
-        "검색 인덱스에 넣을 거야. 20번 슬라이드 뒤 부록은 빼고, 그룹으로 묶인 표 "
-        "머리글은 두 줄로 봐줘.",
-    )
-    print(draft.summary, draft.unmatched)
-    answers = agent.answer_review(presentation.document)  # 검토 선택지 고르기
-    images = agent.describe_images(presentation, language="Korean")  # 이미지 설명
-    order = agent.choose_reading_orders(presentation)  # 표시된 슬라이드만
-    presentation.apply(merge_recipes(draft.recipe, answers, images, order))
-```
-
-`pptx2markdown deck.pptx --ask "부록은 빼줘"`는 작성된 레시피를 JSON으로 출력하므로,
-검토한 뒤 `--recipe`로 적용하면 됩니다.
+패키지 안에서는 어떤 모델도 호출하지 않습니다. 판단이 필요한 곳에서는 그 판단에
+필요한 것만 사용자가 넘긴 함수에 전달하고, 답을 레시피 규칙으로 바꿉니다. 검토
+항목은 `recipe_from_answers`, 이미지 설명은 `describe_images_with`, 읽기 순서는
+`choose_reading_orders_with`로 처리합니다. 함수는 사람이어도, 로컬 모델이어도,
+호스팅 모델이어도 됩니다. 아래 MCP 서버를 쓰면 호스트 모델(예: Claude Code)이
+별도 API 키 없이 같은 일을 합니다. 여러 포맷을 다루는 에이전트는
+[계약](../docs/agent_contract.ko.md)을 통해 그 위에 올릴 수 있습니다.
 
 ### MCP 서버
 
@@ -348,8 +328,8 @@ Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 �
 지원하지 못하거나 관계가 없는 콘텐츠는 구조화 warning 또는
 `UnsupportedBlock`으로 남기며, 성공한 것처럼 조용히 버리지 않습니다.
 
-구형 `.ppt`, layout/master에 그려진 표, OCR, vector 이미지 rasterization은 rewrite
-범위에 포함하지 않으며, 이미지 설명은 선택 설치하는 에이전트만 만듭니다.
+OCR과 layout/master에 그려진 표는 rewrite 범위에 포함하지 않으며, 이미지 설명은
+사용자가 넘긴 설명 함수가 만듭니다.
 
 ## 개발
 

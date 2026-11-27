@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pptx2markdown
 from pptx2markdown import Recipe, slide_chunks
-from pptx2markdown.agent import document_view
 from pptx2markdown.recipe import Selector
+from pptx2markdown.render import annotated_markdown
 
 from .pptx_factory import PRESENTATION_RELS, build_test_pptx
 
@@ -68,7 +68,7 @@ class SectionTests(unittest.TestCase):
             [chunk.metadata["section"] for chunk in slide_chunks(document)],
             ["Results", "Appendix"],
         )
-        self.assertIn("<!-- section: Appendix -->", document_view(document))
+        self.assertIn("<!-- section: Appendix -->", annotated_markdown(document))
 
     def test_a_recipe_can_select_a_section(self) -> None:
         recipe = Recipe.model_validate(

@@ -5,12 +5,10 @@ import unittest
 from pathlib import Path
 
 import pptx2markdown
-from pptx2markdown.agent import _OrderChoice, choose_reading_orders
 from pptx2markdown.libreoffice import find_soffice
 from pptx2markdown.ordering import AS_CONVERTED, OrderRequest, choose_reading_orders_with
 
 from .pptx_factory import build_test_pptx
-from .test_agent import FakeClient
 
 INCH = 914_400
 
@@ -96,21 +94,6 @@ class ChooseReadingOrdersTests(unittest.TestCase):
             choose_reading_orders_with(presentation, self.judge(None))
         (request,) = self.requests
         self.assertTrue(request.slide_pdf and request.slide_pdf.startswith(b"%PDF"))
-
-    def test_agent_sends_the_slide_and_candidates_and_validates_the_answer(self) -> None:
-        client = FakeClient(
-            _OrderChoice(reason="tracks run left to right", choice="rows first"),
-            _OrderChoice(reason="?", choice="made up"),
-        )
-        with pptx2markdown.parse(self.source) as presentation:
-            recipe = choose_reading_orders(
-                presentation, client=client, source=Path(self.directory.name) / "missing.pptx"
-            )
-            self.assertEqual(recipe.rules[0].reason, "reading order: rows first")
-            self.assertEqual(choose_reading_orders(presentation, client=client).rules, ())
-        text = client.calls[0]["messages"][0]["content"][-1]["text"]
-        self.assertIn('<candidate name="rows first">', text)
-        self.assertIn("1. Alpha step 0", text)
 
 
 if __name__ == "__main__":
