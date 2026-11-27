@@ -62,6 +62,11 @@ pptx2markdown은 확신이 없는 곳을 스스로 알려 주는 결정적 PPTX 
 | `free_text` | 설정된 경우, 자유 텍스트 답이 이 규칙 필드를 채움 |
 | `evidence` | 변환기가 사용한 주제별 근거 |
 
+항목을 감싸는 보고서(`--review`, MCP `review_presentation`)에는 `schema_version`과
+전체 항목에 대한 주제·look·impact별 `counts`가 있습니다. MCP 도구는 `topics`, `looks`,
+`impact`, `pages`로 목록만 좁히고 counts는 그대로 두며, `convert_presentation`도
+`pages`를 받으므로 큰 덱에서도 에이전트는 지금 판단할 것만 가져옵니다.
+
 `look`과 `impact`로 에이전트가 비용을 계획할 수 있습니다. `text` 항목은 Markdown만
 보고 한 번에 답하고, `slide` 항목의 페이지만 렌더링하고, `image` 항목의 그림만
 가져오며, 시간·비용이 부족하면 `low` 항목은 건너뜁니다.

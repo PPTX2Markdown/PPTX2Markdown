@@ -173,7 +173,7 @@ text. See [the contract](../docs/agent_contract.md).
 
 ```python
 with pptx2markdown.parse("deck.pptx") as presentation:
-    items = pptx2markdown.review(presentation.document)
+    items = presentation.review()
     for item in items:
         print(item.id, item.look, item.question, [option.id for option in item.options])
     recipe = pptx2markdown.recipe_from_answers(
@@ -256,7 +256,8 @@ with pptx2markdown.parse("deck.pptx") as presentation:
 `pip install "pptx2markdown[mcp]"` adds `pptx2markdown-mcp`, a Model Context
 Protocol server (stdio) so an agent such as Claude can run the recipe workflow
 itself: `convert_presentation` (Markdown with block ids, optionally with a
-recipe applied), `review_presentation`, `answers_to_recipe` (review answers
+recipe applied, or only some `pages`), `review_presentation` (filterable by
+topic, look, impact and page), `answers_to_recipe` (review answers
 to a recipe), `audit_presentation` (text the
 conversion lost), `presentation_images` (pictures without a description, as
 images, so the host model can describe them in a recipe), `presentation_slides`

@@ -14,6 +14,7 @@ from .render import AssetResolver, render_presentation_json, render_presentation
 if TYPE_CHECKING:
     from .audit import AuditReport
     from .recipe import Recipe
+    from .review import ReviewItem
 
 
 class ParsedPresentation:
@@ -79,6 +80,13 @@ class ParsedPresentation:
         if self.source_path is None:
             raise ValueError("the presentation was not parsed from a file; pass its bytes")
         return audit(self.source_path, self.document)
+
+    def review(self) -> "tuple[ReviewItem, ...]":
+        """The decisions most worth a second look; see ``pptx2markdown.review``."""
+
+        from .review import review
+
+        return review(self.document)
 
     def apply(self, recipe: "Recipe | Mapping[str, Any] | str") -> "ParsedPresentation":
         """Apply a recipe (model, mapping or JSON text) to the document in place."""

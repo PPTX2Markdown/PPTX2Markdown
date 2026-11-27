@@ -66,6 +66,10 @@ class ToolFunctionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no review item"):
             mcp_server.answers_to_recipe(self.path, {"heading@s9.b1": "keep"})
 
+    def test_convert_can_show_only_some_slides(self) -> None:
+        self.assertEqual(mcp_server.convert_presentation(self.path, pages=[99]), "")
+        self.assertIn("[Page_1]", mcp_server.convert_presentation(self.path, pages=[1]))
+
     def test_chunks_and_schema(self) -> None:
         chunks = mcp_server.presentation_chunks(self.path, max_chars=500)
         self.assertEqual(chunks[0]["metadata"]["page"], 1)
@@ -82,6 +86,28 @@ class SlideTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.directory.cleanup()
+
+    def test_review_filters_narrow_the_list_but_not_the_counts(self) -> None:
+        full = mcp_server.review_presentation(self.path)
+        self.assertEqual(
+            full["counts"],
+            {
+                "total": 1,
+                "topic": {"reading-order": 1},
+                "look": {"slide": 1},
+                "impact": {"high": 1},
+            },
+        )
+        for narrowed in (
+            {"pages": [2]},
+            {"looks": ["text"]},
+            {"impact": "low"},
+            {"topics": ["heading"]},
+        ):
+            report = mcp_server.review_presentation(self.path, **narrowed)
+            self.assertEqual((report["items"], report["counts"]), ([], full["counts"]))
+        shown = mcp_server.review_presentation(self.path, looks=["slide"], pages=[1])
+        self.assertEqual([item["id"] for item in shown["items"]], ["reading-order@slide[1]"])
 
     @unittest.skipUnless(find_soffice(), "LibreOffice is not installed")
     def test_slides_review_asks_to_look_at_are_rendered(self) -> None:

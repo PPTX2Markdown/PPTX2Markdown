@@ -57,32 +57,61 @@ def _open(
     return parse(source, include_assets=include_assets, strict=False, recipe=parsed_recipe)
 
 
-def convert_presentation(path: str, recipe: dict[str, Any] | None = None) -> str:
+def convert_presentation(
+    path: str, recipe: dict[str, Any] | None = None, pages: list[int] | None = None
+) -> str:
     """Convert a .pptx file to Markdown with block ids, optionally applying a recipe.
 
     Args:
         path: Local path to the .pptx file.
         recipe: Optional recipe (see recipe_schema) applied before rendering.
+        pages: Only these slides, e.g. the pages of the review items being answered.
     """
 
     with _open(path, recipe) as presentation:
-        return annotated_markdown(presentation.document)
+        document = presentation.document
+        if pages is not None:
+            wanted = set(pages)
+            document = document.model_copy(
+                update={"slides": tuple(s for s in document.slides if s.page in wanted)}
+            )
+        return annotated_markdown(document)
 
 
-def review_presentation(path: str) -> dict[str, Any]:
+def review_presentation(
+    path: str,
+    topics: list[str] | None = None,
+    looks: list[str] | None = None,
+    impact: str | None = None,
+    pages: list[int] | None = None,
+) -> dict[str, Any]:
     """List conversion decisions worth checking, each option with its recipe rule.
 
     Each item has a stable id, reason codes, the page and what to look at to decide
     ("text": the slide's Markdown is enough, "slide": its rendering, "image": the
     picture), an impact ("high" items change content, "low" ones formatting) and the
-    suggested option. Answer with answers_to_recipe.
+    suggested option. Answer with answers_to_recipe. The counts always cover every
+    item; the filters only narrow the list, which keeps large decks manageable.
 
     Args:
         path: Local path to the .pptx file.
+        topics: Only these topics, e.g. ["reading-order", "table-header-rows"].
+        looks: Only items needing this to decide: "text", "slide" or "image".
+        impact: Only "high" or only "low" items.
+        pages: Only items on these slides.
     """
 
     with _open(path, None) as presentation:
-        return review_report(review(presentation.document))
+        items = review(presentation.document)
+    shown = [
+        item
+        for item in items
+        if (topics is None or item.topic in topics)
+        and (looks is None or item.look in looks)
+        and (impact is None or item.impact == impact)
+        and (pages is None or item.page in pages)
+    ]
+    return review_report(items, shown)
 
 
 def answers_to_recipe(
