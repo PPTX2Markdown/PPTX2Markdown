@@ -413,10 +413,28 @@ def review_data(items: Sequence[ReviewItem]) -> list[dict[str, Any]]:
     return data
 
 
-def review_report(items: Sequence[ReviewItem]) -> dict[str, Any]:
-    """The items with the schema version, the form the CLI and MCP server return."""
+def review_report(
+    items: Sequence[ReviewItem], shown: Sequence[ReviewItem] | None = None
+) -> dict[str, Any]:
+    """The form the CLI and MCP server return: schema version, counts, items.
 
-    return {"schema_version": REVIEW_SCHEMA_VERSION, "items": review_data(items)}
+    The counts (by topic, look and impact) cover all ``items``, so a caller can plan
+    what to render or fetch; ``shown`` limits the items listed, as a filter would.
+    """
+
+    def count(values: list[str]) -> dict[str, int]:
+        return {value: values.count(value) for value in dict.fromkeys(values)}
+
+    return {
+        "schema_version": REVIEW_SCHEMA_VERSION,
+        "counts": {
+            "total": len(items),
+            "topic": count([item.topic for item in items]),
+            "look": count([item.look for item in items]),
+            "impact": count([item.impact for item in items]),
+        },
+        "items": review_data(items if shown is None else shown),
+    }
 
 
 def review_json_schema() -> dict[str, Any]:

@@ -75,6 +75,15 @@ class ChooseReadingOrdersTests(unittest.TestCase):
         self.assertEqual(recipe.rules[0].target, "slide[1]")
         self.assertEqual(texts[:3], ["Alpha step 0", "Alpha step 1", "Alpha step 2"])
 
+    def test_presentation_review_answers_apply_as_a_recipe(self) -> None:
+        with pptx2markdown.parse(self.source) as presentation:
+            items = presentation.review()
+            presentation.apply(
+                pptx2markdown.recipe_from_answers(items, {"reading-order@slide[1]": "rows-first"})
+            )
+            texts = [b.text for b in presentation.document.slides[0].blocks]
+        self.assertEqual(texts[:3], ["Alpha step 0", "Alpha step 1", "Alpha step 2"])
+
     def test_keeping_or_unknown_choices_add_no_rule(self) -> None:
         with pptx2markdown.parse(self.source) as presentation:
             for choice in (None, AS_CONVERTED, "something else"):

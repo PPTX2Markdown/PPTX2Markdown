@@ -64,6 +64,12 @@ converter reports decisions in this shape.
 | `free_text` | When set, an answer may be free text that fills this rule field |
 | `evidence` | Topic-specific facts the converter used |
 
+The report around the items (`--review`, MCP `review_presentation`) carries
+`schema_version` and `counts` by topic, look and impact over all items. The MCP
+tool filters the list by `topics`, `looks`, `impact` and `pages` without changing
+the counts, and `convert_presentation` takes `pages`, so an agent on a large deck
+fetches only what it is about to judge.
+
 `look` and `impact` let an agent budget: answer `text` items from the Markdown
 in one batch, render only the pages of `slide` items, fetch only the pictures of
 `image` items, and skip `low` items when time or money is short.
