@@ -254,6 +254,17 @@ class MergedCellPolicyTests(unittest.TestCase):
             ],
         )
 
+    def test_a_body_row_merged_across_the_table_is_written_once(self) -> None:
+        rows = (
+            (_cell("Model"), _cell("Votes"), _cell("Share")),
+            (_cell("Sedan"), _cell("13"), _cell("68%")),
+            (_cell("Most people chose a sedan", col_span=3), _covered(2, 0), _covered(2, 0)),
+        )
+        self.assertEqual(
+            rows_markdown(rows, merged_cells="fill").splitlines()[-1],
+            "| Most people chose a sedan |  |  |",
+        )
+
     def test_header_repeats_only_in_the_header_row(self) -> None:
         self.assertEqual(
             rows_markdown(BLOCK, merged_cells="header").splitlines()[2:],
@@ -313,7 +324,7 @@ class CaptionTests(unittest.TestCase):
                 "",
                 "| Region | Q1 | Q2 |",
                 "| --- | --- | --- |",
-                "| Domestic | Domestic | Domestic |",
+                "| Domestic |  |  |",
                 "| Seoul | 10 | 12 |",
             ],
         )
