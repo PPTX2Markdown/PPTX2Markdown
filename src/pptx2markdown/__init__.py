@@ -1,13 +1,136 @@
-"""pptx2markdown — convert PPTX/PPT presentations to Markdown."""
+"""Public surface of pptx2markdown."""
 
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _pkg_version
+from .api import (
+    BatchConversionResult,
+    ConversionFailure,
+    convert,
+    convert_many,
+    parse,
+)
+from .assets import AssetLimits, AssetStore
+from .audit import AuditReport, TextLoss, audit
+from .chunks import Chunk, slide_chunks
+from .errors import (
+    AssetError,
+    AssetLimitError,
+    AssetResolutionError,
+    AssetUnavailableError,
+    BundleWriteError,
+    PackageSecurityError,
+    PPTX2MarkdownError,
+    PresentationParseError,
+    SaveConflictError,
+    UnsupportedPresentationError,
+)
+from .images import ImageDescription, ImageRequest, describe_images_with
+from .model import (
+    AssetDescriptor,
+    AttachmentBlock,
+    BoundingBox,
+    ChartBlock,
+    ConversionWarning,
+    HeadingBlock,
+    ImageBlock,
+    ListBlock,
+    ListItem,
+    MathBlock,
+    PresentationDocument,
+    SlideDocument,
+    SmartArtBlock,
+    SourceDocument,
+    TableBlock,
+    TableCell,
+    TextBlock,
+    UnsupportedBlock,
+)
+from .ordering import OrderRequest, choose_reading_orders_with
+from .parser import ParseOptions
+from .presentation import ParsedPresentation
+from .recipe import (
+    Recipe,
+    Rule,
+    RuleMatch,
+    apply_recipe,
+    explain_recipe,
+    merge_recipes,
+    recipe_json_schema,
+)
+from .review import (
+    REVIEW_SCHEMA_VERSION,
+    Option,
+    ReviewItem,
+    recipe_from_answers,
+    review,
+    review_data,
+    review_json_schema,
+    review_report,
+)
+from .writer import SavedAsset, SaveOptions, SaveResult
 
-try:
-    __version__ = _pkg_version("pptx2markdown")
-except PackageNotFoundError:  # 개발 트리에서 미설치 상태로 import된 경우
-    __version__ = "0.0.0"
-
-from pptx2markdown.api import convert
-
-__all__ = ["convert", "__version__"]
+__all__ = [
+    "AssetDescriptor",
+    "AssetError",
+    "AssetLimitError",
+    "AssetLimits",
+    "AssetResolutionError",
+    "AssetStore",
+    "AssetUnavailableError",
+    "AttachmentBlock",
+    "AuditReport",
+    "BatchConversionResult",
+    "BoundingBox",
+    "BundleWriteError",
+    "ChartBlock",
+    "Chunk",
+    "ConversionFailure",
+    "ConversionWarning",
+    "HeadingBlock",
+    "ImageBlock",
+    "ImageDescription",
+    "ImageRequest",
+    "ListBlock",
+    "ListItem",
+    "MathBlock",
+    "OrderRequest",
+    "Option",
+    "PPTX2MarkdownError",
+    "PackageSecurityError",
+    "ParseOptions",
+    "ParsedPresentation",
+    "PresentationDocument",
+    "PresentationParseError",
+    "Recipe",
+    "REVIEW_SCHEMA_VERSION",
+    "ReviewItem",
+    "Rule",
+    "RuleMatch",
+    "SaveConflictError",
+    "SaveOptions",
+    "SaveResult",
+    "SavedAsset",
+    "SlideDocument",
+    "SmartArtBlock",
+    "SourceDocument",
+    "TableBlock",
+    "TableCell",
+    "TextBlock",
+    "TextLoss",
+    "UnsupportedBlock",
+    "UnsupportedPresentationError",
+    "apply_recipe",
+    "choose_reading_orders_with",
+    "audit",
+    "convert",
+    "convert_many",
+    "describe_images_with",
+    "explain_recipe",
+    "merge_recipes",
+    "parse",
+    "recipe_from_answers",
+    "recipe_json_schema",
+    "review",
+    "review_data",
+    "review_json_schema",
+    "review_report",
+    "slide_chunks",
+]

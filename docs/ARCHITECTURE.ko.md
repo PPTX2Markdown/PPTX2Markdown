@@ -1,4 +1,4 @@
-# 새 구현 아키텍처
+# 아키텍처
 
 [English](ARCHITECTURE.md)
 

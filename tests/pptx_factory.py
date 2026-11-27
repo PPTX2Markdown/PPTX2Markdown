@@ -1,4 +1,4 @@
-"""Minimal synthetic PPTX packages used only by rewrite tests."""
+"""Minimal synthetic PPTX packages used by the tests."""
 
 from __future__ import annotations
 

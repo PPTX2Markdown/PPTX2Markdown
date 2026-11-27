@@ -11,11 +11,7 @@ import pptx2markdown
 from pptx2markdown.model import UnsupportedBlock
 
 FIXTURE = (
-    Path(__file__).resolve().parents[2]
-    / "tests"
-    / "fixtures"
-    / "golden"
-    / "shapecrawler_table-chart-ole.pptx"
+    Path(__file__).resolve().parent / "fixtures" / "golden" / "shapecrawler_table-chart-ole.pptx"
 )
 
 

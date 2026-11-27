@@ -1,30 +1,48 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "python-pptx_ole-object.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-f4747551c200f10e",
+      "kind": "attachment",
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "original_name": "Microsoft_Excel_Worksheet.xlsx",
+      "payload_available": true,
+      "sha256": "b27264b4bef3b1755642348ae106e60675af895635a65f37bdfee0b5bd05023e",
+      "size": 8287,
+      "source_part": "ppt/embeddings/Microsoft_Excel_Worksheet.xlsx"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "attachment",
-          "content": "[attachment: Microsoft_Excel_Worksheet.xlsx](attachments/Microsoft_Excel_Worksheet.xlsx)",
-          "shape_id": "2",
-          "heading_level": null,
+          "asset_id": "asset-f4747551c200f10e",
           "bbox": {
-            "x": 4089400,
-            "y": 3124200,
-            "width": 965200,
             "height": 609600,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 965200,
+            "x": 4089400,
+            "y": 3124200
           },
+          "id": "s1.b1",
+          "kind": "attachment",
+          "label": "Microsoft_Excel_Worksheet.xlsx",
+          "program": "Excel.Sheet.12",
+          "shape_id": "2",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "python-pptx_ole-object.pptx",
+    "sha256": "a448dc27c4d1212ad23f680c040f8a918ef7cbb6c41c9ad57f33d1d59a8f9bb4"
+  },
+  "warnings": []
 }

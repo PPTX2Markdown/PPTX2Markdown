@@ -23,14 +23,14 @@ PPTX corpus가 있습니다. `.pptx2markdown/corpus/`의 더 큰 선택적 corpu
 - `expected/markdown/`: 그에 대응하는 Markdown 결과
 - 렌더 screenshot: 임시 QA 산출물이며 저장소에 포함하지 않음
 
-`tests/test_repository_goldens.py`는 모든 파일을 두 형식으로 변환하고, 생성된
+`tests/test_goldens.py`는 모든 파일을 두 형식으로 변환하고, 생성된
 byte를 저장된 스냅샷과 비교하며, 매니페스트 hash와 생성된 모든 media/attachment
 hash를 확인합니다.
 
 이 모음만 실행:
 
 ```bash
-python -m unittest tests.test_repository_goldens -v
+python -m unittest tests.test_goldens -v
 ```
 
 현재 스냅샷 검사:

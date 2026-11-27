@@ -1,13 +1,13 @@
-# 배포된 변환기에서 rewrite로 옮기기
+# 0.1.x에서 0.2로 옮기기
 
 [English](MIGRATION.md)
 
-rewrite는 같은 패키지 이름 `pptx2markdown`으로 배포되므로, 업그레이드하면 배포된
-변환기를 대체합니다. 0.1.x 사용자에게 무엇이 바뀌는지 정리합니다.
+0.2.0은 같은 패키지 이름 `pptx2markdown`으로 0.1 변환기를 새 엔진으로
+대체합니다. 0.1.x 사용자에게 무엇이 바뀌는지 정리합니다.
 
 ## 명령줄
 
-| 0.1.x | rewrite |
+| 0.1.x | 0.2 |
 | --- | --- |
 | `--output-dir`, `-v` | 동일 |
 | `--output-format markdown\|json` | 동일, 검색용 JSON Lines인 `chunks` 추가 |
@@ -25,7 +25,7 @@ rewrite는 같은 패키지 이름 `pptx2markdown`으로 배포되므로, 업그
 
 ## Python API
 
-| 0.1.x | rewrite |
+| 0.1.x | 0.2 |
 | --- | --- |
 | `convert(inputs, output_dir=...) -> int`(종료 코드) | `convert(path, output_dir=...) -> SaveResult`, `convert_many(paths) -> BatchConversionResult`(`.exit_code` 제공) |
 | — | `parse(경로 \| bytes \| 스트림) -> ParsedPresentation`: 메모리의 문서, 파일을 쓰지 않음 |

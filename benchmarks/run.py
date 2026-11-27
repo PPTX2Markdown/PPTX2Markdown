@@ -51,7 +51,7 @@ def _anydoc() -> Converter:
 
 
 CONVERTERS: dict[str, tuple[str, Callable[[], Converter]]] = {
-    "pptx2markdown (rewrite)": ("pptx2markdown", _pptx2markdown),
+    "pptx2markdown": ("pptx2markdown", _pptx2markdown),
     "markitdown": ("markitdown", _markitdown),
     "anydoc": ("firecrawl-anydoc", _anydoc),
 }

@@ -1,58 +1,100 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "pptx-automizer_svg-images.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-5df21e9d602898d0",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image5.png",
+      "payload_available": true,
+      "sha256": "3a0ae11f9571e4fd3ccbf920248dc52e847efc6c349f4c77882a2eef99fcdfb7",
+      "size": 10494,
+      "source_part": "ppt/media/image5.png"
+    },
+    {
+      "id": "asset-7bc0e27545c1839d",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image3.png",
+      "payload_available": true,
+      "sha256": "0588c9dd33721297761a1b5c3b7f0a931dac3b3721febd136b08fb8a05620bd9",
+      "size": 7028,
+      "source_part": "ppt/media/image3.png"
+    },
+    {
+      "id": "asset-c81c8c9c77ff6df8",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image1.png",
+      "payload_available": true,
+      "sha256": "5f7b579a5c8939bbbfe59a0eddc50fbab86b7ef9ae03ceecd43f4bc950d5ec5c",
+      "size": 8781,
+      "source_part": "ppt/media/image1.png"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "image",
-          "content": "![image](media/image1.png)",
-          "shape_id": "9",
-          "heading_level": null,
+          "alt_text": "Leaf",
+          "asset_id": "asset-c81c8c9c77ff6df8",
           "bbox": {
+            "height": 540000,
+            "unit": "emu",
+            "width": 540000,
             "x": 3488661,
-            "y": 1470464,
-            "width": 540000,
-            "height": 540000,
-            "unit": "emu"
+            "y": 1470464
           },
+          "description": null,
+          "id": "s1.b1",
+          "kind": "image",
+          "shape_id": "9",
           "source_part": "slide"
         },
         {
-          "kind": "image",
-          "content": "![image](media/image3.png)",
-          "shape_id": "11",
-          "heading_level": null,
+          "alt_text": "Cart",
+          "asset_id": "asset-7bc0e27545c1839d",
           "bbox": {
-            "x": 4141572,
-            "y": 1470464,
+            "height": 540000,
+            "unit": "emu",
             "width": 563478,
-            "height": 540000,
-            "unit": "emu"
+            "x": 4141572,
+            "y": 1470464
           },
+          "description": null,
+          "id": "s1.b2",
+          "kind": "image",
+          "shape_id": "11",
           "source_part": "slide"
         },
         {
-          "kind": "image",
-          "content": "![image](media/image5.png)",
-          "shape_id": "13",
-          "heading_level": null,
+          "alt_text": "Heart",
+          "asset_id": "asset-5df21e9d602898d0",
           "bbox": {
-            "x": 4930873,
-            "y": 1470464,
-            "width": 540000,
             "height": 540000,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 540000,
+            "x": 4930873,
+            "y": 1470464
           },
+          "description": null,
+          "id": "s1.b3",
+          "kind": "image",
+          "shape_id": "13",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "pptx-automizer_svg-images.pptx",
+    "sha256": "bd75d46992a2939e7b2bd9ef26249038dd07ff530eb1df7e0fbad50700894932"
+  },
+  "warnings": []
 }

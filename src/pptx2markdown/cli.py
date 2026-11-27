@@ -1,4 +1,4 @@
-"""Command-line interface for the standalone rewrite."""
+"""Command-line interface."""
 
 from __future__ import annotations
 

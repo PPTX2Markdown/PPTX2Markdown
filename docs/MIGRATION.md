@@ -1,14 +1,14 @@
-# Moving from the released converter to the rewrite
+# Moving from 0.1.x to 0.2
 
 [한국어](MIGRATION.ko.md)
 
-The rewrite is published under the same package name, `pptx2markdown`, so
-upgrading replaces the released converter. This page lists what changes for a
+0.2.0 replaces the 0.1 converter with a new engine under the same package
+name, `pptx2markdown`. This page lists what changes for a
 user of 0.1.x.
 
 ## Command line
 
-| 0.1.x | Rewrite |
+| 0.1.x | 0.2 |
 | --- | --- |
 | `--output-dir`, `-v` | same |
 | `--output-format markdown\|json` | same, plus `chunks` (JSON Lines for retrieval) |
@@ -26,7 +26,7 @@ presentation in the current directory.
 
 ## Python API
 
-| 0.1.x | Rewrite |
+| 0.1.x | 0.2 |
 | --- | --- |
 | `convert(inputs, output_dir=...) -> int` (exit code) | `convert(path, output_dir=...) -> SaveResult`; `convert_many(paths) -> BatchConversionResult` with `.exit_code` |
 | — | `parse(path \| bytes \| stream) -> ParsedPresentation`: the document in memory, nothing written |

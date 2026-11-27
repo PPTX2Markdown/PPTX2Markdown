@@ -1,8 +1,11 @@
 {
-  "schema_version": "1.0",
+  "assets": [],
+  "schema_version": "2.0",
+  "slides": [],
   "source": {
+    "format": "pptx",
     "name": "pptx-automizer_empty-template.pptx",
-    "format": "pptx"
+    "sha256": "2ee78af0f064606191c753ea403511e1c7fe69a8aa473647d2f18a6ab5f4dbc8"
   },
-  "slides": []
+  "warnings": []
 }

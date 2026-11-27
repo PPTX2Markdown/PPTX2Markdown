@@ -12,5 +12,5 @@ c
 [Page_2]
 
 | Text run in table cell | col_2 |
-|---|---|
+| --- | --- |
 |  |  |

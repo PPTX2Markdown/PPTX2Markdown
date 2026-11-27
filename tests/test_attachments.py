@@ -11,7 +11,7 @@ from pptx2markdown.assets import media_type_for
 from pptx2markdown.attachments import parse_ole10_native, payload_extension, unpack_ole
 from pptx2markdown.model import AttachmentBlock
 
-GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "golden"
+GOLDEN = Path(__file__).resolve().parent / "fixtures" / "golden"
 
 
 def _ole10_native(name: bytes, payload: bytes, temp_path: bytes = b"C:\\tmp\\x") -> bytes:

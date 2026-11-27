@@ -1,1 +1,0 @@
-"""Structure analyzer package."""

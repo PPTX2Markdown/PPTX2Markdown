@@ -2,14 +2,12 @@
 
 [한국어](reading_order_design.ko.md)
 
-Status: agreed design, implemented in stages (see [Plan](#plan)). Applies to the
-next-generation engine in `rewrite/`; the released 0.1.x converter keeps its
-current behaviour.
+Status: implemented in 0.2.0 (see [Plan](#plan)).
 
 ## Problem
 
-The rewrite orders a slide's shapes with a recursive XY-cut over flattened
-shapes (`rewrite/src/pptx2markdown/reading_order.py`). Groups are flattened into
+The converter orders a slide's shapes with a recursive XY-cut over flattened
+shapes (`src/pptx2markdown/reading_order.py`). Groups are flattened into
 absolute boxes, frames without text are dropped as decoration, and a region that
 no gap can cut falls back to sorting by position. Three failure modes follow:
 
@@ -27,7 +25,7 @@ no gap can cut falls back to sorting by position. Three failure modes follow:
 
 Real decks (rendered with LibreOffice and compared with the converter's order):
 
-| Deck / slide | Layout | Rewrite today |
+| Deck / slide | Layout | Before 0.2.0 |
 | --- | --- | --- |
 | `brutalist_ai_newspaper_2026.pptx` 2 | Newspaper page, one text box per line, a number and its unit overlap | Cards interleave line by line; story III after the footer |
 | `kubernetes_blueprint_2026.pptx` 5 | Three horizontal tracks joined by arrows | Right half of every track after the footer |
@@ -43,7 +41,7 @@ expectations ("these phrases appear in this order, with no other group's phrase
 between them") and stores shapes in a shuffled order, because a real deck's XML
 order follows its editing history. Baseline before this work:
 
-| Case | rewrite | MarkItDown | anydoc |
+| Case | pptx2markdown | MarkItDown | anydoc |
 | --- | :---: | :---: | :---: |
 | Card grid on a picture that covers the slide | ❌ | ❌ | ❌ |
 | Two columns on a full-slide text box holding a watermark | ❌ | ❌ | ❌ |
@@ -67,8 +65,8 @@ after); MarkItDown passes the grouped cards because it reads a group as a unit.
 
 Reading order is a matter of correctness, not taste: lines of one card mixed
 into another corrupt every chunk built from them, and an option nobody knows
-about protects nobody. The rewrite is unreleased, so its default can still
-change without breaking anyone.
+about protects nobody. The default changed before 0.2.0, the first release of this engine, so it broke
+no one.
 
 | Part | Confidence | How it ships |
 | --- | --- | --- |
@@ -140,7 +138,7 @@ be offered as an explicit, costly option.
 
 ## Results (stages 1–3)
 
-Benchmark: rewrite 6/11 → **9/11** (MarkItDown 3/11, anydoc 1/11). Of the two
+Benchmark: pptx2markdown 6/11 → **9/11** (MarkItDown 3/11, anydoc 1/11). Of the two
 still failing, the diagram tracks are flagged and their "rows first" candidate is
 correct; overlapping columns need the partial-overlap signal and a tolerance
 change.

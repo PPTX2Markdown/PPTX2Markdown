@@ -1,1 +1,1 @@
-"""Regression tests for pptx2markdown."""
+"""Tests for pptx2markdown."""

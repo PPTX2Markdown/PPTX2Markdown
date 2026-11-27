@@ -9,7 +9,7 @@ from pptx2markdown.model import SmartArtBlock
 
 from .pptx_factory import build_test_pptx
 
-GOLDEN = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "golden"
+GOLDEN = Path(__file__).resolve().parent / "fixtures" / "golden"
 DGM = "http://schemas.openxmlformats.org/drawingml/2006/diagram"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 

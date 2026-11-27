@@ -1,183 +1,283 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "python-pptx_placeholders-smartart.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-1fba7b47e4dda357",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image2.png",
+      "payload_available": true,
+      "sha256": "b60f709965eb54e1400cba53617ae2c02f8028f5399cafa32d8ef18bfc803915",
+      "size": 6111,
+      "source_part": "ppt/media/image2.png"
+    },
+    {
+      "id": "asset-c81c8c9c77ff6df8",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image1.png",
+      "payload_available": true,
+      "sha256": "10b7f419d1870f268b69320e43dd8e9630d002b26376de5d9c337beeab09ab22",
+      "size": 64276,
+      "source_part": "ppt/media/image1.png"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
+      "blocks": [
+        {
+          "alt_text": "monty-truth.png",
+          "asset_id": "asset-c81c8c9c77ff6df8",
+          "bbox": {
+            "height": 2743200,
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
+          },
+          "description": null,
+          "id": "s1.b1",
+          "kind": "image",
+          "shape_id": "3",
+          "source_part": "slide"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
       "page": 1,
-      "hidden": false,
+      "reading_order": null,
+      "section": null
+    },
+    {
       "blocks": [
         {
-          "kind": "image",
-          "content": "![image](media/image1.png)",
-          "shape_id": "3",
-          "heading_level": null,
+          "alt_text": "python-powered.png",
+          "asset_id": "asset-1fba7b47e4dda357",
           "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
             "height": 2743200,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
           },
+          "description": null,
+          "id": "s2.b1",
+          "kind": "image",
+          "shape_id": "3",
           "source_part": "slide"
         }
       ],
-      "notes": null
-    },
-    {
+      "hidden": false,
+      "notes": null,
       "page": 2,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "image",
-          "content": "![image](media/image2.png)",
-          "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
-            "height": 2743200,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 3,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "table",
-          "content": "| col_1 | col_2 |\n|---|---|\n|  |  |\n|  |  |",
-          "shape_id": "3",
-          "heading_level": null,
+          "asset_ids": [],
           "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
             "height": 1112520,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
           },
+          "caption_rows": 0,
+          "header_rows": 1,
+          "id": "s3.b1",
+          "kind": "table",
+          "markdown": "| col_1 | col_2 |\n| --- | --- |\n|  |  |\n|  |  |",
+          "merged_cells": "fill",
+          "rows": [
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              }
+            ],
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              }
+            ],
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": ""
+              }
+            ]
+          ],
+          "shape_id": "3",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 3,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 4,
-      "hidden": false,
       "blocks": [
         {
+          "asset_ids": [],
+          "bbox": {
+            "height": 2743200,
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
+          },
+          "id": "s4.b1",
           "kind": "chart",
-          "content": "**Chart type:** Pie Chart\n\n|         | Sales |\n| ------- | ----- |\n| 1st Qtr | 8.2   |\n| 2nd Qtr | 3.2   |\n| 3rd Qtr | 1.4   |\n| 4th Qtr | 1.2   |",
+          "markdown": "**Chart type:** Pie Chart\n\n|         | Sales |\n| ------- | ----- |\n| 1st Qtr | 8.2   |\n| 2nd Qtr | 3.2   |\n| 3rd Qtr | 1.4   |\n| 4th Qtr | 1.2   |",
           "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
-            "height": 2743200,
-            "unit": "emu"
-          },
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 4,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 5,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Title Text",
-          "shape_id": "2",
-          "heading_level": 1,
           "bbox": {
-            "x": 457200,
-            "y": 274638,
-            "width": 8229600,
             "height": 1143000,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 8229600,
+            "x": 457200,
+            "y": 274638
           },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 6,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "text",
-          "content": "Content",
-          "shape_id": "2",
-          "heading_level": null,
-          "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
-            "height": 2743200,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 7,
-      "hidden": false,
-      "blocks": [
-        {
+          "id": "s5.b1",
           "kind": "heading",
-          "content": "Body text",
+          "level": 1,
           "shape_id": "2",
-          "heading_level": 1,
-          "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
-            "height": 2743200,
-            "unit": "emu"
-          },
-          "source_part": "slide"
+          "source": "placeholder",
+          "source_part": "slide",
+          "text": "Title Text"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 5,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 8,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "smartart",
-          "content": "[smartart: 6 unlabeled nodes]",
-          "shape_id": "3",
-          "heading_level": null,
           "bbox": {
-            "x": 2743200,
-            "y": 2057400,
-            "width": 3657600,
             "height": 2743200,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
           },
+          "id": "s6.b1",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "Content"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 6,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 2743200,
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
+          },
+          "id": "s7.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "2",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Body text"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 7,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "asset_ids": [],
+          "bbox": {
+            "height": 2743200,
+            "unit": "emu",
+            "width": 3657600,
+            "x": 2743200,
+            "y": 2057400
+          },
+          "id": "s8.b1",
+          "kind": "smartart",
+          "markdown": "[smartart: 6 unlabeled nodes]",
+          "shape_id": "3",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 8,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 9,
-      "hidden": false,
       "blocks": [],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 9,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "python-pptx_placeholders-smartart.pptx",
+    "sha256": "b08599276b4d708757951f2d45ac74cb4e81e94463d575e4d857690d0d231a60"
+  },
+  "warnings": []
 }

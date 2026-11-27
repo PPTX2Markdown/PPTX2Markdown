@@ -4,4 +4,4 @@
 
 Our products lead the market
 
-![image](media/image1.png)
+![temp_pptx5.png](media/image1.png)

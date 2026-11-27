@@ -1,184 +1,232 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "shapecrawler_grouped-cjk.pptx",
-    "format": "pptx"
-  },
+  "assets": [],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": true,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Title 1",
-          "shape_id": "2",
-          "heading_level": 1,
           "bbox": {
-            "x": 655551,
-            "y": 334797,
-            "width": 10880897,
             "height": 1075908,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "Text Box 1",
-          "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 655552,
-            "y": 2080940,
-            "width": 1261949,
-            "height": 369332,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "Text Box 2",
-          "shape_id": "4",
-          "heading_level": null,
-          "bbox": {
+            "unit": "emu",
+            "width": 10880897,
             "x": 655551,
-            "y": 2653262,
-            "width": 1261949,
+            "y": 334797
+          },
+          "id": "s1.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "2",
+          "source": "placeholder",
+          "source_part": "slide",
+          "text": "Title 1"
+        },
+        {
+          "bbox": {
             "height": 369332,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 1261949,
+            "x": 655552,
+            "y": 2080940
           },
-          "source_part": "slide"
+          "id": "s1.b2",
+          "kind": "text",
+          "shape_id": "3",
+          "source_part": "slide",
+          "text": "Text Box 1"
         },
         {
+          "bbox": {
+            "height": 369332,
+            "unit": "emu",
+            "width": 1261949,
+            "x": 655551,
+            "y": 2653262
+          },
+          "id": "s1.b3",
           "kind": "text",
-          "content": "Shape 1",
+          "shape_id": "4",
+          "source_part": "slide",
+          "text": "Text Box 2"
+        },
+        {
+          "bbox": {
+            "height": 456535,
+            "unit": "emu",
+            "width": 996409,
+            "x": 758583,
+            "y": 4036883
+          },
+          "id": "s1.b4",
+          "kind": "text",
           "shape_id": "10",
-          "heading_level": null,
-          "bbox": {
-            "x": 758583,
-            "y": 4036883,
-            "width": 996409,
-            "height": 456535,
-            "unit": "emu"
-          },
-          "source_part": "slide"
+          "source_part": "slide",
+          "text": "Shape 1"
         },
         {
+          "bbox": {
+            "height": 456535,
+            "unit": "emu",
+            "width": 996409,
+            "x": 758583,
+            "y": 4609205
+          },
+          "id": "s1.b5",
           "kind": "text",
-          "content": "Shape 2",
           "shape_id": "14",
-          "heading_level": null,
-          "bbox": {
-            "x": 758583,
-            "y": 4609205,
-            "width": 996409,
-            "height": 456535,
-            "unit": "emu"
-          },
-          "source_part": "slide"
+          "source_part": "slide",
+          "text": "Shape 2"
         },
         {
-          "kind": "text",
-          "content": "TextBox 3",
-          "shape_id": "6",
-          "heading_level": null,
           "bbox": {
-            "x": 2557670,
-            "y": 2080940,
-            "width": 1197828,
             "height": 560410,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "TextBox 4",
-          "shape_id": "7",
-          "heading_level": null,
-          "bbox": {
+            "unit": "emu",
+            "width": 1197828,
             "x": 2557670,
-            "y": 2653262,
-            "width": 1197828,
+            "y": 2080940
+          },
+          "id": "s1.b6",
+          "kind": "text",
+          "shape_id": "6",
+          "source_part": "slide",
+          "text": "TextBox 3"
+        },
+        {
+          "bbox": {
             "height": 456535,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 1197828,
+            "x": 2557670,
+            "y": 2653262
           },
-          "source_part": "slide"
+          "id": "s1.b7",
+          "kind": "text",
+          "shape_id": "7",
+          "source_part": "slide",
+          "text": "TextBox 4"
         },
         {
-          "kind": "text",
-          "content": "TEMP",
-          "shape_id": "16",
-          "heading_level": null,
           "bbox": {
-            "x": 1917501,
-            "y": 4036883,
-            "width": 1077948,
             "height": 1028857,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 1077948,
+            "x": 1917501,
+            "y": 4036883
           },
-          "source_part": "slide"
+          "id": "s1.b8",
+          "kind": "text",
+          "shape_id": "16",
+          "source_part": "slide",
+          "text": "TEMP"
         },
         {
-          "kind": "text",
-          "content": "TextBox 5\nTextBox 5",
-          "shape_id": "8",
-          "heading_level": null,
           "bbox": {
-            "x": 4395667,
-            "y": 2080940,
-            "width": 1197828,
             "height": 646331,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "TextBox 6",
-          "shape_id": "9",
-          "heading_level": null,
-          "bbox": {
-            "x": 5999593,
-            "y": 2080940,
+            "unit": "emu",
             "width": 1197828,
+            "x": 4395667,
+            "y": 2080940
+          },
+          "id": "s1.b9",
+          "kind": "text",
+          "shape_id": "8",
+          "source_part": "slide",
+          "text": "TextBox 5\nTextBox 5"
+        },
+        {
+          "bbox": {
             "height": 356508,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "世界",
-          "shape_id": "11",
-          "heading_level": null,
-          "bbox": {
+            "unit": "emu",
+            "width": 1197828,
             "x": 5999593,
-            "y": 2667576,
-            "width": 646331,
-            "height": 348365,
-            "unit": "emu"
+            "y": 2080940
           },
-          "source_part": "slide"
+          "id": "s1.b10",
+          "kind": "text",
+          "shape_id": "9",
+          "source_part": "slide",
+          "text": "TextBox 6"
         },
         {
-          "kind": "text",
-          "content": "AutoShape 1",
-          "shape_id": "13",
-          "heading_level": null,
           "bbox": {
-            "x": 7770253,
-            "y": 2092357,
-            "width": 1022401,
-            "height": 560905,
-            "unit": "emu"
+            "height": 348365,
+            "unit": "emu",
+            "width": 646331,
+            "x": 5999593,
+            "y": 2667576
           },
-          "source_part": "slide"
+          "id": "s1.b11",
+          "kind": "text",
+          "shape_id": "11",
+          "source_part": "slide",
+          "text": "世界"
+        },
+        {
+          "bbox": {
+            "height": 560905,
+            "unit": "emu",
+            "width": 1022401,
+            "x": 7770253,
+            "y": 2092357
+          },
+          "id": "s1.b12",
+          "kind": "text",
+          "shape_id": "13",
+          "source_part": "slide",
+          "text": "AutoShape 1"
         }
       ],
-      "notes": "Presentation Title Slide - Required"
+      "hidden": true,
+      "notes": "Presentation Title Slide - Required",
+      "page": 1,
+      "reading_order": {
+        "alternatives": [
+          {
+            "block_ids": [
+              "s1.b1",
+              "s1.b2",
+              "s1.b3",
+              "s1.b6",
+              "s1.b7",
+              "s1.b9",
+              "s1.b10",
+              "s1.b11",
+              "s1.b12",
+              "s1.b4",
+              "s1.b5",
+              "s1.b8"
+            ],
+            "label": "rows first"
+          },
+          {
+            "block_ids": [
+              "s1.b11",
+              "s1.b10",
+              "s1.b9",
+              "s1.b7",
+              "s1.b6",
+              "s1.b5",
+              "s1.b4",
+              "s1.b3",
+              "s1.b2",
+              "s1.b1",
+              "s1.b12",
+              "s1.b8"
+            ],
+            "label": "as stored in the file"
+          }
+        ],
+        "reasons": [
+          "two-way cut",
+          "fragile gap"
+        ]
+      },
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "shapecrawler_grouped-cjk.pptx",
+    "sha256": "7c84322eded5e556c94a9f4b01323cea3a684e26a73575f7c41458ea0a2a759b"
+  },
+  "warnings": []
 }

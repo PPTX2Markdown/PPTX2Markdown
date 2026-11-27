@@ -69,7 +69,7 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(geometry_reading_order(nodes), ["first", "second", "third"])
 
 
-FIXTURES = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
 def _box(name: str, x: float, y: float, w: float, h: float, **flags) -> LayoutNode[str]:

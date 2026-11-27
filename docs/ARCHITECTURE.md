@@ -1,4 +1,4 @@
-# Rewrite architecture
+# Architecture
 
 [한국어](ARCHITECTURE.ko.md)
 

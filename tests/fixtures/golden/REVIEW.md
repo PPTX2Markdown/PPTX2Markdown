@@ -22,8 +22,10 @@ accepted.
 
 ## Intentional policy decisions frozen by the suite
 
-- Reading order always uses recursive geometric XYCut; no alternate reading-order
-  option or semantic label override exists.
+- Reading order is geometric: a recursive XY-cut over shapes, with groups and
+  enclosing frames read as units and slide-covering backgrounds ignored. A slide
+  whose layout can be read more than one way keeps its candidate orders for
+  review; a recipe `order` rule overrides it.
 - A 1 px column-boundary overlap is tolerated as a column cut, while the 24 px
   overlap fixture falls back to row-major order.
 - A positive 0.5 px gutter is sufficient to separate columns.
@@ -34,7 +36,8 @@ accepted.
 - Merged cells repeat the merged value in every cell they cover, in the header
   and the body, horizontally and vertically (`--merged-cells fill`, the default),
   so each row reads on its own; `--merged-cells blank` keeps the value only in
-  the cell the merge starts from.
+  the cell the merge starts from. A body row merged across the whole table is
+  written once.
 - Unicode content is preserved as authored. NFC/NFD and full-width variants are
   not rewritten in the user-visible output.
 - Unlabeled SmartArt is represented by a stable node-count placeholder rather
@@ -45,8 +48,9 @@ accepted.
 - Package-absolute notes relationships such as
   `/ppt/notesSlides/notesSlide6.xml` were previously resolved as filesystem-root
   paths. They now resolve from the extracted OOXML package root.
-- Office lock files matching `~$*.pptx` are ignored by both conversion and golden
-  discovery.
+- Office lock files matching `~$*.pptx` are skipped with a warning.
+- The snapshots were regenerated for the 0.2.0 engine; the block counts per kind
+  match the 0.1 snapshots they replaced.
 
 ## Open quality backlog
 

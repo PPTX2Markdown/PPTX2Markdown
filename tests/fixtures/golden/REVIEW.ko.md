@@ -20,8 +20,9 @@
 
 ## 골든셋으로 고정한 정책
 
-- 읽기 순서는 항상 기하학적 재귀 XY-cut을 사용하며 대체 읽기 순서 옵션이나
-  의미 label override가 없음
+- 읽기 순서는 기하학적으로 정함. 도형에 대한 재귀 XY-cut이며, 그룹과 감싸는
+  프레임은 한 단위로 읽고 슬라이드를 덮는 배경은 무시. 여러 방식으로 읽힐 수 있는
+  슬라이드는 검토용 후보 순서를 유지하고, 레시피 `order` 규칙이 이를 덮어씀
 - 열 경계 1px 겹침은 열 분할로 허용하지만 24px 겹침 fixture는 row-major로
   fallback
 - 0.5px 양수 gutter는 열을 나누기에 충분
@@ -31,7 +32,8 @@
   수평 분할로 row-major 순서를 생성
 - 병합 셀은 머리글과 본문, 가로와 세로 구분 없이 병합 범위의 모든 칸에 값을
   반복합니다(`--merged-cells fill`, 기본값). 그래서 행 하나만 봐도 뜻이 통합니다.
-  `--merged-cells blank`는 병합이 시작되는 칸에만 값을 둡니다.
+  `--merged-cells blank`는 병합이 시작되는 칸에만 값을 둡니다. 표 전체 너비로
+  병합된 본문 행은 한 번만 씁니다.
 - Unicode는 작성된 형태 그대로 보존. 사용자 출력에서 NFC/NFD 및 full-width
   variant를 다시 쓰지 않음
 - label 없는 SmartArt는 버리거나 가짜 label을 만들지 않고 안정적인 node-count
@@ -41,7 +43,8 @@
 
 - `/ppt/notesSlides/notesSlide6.xml` 같은 패키지 절대경로 노트 relationship을
   filesystem root로 잘못 해석하던 문제를 OOXML 패키지 root 기준으로 수정
-- `~$*.pptx` 형식의 Office 잠금 파일을 변환 및 골든 탐색에서 모두 제외
+- `~$*.pptx` 형식의 Office 잠금 파일은 경고와 함께 건너뜀
+- 0.2.0 엔진에 맞춰 스냅샷을 다시 만들었고, 종류별 블록 수는 대체한 0.1 스냅샷과 같음
 
 ## 열린 품질 backlog
 
