@@ -1,15 +1,15 @@
 [Page_1]
 
-![image](media/image1.png)
+![monty-truth.png](media/image1.png)
 
 [Page_2]
 
-![image](media/image2.png)
+![python-powered.png](media/image2.png)
 
 [Page_3]
 
 | col_1 | col_2 |
-|---|---|
+| --- | --- |
 |  |  |
 |  |  |
 

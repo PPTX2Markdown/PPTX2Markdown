@@ -1,7 +1,7 @@
 [Page_1]
 
-![image](media/image1.png)
+![Leaf](media/image1.png)
 
-![image](media/image3.png)
+![Cart](media/image3.png)
 
-![image](media/image5.png)
+![Heart](media/image5.png)

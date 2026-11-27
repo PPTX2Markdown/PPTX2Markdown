@@ -1,218 +1,144 @@
+"""Check or accept the golden Markdown/JSON snapshots of the repository PPTX suite.
+
+Every deck listed in ``tests/fixtures/golden/manifest.json`` is converted to a
+Markdown and a JSON bundle; the documents must match ``expected/`` byte for byte
+and every saved asset must match the hashes in the manifest.
+
+    python scripts/update_goldens.py --check    # exit 1 and list differences
+    python scripts/update_goldens.py --accept   # rewrite snapshots and hashes
+"""
+
 from __future__ import annotations
 
 import argparse
-import difflib
 import hashlib
 import json
-import shutil
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import pptx2markdown
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "golden"
-MANIFEST_PATH = FIXTURE_DIR / "manifest.json"
-DIFF_LINE_LIMIT = 200
+GOLDEN = REPO_ROOT / "tests" / "fixtures" / "golden"
+MANIFEST = GOLDEN / "manifest.json"
+EXPECTED = {"markdown": GOLDEN / "expected" / "markdown", "json": GOLDEN / "expected" / "json"}
+SUFFIX = {"markdown": ".md", "json": ".json"}
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
-def load_manifest() -> dict[str, Any]:
-    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+def _convert(source: Path, output_format: str, root: Path) -> tuple[bytes, dict[str, str]]:
+    import pptx2markdown
 
-
-def result_path(output_dir: Path, stem: str, output_format: str) -> Path:
-    extension = "json" if output_format == "json" else "md"
-    return output_dir / stem / f"{stem}.{extension}"
-
-
-def asset_hashes(package_dir: Path, result: Path) -> dict[str, str]:
-    return {
-        path.relative_to(package_dir).as_posix(): sha256(path)
-        for path in sorted(package_dir.rglob("*"))
-        if path.is_file() and path != result
-    }
-
-
-def print_snapshot_diff(snapshot: Path, actual: Path) -> None:
-    expected_text = snapshot.read_text(encoding="utf-8") if snapshot.exists() else ""
-    actual_text = actual.read_text(encoding="utf-8")
-    diff = list(
-        difflib.unified_diff(
-            expected_text.splitlines(),
-            actual_text.splitlines(),
-            fromfile=str(snapshot.relative_to(REPO_ROOT)),
-            tofile=f"generated/{actual.name}",
-            lineterm="",
-        )
+    result = pptx2markdown.convert(
+        source, output_dir=root / output_format, output_format=output_format
     )
-    for line in diff[:DIFF_LINE_LIMIT]:
-        print(line)
-    if len(diff) > DIFF_LINE_LIMIT:
-        print(f"... {len(diff) - DIFF_LINE_LIMIT} additional diff lines omitted")
-
-
-def convert_all(pptx_paths: list[Path], temp_root: Path) -> tuple[dict[str, Path], dict[str, Any]]:
-    outputs: dict[str, Path] = {}
-    summaries: dict[str, Any] = {}
-    for output_format in ("json", "markdown"):
-        output_dir = temp_root / f"{output_format}-output"
-        exit_code = pptx2markdown.convert(
-            pptx_paths,
-            output_dir=output_dir,
-            work_dir=temp_root / f"{output_format}-work",
-            output_format=output_format,
-        )
-        if exit_code != 0:
-            raise RuntimeError(f"{output_format} conversion failed with exit code {exit_code}")
-        conversion_manifest = json.loads(
-            (output_dir / "convert_manifest.json").read_text(encoding="utf-8")
-        )
-        outputs[output_format] = output_dir
-        summaries[output_format] = conversion_manifest["summary"]
-    if summaries["json"] != summaries["markdown"]:
-        raise RuntimeError("JSON and Markdown conversion summaries differ")
-    return outputs, summaries["json"]
-
-
-def verify_input_hashes(cases: list[dict[str, Any]]) -> list[Path]:
-    paths: list[Path] = []
-    for case in cases:
-        path = FIXTURE_DIR / case["file"]
-        if not path.is_file():
-            raise RuntimeError(f"missing golden PPTX: {path.relative_to(REPO_ROOT)}")
-        actual = sha256(path)
-        if actual != case["sha256"]:
-            raise RuntimeError(
-                f"golden PPTX changed: {case['file']}\n"
-                "Review its provenance and update the input hash manually before accepting "
-                "new parser snapshots."
-            )
-        paths.append(path)
-    return paths
-
-
-def expected_snapshot_paths(manifest: dict[str, Any], stem: str) -> dict[str, Path]:
-    return {
-        "json": FIXTURE_DIR / manifest["snapshot_roots"]["json"] / f"{stem}.json",
-        "markdown": FIXTURE_DIR / manifest["snapshot_roots"]["markdown"] / f"{stem}.md",
+    assets = {
+        asset.path.relative_to(result.bundle_dir).as_posix(): asset.sha256
+        for asset in result.assets
     }
+    return result.document_path.read_bytes(), assets
 
 
-def collect_changes(
-    manifest: dict[str, Any], outputs: dict[str, Path], summary: dict[str, Any]
-) -> list[str]:
-    changes: list[str] = []
-    if manifest["expected_summary"] != summary:
-        changes.append("batch conversion summary changed")
+def render_suite() -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Each case's documents, asset hashes and block counts, as converted now."""
 
+    import pptx2markdown
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    rendered: dict[str, dict[str, Any]] = {}
+    with tempfile.TemporaryDirectory() as directory:
+        for case in manifest["cases"]:
+            source = GOLDEN / case["file"]
+            markdown, assets = _convert(source, "markdown", Path(directory) / case["file"])
+            document, _ = _convert(source, "json", Path(directory) / case["file"])
+            with pptx2markdown.parse(source, include_assets=False) as presentation:
+                kinds = Counter(
+                    block.kind for slide in presentation.slides for block in slide.blocks
+                )
+                slides = len(presentation.slides)
+            rendered[case["file"]] = {
+                "markdown": markdown,
+                "json": document,
+                "assets": assets,
+                "slides": slides,
+                "kinds": kinds,
+            }
+    return manifest, rendered
+
+
+def check() -> list[str]:
+    """Differences between the current conversion and the accepted snapshots."""
+
+    manifest, rendered = render_suite()
+    problems: list[str] = []
     for case in manifest["cases"]:
-        stem = Path(case["file"]).stem
-        snapshots = expected_snapshot_paths(manifest, stem)
-        actual_assets: dict[str, dict[str, str]] = {}
-        for output_format in ("json", "markdown"):
-            actual = result_path(outputs[output_format], stem, output_format)
-            snapshot = snapshots[output_format]
-            if not snapshot.exists() or snapshot.read_bytes() != actual.read_bytes():
-                changes.append(f"{case['file']}: {output_format} snapshot changed")
-                print_snapshot_diff(snapshot, actual)
-
-            expected_digest = case[f"{output_format}_sha256"]
-            if sha256(actual) != expected_digest:
-                changes.append(f"{case['file']}: {output_format} hash changed")
-            actual_assets[output_format] = asset_hashes(actual.parent, actual)
-
-        if actual_assets["json"] != actual_assets["markdown"]:
-            raise RuntimeError(f"asset outputs differ by format: {case['file']}")
-        if actual_assets["json"] != case["assets"]:
-            changes.append(f"{case['file']}: emitted assets changed")
-    return changes
+        name, now = case["file"], rendered[case["file"]]
+        source = GOLDEN / name
+        if _sha256(source.read_bytes()) != case["sha256"]:
+            problems.append(f"{name}: the input deck does not match its manifest hash")
+        for output_format, directory in EXPECTED.items():
+            expected = directory / (Path(name).stem + SUFFIX[output_format])
+            if not expected.is_file():
+                problems.append(f"{name}: missing {expected.relative_to(REPO_ROOT)}")
+            elif expected.read_bytes() != now[output_format]:
+                problems.append(f"{name}: {output_format} output differs from {expected.name}")
+            if case.get(f"{output_format}_sha256") != _sha256(now[output_format]):
+                problems.append(f"{name}: {output_format} hash differs from the manifest")
+        if case.get("assets", {}) != now["assets"]:
+            problems.append(f"{name}: saved assets differ from the manifest")
+    return problems
 
 
-def accept_outputs(
-    manifest: dict[str, Any], outputs: dict[str, Path], summary: dict[str, Any]
-) -> None:
-    manifest["expected_summary"] = summary
-    expected_names: dict[str, set[str]] = {"json": set(), "markdown": set()}
-
+def accept() -> None:
+    manifest, rendered = render_suite()
+    for directory in EXPECTED.values():
+        directory.mkdir(parents=True, exist_ok=True)
+        for stale in directory.iterdir():
+            stale.unlink()
+    totals: Counter[str] = Counter()
+    slides = 0
     for case in manifest["cases"]:
-        stem = Path(case["file"]).stem
-        snapshots = expected_snapshot_paths(manifest, stem)
-        assets_by_format: dict[str, dict[str, str]] = {}
-        for output_format in ("json", "markdown"):
-            actual = result_path(outputs[output_format], stem, output_format)
-            snapshot = snapshots[output_format]
-            snapshot.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(actual, snapshot)
-            case[f"{output_format}_sha256"] = sha256(actual)
-            expected_names[output_format].add(snapshot.name)
-            assets_by_format[output_format] = asset_hashes(actual.parent, actual)
-        if assets_by_format["json"] != assets_by_format["markdown"]:
-            raise RuntimeError(f"asset outputs differ by format: {case['file']}")
-        case["assets"] = dict(sorted(assets_by_format["json"].items()))
-
-    for output_format, relative_dir in manifest["snapshot_roots"].items():
-        snapshot_dir = FIXTURE_DIR / relative_dir
-        extension = "json" if output_format == "json" else "md"
-        for stale in snapshot_dir.glob(f"*.{extension}"):
-            if stale.name not in expected_names[output_format]:
-                stale.unlink()
-
-    MANIFEST_PATH.write_text(
+        now = rendered[case["file"]]
+        for output_format, directory in EXPECTED.items():
+            target = directory / (Path(case["file"]).stem + SUFFIX[output_format])
+            target.write_bytes(now[output_format])
+            case[f"{output_format}_sha256"] = _sha256(now[output_format])
+        case["assets"] = now["assets"]
+        totals.update(now["kinds"])
+        slides += now["slides"]
+    manifest["expected_summary"] = {
+        "decks": len(manifest["cases"]),
+        "slides": slides,
+        "blocks": dict(sorted(totals.items())),
+    }
+    MANIFEST.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Check or intentionally refresh repository golden parser outputs."
-    )
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument(
-        "--check",
-        action="store_true",
-        help="fail if generated JSON, Markdown, hashes, assets, or summary changed",
-    )
-    mode.add_argument(
-        "--accept",
-        action="store_true",
-        help="replace reviewed snapshots and update output hashes in the manifest",
-    )
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    manifest = load_manifest()
-    cases = manifest["cases"]
-    try:
-        pptx_paths = verify_input_hashes(cases)
-        with tempfile.TemporaryDirectory(prefix="pptx2markdown-goldens-") as temp_dir:
-            outputs, summary = convert_all(pptx_paths, Path(temp_dir))
-            changes = collect_changes(manifest, outputs, summary)
-            if args.accept:
-                accept_outputs(manifest, outputs, summary)
-                print(f"Accepted {len(cases)} golden JSON/Markdown pairs and their asset hashes.")
-                return 0
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
-        print(f"golden update failed: {exc}", file=sys.stderr)
-        return 2
-
-    if changes:
-        print("\nGolden outputs are stale:")
-        for change in changes:
-            print(f"- {change}")
-        print("Review the diff, then run: python scripts/update_goldens.py --accept")
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--accept", action="store_true")
+    args = parser.parse_args(argv)
+    if args.accept:
+        accept()
+        print(f"accepted snapshots in {GOLDEN.relative_to(REPO_ROOT)}/expected")
+        return 0
+    problems = check()
+    for problem in problems:
+        print(problem)
+    if problems:
+        print("review the changes, then run: python scripts/update_goldens.py --accept")
         return 1
-
-    print(f"Golden outputs are current: {len(cases)} PPTX files, two output formats.")
+    print("golden snapshots are current")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

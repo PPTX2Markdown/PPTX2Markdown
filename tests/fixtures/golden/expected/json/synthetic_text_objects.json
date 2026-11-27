@@ -1,471 +1,643 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "synthetic_text_objects.pptx",
-    "format": "pptx"
-  },
+  "assets": [],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Rich text, bullets, and links stay semantic",
-          "shape_id": "1",
-          "heading_level": 1,
           "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
             "height": 685800,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
           },
-          "source_part": "slide"
+          "id": "s1.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Rich text, bullets, and links stay semantic"
         },
         {
-          "kind": "list",
-          "content": "Bold lead followed by plain text\n- level-one bullet\n- level-two bullet\nOpen [example.com](https://example.com/docs) for documentation",
-          "shape_id": "2",
-          "heading_level": null,
           "bbox": {
-            "x": 666750,
-            "y": 1333500,
-            "width": 10858500,
             "height": 4191000,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 2,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "heading",
-          "content": "Numeric labels are content, not synthetic slide numbers",
-          "shape_id": "1",
-          "heading_level": 1,
-          "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
-            "height": 685800,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "0",
-          "shape_id": "2",
-          "heading_level": null,
-          "bbox": {
-            "x": 666750,
-            "y": 2286000,
-            "width": 1714500,
-            "height": 1428750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "1",
-          "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 2857500,
-            "y": 2286000,
-            "width": 1714500,
-            "height": 1428750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "2",
-          "shape_id": "4",
-          "heading_level": null,
-          "bbox": {
-            "x": 5048250,
-            "y": 2286000,
-            "width": 1714500,
-            "height": 1428750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "3",
-          "shape_id": "5",
-          "heading_level": null,
-          "bbox": {
-            "x": 7239000,
-            "y": 2286000,
-            "width": 1714500,
-            "height": 1428750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "4",
-          "shape_id": "6",
-          "heading_level": null,
-          "bbox": {
-            "x": 9429750,
-            "y": 2286000,
-            "width": 1714500,
-            "height": 1428750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 3,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "heading",
-          "content": "Unicode variants preserve multilingual content",
-          "shape_id": "1",
-          "heading_level": 1,
-          "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
-            "height": 685800,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "Café (NFC)",
-          "shape_id": "2",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 1190625,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "Café (NFD)",
-          "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 1876425,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "ＡＢＣ１２３",
-          "shape_id": "4",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 2562225,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "한글 텍스트",
-          "shape_id": "5",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 3248025,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "中文文本",
-          "shape_id": "6",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 3933825,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "العربية",
-          "shape_id": "7",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 4619625,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "emoji 😀",
-          "shape_id": "8",
-          "heading_level": null,
-          "bbox": {
-            "x": 952500,
-            "y": 5305425,
-            "width": 10287000,
-            "height": 533400,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 4,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "heading",
-          "content": "Merged headers fill columns; merged body stays singular",
-          "shape_id": "1",
-          "heading_level": 1,
-          "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
-            "height": 685800,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "table",
-          "content": "| Merged table title | Merged table title | Merged table title |\n|---|---|---|\n| Column A | Column B | Column C |\n| alpha<br>beta | plain cell | gamma |\n| merged body |  | tail |",
-          "shape_id": "4",
-          "heading_level": null,
-          "bbox": {
-            "x": 666750,
-            "y": 1428750,
+            "unit": "emu",
             "width": 10858500,
-            "height": 3810000,
-            "unit": "emu"
+            "x": 666750,
+            "y": 1333500
           },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 5,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "heading",
-          "content": "A native chart remains structured and searchable",
-          "shape_id": "1",
-          "heading_level": 1,
-          "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
-            "height": 685800,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "chart",
-          "content": "**Parser coverage by object**\n\n**Chart type:** Column Chart\n\n|       | Baseline | Current |\n| ----- | -------- | ------- |\n| Text  | 88       | 99      |\n| Table | 72       | 96      |\n| Chart | 64       | 94      |\n| Media | 48       | 91      |",
-          "shape_id": "5",
-          "heading_level": null,
-          "bbox": {
-            "x": 762000,
-            "y": 1381125,
-            "width": 7239000,
-            "height": 4476750,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
+          "id": "s1.b2",
           "kind": "text",
-          "content": "The chart title, categories, series, and values must survive conversion.",
-          "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 8477250,
-            "y": 2286000,
-            "width": 2857500,
-            "height": 1714500,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        }
-      ],
-      "notes": null
-    },
-    {
-      "page": 6,
-      "hidden": false,
-      "blocks": [
-        {
-          "kind": "heading",
-          "content": "Speaker notes remain separate from visible blocks",
-          "shape_id": "1",
-          "heading_level": 1,
-          "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
-            "height": 685800,
-            "unit": "emu"
-          },
-          "source_part": "slide"
-        },
-        {
-          "kind": "text",
-          "content": "visible-slide-body",
           "shape_id": "2",
-          "heading_level": null,
+          "source_part": "slide",
+          "text": "**Bold lead** followed by plain text"
+        },
+        {
           "bbox": {
-            "x": 1619250,
-            "y": 2286000,
-            "width": 8953500,
-            "height": 1524000,
-            "unit": "emu"
+            "height": 4191000,
+            "unit": "emu",
+            "width": 10858500,
+            "x": 666750,
+            "y": 1333500
           },
-          "source_part": "slide"
+          "id": "s1.b3",
+          "items": [
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "level-one bullet"
+            },
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "level-two bullet"
+            }
+          ],
+          "kind": "list",
+          "ordered": false,
+          "shape_id": "2",
+          "source_part": "slide",
+          "start": 1
+        },
+        {
+          "bbox": {
+            "height": 4191000,
+            "unit": "emu",
+            "width": 10858500,
+            "x": 666750,
+            "y": 1333500
+          },
+          "id": "s1.b4",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "Open [example.com](https://example.com/docs) for documentation"
         }
       ],
-      "notes": "speaker-note-line-one\nspeaker-note-line-two"
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 7,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Rotated text boxes keep their content and anchors",
-          "shape_id": "1",
-          "heading_level": 1,
           "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
             "height": 685800,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
           },
-          "source_part": "slide"
+          "id": "s2.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Numeric labels are content, not synthetic slide numbers"
         },
         {
+          "bbox": {
+            "height": 1428750,
+            "unit": "emu",
+            "width": 1714500,
+            "x": 666750,
+            "y": 2286000
+          },
+          "id": "s2.b2",
           "kind": "text",
-          "content": "rotation-0",
           "shape_id": "2",
-          "heading_level": null,
-          "bbox": {
-            "x": 762000,
-            "y": 2095500,
-            "width": 2857500,
-            "height": 952500,
-            "unit": "emu"
-          },
-          "source_part": "slide"
+          "source_part": "slide",
+          "text": "**0**"
         },
         {
+          "bbox": {
+            "height": 1428750,
+            "unit": "emu",
+            "width": 1714500,
+            "x": 2857500,
+            "y": 2286000
+          },
+          "id": "s2.b3",
           "kind": "text",
-          "content": "rotation-90",
           "shape_id": "3",
-          "heading_level": null,
-          "bbox": {
-            "x": 4667250,
-            "y": 1714500,
-            "width": 2095500,
-            "height": 1714500,
-            "unit": "emu"
-          },
-          "source_part": "slide"
+          "source_part": "slide",
+          "text": "**1**"
         },
         {
+          "bbox": {
+            "height": 1428750,
+            "unit": "emu",
+            "width": 1714500,
+            "x": 5048250,
+            "y": 2286000
+          },
+          "id": "s2.b4",
           "kind": "text",
-          "content": "rotation-270",
           "shape_id": "4",
-          "heading_level": null,
+          "source_part": "slide",
+          "text": "**2**"
+        },
+        {
           "bbox": {
-            "x": 8382000,
-            "y": 1714500,
-            "width": 2095500,
-            "height": 1714500,
-            "unit": "emu"
+            "height": 1428750,
+            "unit": "emu",
+            "width": 1714500,
+            "x": 7239000,
+            "y": 2286000
           },
+          "id": "s2.b5",
+          "kind": "text",
+          "shape_id": "5",
+          "source_part": "slide",
+          "text": "**3**"
+        },
+        {
+          "bbox": {
+            "height": 1428750,
+            "unit": "emu",
+            "width": 1714500,
+            "x": 9429750,
+            "y": 2286000
+          },
+          "id": "s2.b6",
+          "kind": "text",
+          "shape_id": "6",
+          "source_part": "slide",
+          "text": "**4**"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 2,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 685800,
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
+          },
+          "id": "s3.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Unicode variants preserve multilingual content"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 1190625
+          },
+          "id": "s3.b2",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "Café (NFC)"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 1876425
+          },
+          "id": "s3.b3",
+          "kind": "text",
+          "shape_id": "3",
+          "source_part": "slide",
+          "text": "Café (NFD)"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 2562225
+          },
+          "id": "s3.b4",
+          "kind": "text",
+          "shape_id": "4",
+          "source_part": "slide",
+          "text": "ＡＢＣ１２３"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 3248025
+          },
+          "id": "s3.b5",
+          "kind": "text",
+          "shape_id": "5",
+          "source_part": "slide",
+          "text": "한글 텍스트"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 3933825
+          },
+          "id": "s3.b6",
+          "kind": "text",
+          "shape_id": "6",
+          "source_part": "slide",
+          "text": "中文文本"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 4619625
+          },
+          "id": "s3.b7",
+          "kind": "text",
+          "shape_id": "7",
+          "source_part": "slide",
+          "text": "العربية"
+        },
+        {
+          "bbox": {
+            "height": 533400,
+            "unit": "emu",
+            "width": 10287000,
+            "x": 952500,
+            "y": 5305425
+          },
+          "id": "s3.b8",
+          "kind": "text",
+          "shape_id": "8",
+          "source_part": "slide",
+          "text": "emoji 😀"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 3,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 685800,
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
+          },
+          "id": "s4.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Merged headers fill columns; merged body stays singular"
+        },
+        {
+          "asset_ids": [],
+          "bbox": {
+            "height": 3810000,
+            "unit": "emu",
+            "width": 10858500,
+            "x": 666750,
+            "y": 1428750
+          },
+          "caption_rows": 1,
+          "header_rows": 1,
+          "id": "s4.b2",
+          "kind": "table",
+          "markdown": "**Merged table title**\n\n| Column A | Column B | Column C |\n| --- | --- | --- |\n| alpha<br>beta | plain cell | gamma |\n| merged body | merged body | tail |",
+          "merged_cells": "fill",
+          "rows": [
+            [
+              {
+                "col_span": 3,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "Merged table title"
+              },
+              {
+                "col_span": 1,
+                "merged_from": [
+                  0,
+                  0
+                ],
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": [
+                  0,
+                  0
+                ],
+                "row_span": 1,
+                "text": ""
+              }
+            ],
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "Column A"
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "Column B"
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "Column C"
+              }
+            ],
+            [
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "alpha\nbeta"
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "plain cell"
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "gamma"
+              }
+            ],
+            [
+              {
+                "col_span": 2,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "merged body"
+              },
+              {
+                "col_span": 1,
+                "merged_from": [
+                  3,
+                  0
+                ],
+                "row_span": 1,
+                "text": ""
+              },
+              {
+                "col_span": 1,
+                "merged_from": null,
+                "row_span": 1,
+                "text": "tail"
+              }
+            ]
+          ],
+          "shape_id": "4",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 4,
+      "reading_order": null,
+      "section": null
     },
     {
-      "page": 8,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Mixed font sizes remain one coherent text block",
-          "shape_id": "1",
-          "heading_level": 1,
           "bbox": {
-            "x": 400050,
-            "y": 285750,
-            "width": 11391900,
             "height": 685800,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
           },
+          "id": "s5.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "A native chart remains structured and searchable"
+        },
+        {
+          "asset_ids": [],
+          "bbox": {
+            "height": 4476750,
+            "unit": "emu",
+            "width": 7239000,
+            "x": 762000,
+            "y": 1381125
+          },
+          "id": "s5.b2",
+          "kind": "chart",
+          "markdown": "**Parser coverage by object**\n\n**Chart type:** Column Chart\n\n|       | Baseline | Current |\n| ----- | -------- | ------- |\n| Text  | 88       | 99      |\n| Table | 72       | 96      |\n| Chart | 64       | 94      |\n| Media | 48       | 91      |",
+          "shape_id": "5",
           "source_part": "slide"
         },
         {
-          "kind": "text",
-          "content": "Mixed-style heading\nThe smaller explanatory line remains body content.",
-          "shape_id": "2",
-          "heading_level": null,
           "bbox": {
-            "x": 1047750,
-            "y": 1714500,
-            "width": 10096500,
-            "height": 2857500,
-            "unit": "emu"
+            "height": 1714500,
+            "unit": "emu",
+            "width": 2857500,
+            "x": 8477250,
+            "y": 2286000
           },
-          "source_part": "slide"
+          "id": "s5.b3",
+          "kind": "text",
+          "shape_id": "3",
+          "source_part": "slide",
+          "text": "The chart title, categories, series, and values must survive conversion."
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 5,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 685800,
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
+          },
+          "id": "s6.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Speaker notes remain separate from visible blocks"
+        },
+        {
+          "bbox": {
+            "height": 1524000,
+            "unit": "emu",
+            "width": 8953500,
+            "x": 1619250,
+            "y": 2286000
+          },
+          "id": "s6.b2",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "**visible-slide-body**"
+        }
+      ],
+      "hidden": false,
+      "notes": "speaker-note-line-one\nspeaker-note-line-two",
+      "page": 6,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 685800,
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
+          },
+          "id": "s7.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Rotated text boxes keep their content and anchors"
+        },
+        {
+          "bbox": {
+            "height": 952500,
+            "unit": "emu",
+            "width": 2857500,
+            "x": 762000,
+            "y": 2095500
+          },
+          "id": "s7.b2",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "rotation-0"
+        },
+        {
+          "bbox": {
+            "height": 1714500,
+            "unit": "emu",
+            "width": 2095500,
+            "x": 4667250,
+            "y": 1714500
+          },
+          "id": "s7.b3",
+          "kind": "text",
+          "shape_id": "3",
+          "source_part": "slide",
+          "text": "rotation-90"
+        },
+        {
+          "bbox": {
+            "height": 1714500,
+            "unit": "emu",
+            "width": 2095500,
+            "x": 8382000,
+            "y": 1714500
+          },
+          "id": "s7.b4",
+          "kind": "text",
+          "shape_id": "4",
+          "source_part": "slide",
+          "text": "rotation-270"
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 7,
+      "reading_order": null,
+      "section": null
+    },
+    {
+      "blocks": [
+        {
+          "bbox": {
+            "height": 685800,
+            "unit": "emu",
+            "width": 11391900,
+            "x": 400050,
+            "y": 285750
+          },
+          "id": "s8.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "1",
+          "source": "font",
+          "source_part": "slide",
+          "text": "Mixed font sizes remain one coherent text block"
+        },
+        {
+          "bbox": {
+            "height": 2857500,
+            "unit": "emu",
+            "width": 10096500,
+            "x": 1047750,
+            "y": 1714500
+          },
+          "id": "s8.b2",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "**Mixed-style heading**\nThe smaller explanatory line remains body content."
+        }
+      ],
+      "hidden": false,
+      "notes": null,
+      "page": 8,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "synthetic_text_objects.pptx",
+    "sha256": "1a50a0e87af9fcfddd4c1c092b9ffd3fcf5751130f16b1976ef327724a69006b"
+  },
+  "warnings": []
 }

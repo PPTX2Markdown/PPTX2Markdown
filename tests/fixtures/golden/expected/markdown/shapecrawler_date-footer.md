@@ -2,7 +2,7 @@
 
 AutoShape 1
 
-- P1t1 P1t2
+- P1t1 **P1t2**
 - p2
 
 [Speaker_Notes]

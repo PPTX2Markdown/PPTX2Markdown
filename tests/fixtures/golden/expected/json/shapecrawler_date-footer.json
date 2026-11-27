@@ -1,44 +1,62 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "shapecrawler_date-footer.pptx",
-    "format": "pptx"
-  },
+  "assets": [],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "text",
-          "content": "AutoShape 1",
-          "shape_id": "2",
-          "heading_level": null,
           "bbox": {
-            "x": 1433383,
-            "y": 308919,
-            "width": 920579,
             "height": 512805,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 920579,
+            "x": 1433383,
+            "y": 308919
           },
-          "source_part": "slide"
+          "id": "s1.b1",
+          "kind": "text",
+          "shape_id": "2",
+          "source_part": "slide",
+          "text": "AutoShape 1"
         },
         {
-          "kind": "list",
-          "content": "- P1t1 P1t2\n- p2",
-          "shape_id": "37",
-          "heading_level": null,
           "bbox": {
-            "x": 3383280,
-            "y": 1737360,
-            "width": 2011680,
             "height": 1144080,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 2011680,
+            "x": 3383280,
+            "y": 1737360
           },
-          "source_part": "slide"
+          "id": "s1.b2",
+          "items": [
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "P1t1 **P1t2**"
+            },
+            {
+              "level": 0,
+              "ordered": null,
+              "text": "p2"
+            }
+          ],
+          "kind": "list",
+          "ordered": false,
+          "shape_id": "37",
+          "source_part": "slide",
+          "start": 1
         }
       ],
-      "notes": "Test note"
+      "hidden": false,
+      "notes": "Test note",
+      "page": 1,
+      "reading_order": null,
+      "section": "Section 1"
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "shapecrawler_date-footer.pptx",
+    "sha256": "e3b0d245ed825d882855faacdcc738a4d63d3b4da7cb563b5671a507c68777d0"
+  },
+  "warnings": []
 }

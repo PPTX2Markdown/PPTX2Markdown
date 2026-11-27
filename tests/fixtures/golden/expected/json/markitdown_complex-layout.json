@@ -1,58 +1,78 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "markitdown_complex-layout.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-c81c8c9c77ff6df8",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image1.png",
+      "payload_available": true,
+      "sha256": "8b1c9da5cc913f9d18adfb4ba2c9d9831744cba89c60e5402b67e650f6437c4e",
+      "size": 3773,
+      "source_part": "ppt/media/image1.png"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "heading",
-          "content": "Product Comparison",
-          "shape_id": "2",
-          "heading_level": 1,
           "bbox": {
-            "x": 457200,
-            "y": 274638,
-            "width": 8229600,
             "height": 1143000,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 8229600,
+            "x": 457200,
+            "y": 274638
           },
-          "source_part": "slide"
+          "id": "s1.b1",
+          "kind": "heading",
+          "level": 1,
+          "shape_id": "2",
+          "source": "placeholder",
+          "source_part": "slide",
+          "text": "Product Comparison"
         },
         {
-          "kind": "text",
-          "content": "Our products lead the market",
-          "shape_id": "4",
-          "heading_level": null,
           "bbox": {
+            "height": 914400,
+            "unit": "emu",
+            "width": 2743200,
             "x": 914400,
-            "y": 1828800,
-            "width": 2743200,
-            "height": 914400,
-            "unit": "emu"
+            "y": 1828800
           },
-          "source_part": "slide"
+          "id": "s1.b2",
+          "kind": "text",
+          "shape_id": "4",
+          "source_part": "slide",
+          "text": "Our products lead the market"
         },
         {
-          "kind": "image",
-          "content": "![image](media/image1.png)",
-          "shape_id": "5",
-          "heading_level": null,
+          "alt_text": "temp_pptx5.png",
+          "asset_id": "asset-c81c8c9c77ff6df8",
           "bbox": {
-            "x": 3657600,
-            "y": 2286000,
-            "width": 2743200,
             "height": 914400,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 2743200,
+            "x": 3657600,
+            "y": 2286000
           },
+          "description": null,
+          "id": "s1.b3",
+          "kind": "image",
+          "shape_id": "5",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "markitdown_complex-layout.pptx",
+    "sha256": "2a60e9203bb6a7692d987e1e128525f79a7de5dd85b43cc1d976cef8367cd458"
+  },
+  "warnings": []
 }

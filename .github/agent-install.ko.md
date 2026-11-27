@@ -74,10 +74,13 @@ python -m pip install --upgrade pptx2markdown
 반드시 확인하세요. 가능하면 profile을 몰래 수정하지 말고 셸을 새로 열거나
 새로고침하는 방법을 안내하세요.
 
-## 5. 구형 PPT 지원 필요 여부 확인
+## 5. 선택 기능 확인
 
 일반 `.pptx` 변환에는 LibreOffice가 필요하지 않습니다. LibreOffice는 구형 `.ppt`
-입력과 EMF/WMF 처리에 선택적으로 사용됩니다.
+입력, EMF/WMF 그림의 PNG 변환, 읽기 순서가 애매한 슬라이드의 렌더링에 선택적으로
+사용됩니다. `mcp` extra는 Claude Code 같은 에이전트용 `pptx2markdown-mcp` 서버를
+추가하며, 사용자가 원할 때만 설치합니다(`uv tool install --upgrade "pptx2markdown[mcp]"`,
+`pipx`나 `pip`에서도 같은 extra 사용).
 
 사용자에게 이 기능이 필요한지 물으세요. 필요하지 않으면 LibreOffice를 설치하지
 마세요. 필요하다면 `soffice` 또는 LibreOffice가 이미 있는지 먼저 확인하세요.
@@ -94,9 +97,9 @@ PATH 변경으로 필요하다면 새 셸 또는 새로고침된 셸에서 다�
 pptx2markdown --help
 ```
 
-도움말에 `--output-format {markdown,json}`와 `--headings {auto,strict}`를 포함한
-정적 파서 옵션이 표시되는지 확인하세요. Surya, OCR, VLM, 읽기 순서 provider
-옵션이 표시되면 안 됩니다.
+도움말에 `--output-format {markdown,json,chunks}`, `--review`, `--audit`를 포함한
+0.2 옵션이 표시되는지 확인하세요. `--work-dir`가 보이면 예전 0.1 버전이 설치된
+것이므로 업그레이드하세요.
 
 설치 방법이 패키지 목록 기능을 제공하면 `uv tool list`, `pipx list`, Python
 package metadata 등으로 설치된 버전을 보고하세요.

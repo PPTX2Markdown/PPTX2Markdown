@@ -9,10 +9,10 @@
 | Категория 3 | 3.5   | 1.8   | 3     |
 | Категория 4 | 4.5   | 2.8   | 5     |
 
-![image](media/image2.png)
+![Рисунок 36](media/image2.png)
 
 | col_1 | col_2 | col_3 | col_4 | col_5 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 |  |  |  |  |  |
 
 test
@@ -29,7 +29,7 @@ el2
 
 el3
 
-![image](media/image3.png)
+![Picture 1](media/image3.png)
 
 [attachment: Result.json](attachments/Result.json)
 
@@ -37,12 +37,12 @@ el3
 
 [Page_3]
 
-![image](media/image3.png)
+![AutoShape 1](media/image3.png)
 
 Ph1pn1 ph1pn1
 
 | - 0:0_p1_lvl1<br>  - 0:0_p2_lvl2 | col_2 | col_3 |
-|---|---|---|
+| --- | --- | --- |
 |  |  |  |
 |  |  |  |
 
@@ -69,9 +69,13 @@ Ph1pn1 ph1pn1
 
 [Page_4]
 
-![image](media/image3.png)
+![A green and white sign
 
-![image](media/image3.png)
+Description automatically generated with low confidence](media/image3.png)
+
+![A green and white sign
+
+Description automatically generated with low confidence](media/image3.png)
 
 # Title text
 

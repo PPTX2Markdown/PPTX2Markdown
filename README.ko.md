@@ -7,100 +7,74 @@
 
 [English](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/README.md) | 한국어
 
-`pptx2markdown`은 PowerPoint 프레젠테이션을 검색, RAG, 문서 처리에 적합한
-결정론적 Markdown 또는 JSON으로 변환합니다. 네이티브 OOXML 구조와 도형 좌표를
-직접 파싱하며 OCR, 비전 모델, API 키, 클라우드 서비스가 필요하지 않습니다.
+`pptx2markdown`은 PowerPoint 프레젠테이션을 결정적인 Markdown, JSON, 검색용 청크로
+변환합니다. 네이티브 OOXML 구조와 도형 좌표를 직접 읽고, 모델을 호출하지 않으며,
+확신이 없는 곳을 스스로 알려 줍니다. 다시 볼 만한 결정에는 바로 쓸 수 있는 대안이
+함께 나오므로, 사람·UI·모델이 레시피로 답하면 그 결과가 결정적으로 재현됩니다.
 
 ## 왜 pptx2markdown인가요?
 
-- **하나의 정적 파이프라인** — `.pptx`의 XML, relationship, 내장 패키지 part를
-  직접 파싱합니다.
-- **결정론적 읽기 순서** — 의미론 또는 모델 기반 보정 없이 기하학적 재귀
-  XY-cut으로 네이티브 도형을 정렬합니다.
-- **하나의 출력 계약** — Markdown과 JSON을 동일한 버전 기반
-  `PresentationDocument`에서 렌더링합니다.
-- **풍부한 네이티브 콘텐츠** — 텍스트, 헤딩, 목록, 표, 차트, SmartArt, 수식,
-  이미지, 발표자 노트, 내장 첨부파일을 보존합니다.
-- **검토 가능한 회귀 테스트** — 실제 PPTX fixture를 Linux, macOS, Windows에서
-  JSON 및 Markdown 골든 출력과 바이트 단위로 비교합니다.
+- **슬라이드 구조를 따르는 읽기 순서** — 카드, 라벨 상자, 그룹 도형은 한 단위로
+  읽고 배경은 무시합니다. 여러 방식으로 읽힐 수 있는 슬라이드는 후보 순서와 함께
+  표시합니다.
+- **의미를 지키는 표** — 병합 범위를 포함한 전체 셀 격자, 모든 행이 단독으로
+  의미를 갖도록 반복되는 병합 값, 요청 시 두 줄 그룹 머리글.
+- **조용한 추측 대신 결정 지점** — `review()`가 확신 없는 선택을 고정 id, 사유,
+  봐야 할 것, 중요도와 함께 나열하고, 답은 레시피가 됩니다.
+- **조용한 누락 없음** — `audit()`가 슬라이드 XML을 다시 읽어 출력에 없는 입력
+  텍스트를 보고합니다.
+- **검색 파이프라인 친화적** — 출처 메타데이터가 붙은 슬라이드 단위 청크, bytes·
+  stream 입력, 에이전트용 MCP 서버.
+- **풍부한 네이티브 콘텐츠** — 텍스트, 제목, 목록, 표, 차트, SmartArt, 수식,
+  이미지, 발표자 노트, 구역, 내장 첨부파일.
 
-## 지원 콘텐츠
+[기능 벤치마크](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/benchmarks/README.ko.md)에서
+각 변환기가 덱에서 지켜 낸 것:
 
-| 콘텐츠 | 처리 방식 |
-| --- | --- |
-| 텍스트와 헤딩 | 텍스트를 보존하고 네이티브 placeholder 및 스타일 근거로 헤딩을 추론 |
-| 목록 | 순서 있는 목록과 순서 없는 목록 구조를 보존 |
-| 표 | 네이티브 PowerPoint 표를 Markdown 표로 렌더링 |
-| 차트 | [chart2md](https://pypi.org/project/chart2md/)를 통해 네이티브 차트를 변환 |
-| SmartArt | [smartart2md](https://pypi.org/project/smartart2md/)를 통해 다이어그램 콘텐츠를 변환 |
-| 수식 | [omml2latex](https://pypi.org/project/omml2latex/)를 통해 OMML 수식을 LaTeX로 변환 |
-| 이미지 | 원본 이미지 asset을 복사하고 표준 Markdown 이미지 링크를 생성 |
-| 발표자 노트 | 화면에 보이는 슬라이드 콘텐츠와 분리해 보존 |
-| 첨부파일 | 복구 가능한 PDF, 오디오, 비디오, Office, ZIP, 3D, OLE payload를 링크 파일로 보존 |
+| | pptx2markdown | anydoc 0.2.5 | MarkItDown 0.1.9 |
+| --- | :---: | :---: | :---: |
+| 유지한 기능 (20개 중) | **20** | 13 | 8 |
 
-이미지 내부 텍스트 OCR, 오디오·비디오 전사, 애니메이션 재구성, connector 의미
-해석, 픽셀 단위 슬라이드 재현은 지원하지 않습니다. PowerPoint 검토 댓글도
-의도적으로 제외합니다.
-
-## 요구사항
-
-- Python 3.12 이상
-- `.pptx`: Microsoft Office 또는 LibreOffice 불필요
-- 구형 `.ppt`: Windows의 Microsoft PowerPoint 또는 LibreOffice
-- 선택적 EMF/WMF→PNG 변환: LibreOffice
+0.1.x에서 올라오시나요? 출력, CLI 옵션, Python API가 바뀌었습니다.
+[마이그레이션 가이드](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/MIGRATION.ko.md)를 참고하세요.
 
 ## 설치
 
 ### AI 에이전트에게 설치 맡기기
 
-로컬 코딩 에이전트가 환경을 확인하고, 격리 설치 방식을 선택하며, 필요한 경우
-LibreOffice를 설정하고 CLI까지 검증할 수 있습니다. 아래 프롬프트 중 하나를
-전달하고 모든 권한 요청을 직접 검토하세요.
-
-일반 에이전트:
+로컬 코딩 에이전트가 환경을 확인하고, 격리된 설치 방식을 고르고, 필요하면
+LibreOffice를 설정한 뒤 CLI를 검증할 수 있습니다. 아래 프롬프트를 주고 모든 권한
+요청을 확인하세요.
 
 ```text
-Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.ko.md and install pptx2markdown for this machine. Use Korean throughout the installation. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
+https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.ko.md 를 읽고 이 컴퓨터에 pptx2markdown을 설치해 줘. 설치에 필요한 명령은 설명한 뒤 실행해도 돼. 관리자 권한, sudo, 비밀번호, 시스템 패키지 관리자, 셸 프로필, PATH, LibreOffice 변경 전에는 먼저 물어봐.
 ```
 
-Codex 대화형 계획:
+전체 [에이전트 설치 절차](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.ko.md)를 참고하세요.
 
-```text
-/plan
-Read https://raw.githubusercontent.com/PPTX2Markdown/PPTX2Markdown/main/.github/agent-install.ko.md and install pptx2markdown for this machine. Use Korean throughout the installation. You may run the commands needed for installation after explaining them. Ask me before any administrator, sudo, password, system package-manager, shell-profile, PATH, or LibreOffice change.
-```
-
-전체 절차는 [에이전트 설치 안내](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/.github/agent-install.ko.md)를 참고하세요.
-
-### 수동 설치
-
-격리된 CLI는 `uv` 사용을 권장합니다.
+### 직접 설치
 
 ```bash
 uv tool install pptx2markdown
-```
-
-또는 `pipx`나 활성화된 가상환경을 사용합니다.
-
-```bash
+# 또는
 pipx install pptx2markdown
-# 또는 활성화된 가상환경 안에서
+# 또는 활성화된 가상 환경 안에서
 python -m pip install pptx2markdown
 ```
 
-LibreOffice는 선택 사항입니다.
+추가 기능: `pptx2markdown[mcp]`(MCP 서버), `pptx2markdown[images]`(PNG로 그린
+EMF/WMF 그림의 여백 정리).
+
+LibreOffice는 선택 사항입니다. `.ppt` 입력, EMF/WMF 그림의 PNG 변환, 읽기 순서가
+애매한 슬라이드의 렌더링처럼 요청한 경우에만 씁니다.
 
 ```bash
 # macOS
 brew install --cask libreoffice
 
 # Ubuntu / Debian
-sudo apt-get install libreoffice libreoffice-impress
+sudo apt-get install libreoffice-impress
 ```
-
-Windows의 `.ppt` 변환은 PowerPoint COM 자동화를 사용할 수 있으면 우선 사용하고,
-그렇지 않으면 LibreOffice를 시도합니다. 특정 LibreOffice 실행 파일을 사용하려면
-`SOFFICE_PATH`를 지정할 수 있습니다.
 
 ## 빠른 시작
 
@@ -108,165 +82,356 @@ Windows의 `.ppt` 변환은 PowerPoint COM 자동화를 사용할 수 있으면 
 # 파일 하나 -> ./output/deck/deck.md
 pptx2markdown deck.pptx
 
-# 현재 디렉터리의 모든 .pptx/.ppt
-pptx2markdown
+# 여러 파일, 출력 위치 지정, CPU마다 작업 프로세스 하나
+pptx2markdown decks/*.pptx --output-dir converted --jobs 0
 
-# 여러 파일과 사용자 지정 출력 루트
-pptx2markdown first.pptx second.pptx -o converted/
-
-# Markdown 대신 표준 JSON
+# 정규 JSON, 또는 슬라이드 청크마다 JSON 한 줄
 pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --output-format chunks
+
+# 변환기가 확신하지 못한 곳, 보존하지 못한 텍스트
+pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --audit
 ```
 
-일괄 변환 시 `~$*.pptx` 형식의 임시 Office 잠금 파일은 조용히 건너뜁니다.
+## 요구 사항
 
-### 선택적 EMF/WMF 변환
+- Python 3.12 이상
+- Pydantic 2.10 이상
+- omml2latex 0.1.0 이상
+- chart2md 0.1.0 이상
+- smartart2md 0.1.1 이상
+- olefile 0.47 이상
+- 로컬 `.pptx` 입력. 레거시 `.ppt`는 요청할 때만 LibreOffice로 변환
 
-기본적으로 내장 EMF/WMF 파일은 원본 그대로 복사하고
-`![image](media/diagram.wmf)`처럼 표준 Markdown 링크를 생성합니다.
-이 방식은 PowerPoint 원본 asset을 보존하며 LibreOffice를 실행하지
-않습니다. 다만 많은 브라우저와 Markdown 미리보기는 Windows 벡터
-형식인 EMF/WMF를 직접 표시하지 못합니다.
+파싱 경로에는 OCR, VLM, API key, cloud inference, PowerPoint 자동화가 없습니다.
+`.ppt` 파일은 `ppt_converter="libreoffice"`(`--ppt-converter libreoffice`)를 줄 때만
+변환하며, LibreOffice를 headless로 실행하고 작업 후 지워지는 임시 디렉터리만
+사용합니다(`SOFFICE_PATH`로 실행 파일 지정). `vector_images="png"`
+(`--vector-images png`)도 마찬가지입니다. 브라우저·Markdown 뷰어·비전 모델이 읽지 못하는
+EMF/WMF 그림을 LibreOffice 한 번 실행으로 PNG로 그려 같은 asset id로 원본을 대신하며,
+`images` extra(`pip install "pptx2markdown[images]"`)가 있으면 LibreOffice가 붙이는 페이지
+여백을 잘라냅니다.
 
-일반적인 브라우저나 미리보기에서 이미지를 표시해야 할 때만 다음
-옵션을 사용합니다.
-
-```bash
-pptx2markdown deck.pptx --convert-vector-images
-```
-
-`--convert-vector-images`를 사용하면:
-
-- 내장 `.emf`, `.wmf` 이미지 asset만 변환합니다.
-- LibreOffice를 headless로 실행하여 `media/` 아래에 `.png` 파일을 생성합니다.
-- Markdown/JSON 이미지 블록은 원본 벡터 파일 대신 생성된 PNG를 가리킵니다.
-- PNG, JPEG, GIF, SVG, WebP 등 다른 이미지 형식은 변환하지 않고 그대로 복사합니다.
-- 모든 슬라이드 처리가 끝난 뒤 고유 EMF/WMF asset 전체를 한 번의
-  headless LibreOffice 프로세스에 전달해 일괄 변환합니다.
-- 같은 벡터 asset이 여러 번 참조되면 한 번 변환한 파일을 재사용합니다.
-- LibreOffice를 찾지 못하거나 변환이 실패하면 경고를 남기고 원본
-  EMF/WMF 파일과 링크를 파일별로 보존합니다. 성공한 변환은 유지하며
-  전체 프레젠테이션 변환도 실패하지 않습니다.
-
-LibreOffice는 `SOFFICE_PATH`, 표준 설치 경로, 실행 파일 검색 경로 순으로
-찾습니다. 변환에 성공하면 출력 패키지에 원본 벡터 파일은 복사하지
-않습니다. 특정 LibreOffice를 사용해야 하면 `SOFFICE_PATH`를 설정하세요.
-
-Python에서 사용하기:
+## Python API
 
 ```python
 import pptx2markdown
 
-exit_code = pptx2markdown.convert(
-    "deck.pptx",
-    output_dir="converted",
-    output_format="markdown",
-    convert_vector_images=True,
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for slide in presentation.slides:
+        print(slide.page, slide.blocks)
+
+    result = presentation.save("output/deck")
+    print(result.document_path)
+```
+
+`parse()`는 파일의 bytes나 바이너리 스트림도 받으므로, 업로드된 파일을 디스크에
+쓰지 않고 바로 변환할 수 있습니다(`name`은 원본 이름으로 기록됨).
+
+```python
+with pptx2markdown.parse(request.files["deck"].stream, name="deck.pptx") as presentation:
+    markdown = presentation.render_markdown(assets="omit")
+```
+
+메모리 입력은 `PackageLimits.max_package_bytes`(1 GiB)까지 받습니다.
+
+`parse()`는 영구 출력 파일을 남기지 않습니다. 내장 payload는 관리되는 spooled
+store에 보관하며 canonical 문서에는 임시경로가 들어가지 않습니다.
+
+저장하지 않고 Markdown을 렌더링할 때는 asset 정책을 명시해야 합니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    text_only = presentation.render_markdown(assets="omit")
+
+    web_markdown = presentation.render_markdown(
+        asset_url=lambda asset_id: f"/assets/{asset_id}",
+    )
+```
+
+### 검색용 청크
+
+`slide_chunks()`는 슬라이드마다 청크 하나를 돌려주고, 인용에 필요한 metadata(원본,
+페이지, 슬라이드·덱 제목, 블록 id, 블록 종류)를 붙입니다. `max_chars`보다 긴
+슬라이드는 블록 경계에서 나누며 표 중간에서 자르지 않습니다. 각 청크는 덱과
+슬라이드를 밝히는 주석으로 시작하므로, 검색된 청크 하나만 봐도 맥락을 알 수
+있습니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for chunk in pptx2markdown.slide_chunks(presentation.document, max_chars=2000):
+        index.add(chunk.text, metadata=chunk.metadata)
+```
+
+`--output-format chunks`는 같은 청크를 JSON Lines(`<덱>.chunks.jsonl`, 줄마다
+`{"text": ..., "metadata": ...}`)로 쓰며, 이미지 링크는 번들 안을 가리킵니다.
+`--max-chunk-chars`로 나누는 크기를 정합니다.
+
+### 레시피
+
+레시피는 파서를 건드리지 않고 파싱된 문서를 조정합니다. 문서 전체 설정과,
+블록이나 슬라이드를 골라 무엇을 할지 정하는 규칙으로 이루어집니다. 단순한
+데이터라서 덱 옆에 저장하거나, 검토하거나, 팀에서 공유할 수 있고, "부록은 빼고
+매출 표는 위 두 줄을 머리글로 봐줘" 같은 요청으로부터 언어 모델이 작성할 수도
+있습니다. 적용 결과는 항상 같습니다.
+
+```python
+recipe = pptx2markdown.Recipe(
+    merged_cells="blank",
+    rules=[
+        {"target": "slide[12-]", "exclude": True, "reason": "부록"},
+        {"target": "slide[3]/table[0]", "header_rows": 2},
+        {"target": "s5.b2", "description": "2021-2024 분기별 매출"},
+        {"target": "s1.b3", "heading_level": 2},
+    ],
 )
-if exit_code != 0:
-    raise RuntimeError("conversion failed")
+with pptx2markdown.parse("deck.pptx", recipe=recipe) as presentation:
+    ...
 ```
 
-Markdown 출력 예시:
+모든 블록에는 `s<페이지>.b<번호>` id가 있습니다. `render_markdown(block_ids=True)`는
+이를 `<!-- s3.b2 table -->` 주석으로 보여 주므로 검토자나 모델이 정확한 블록을
+가리킬 수 있고, `explain_recipe()`는 적용 전에 각 규칙이 무엇을 고르는지
+알려 줍니다. selector는 다음과 같습니다.
 
-```markdown
-[Page_1]
+| Selector | 고르는 대상 |
+| --- | --- |
+| `s3.b2` | id로 지정한 블록 하나 |
+| `slide[3]`, `slide[2-5]`, `slide[12-]`, `slide[*]`, `slide[hidden]` | 슬라이드 전체 |
+| `table`, `image`, `heading` 등 또는 `*` | 해당 종류의 모든 블록 |
+| `table[0]`, `table[-1]` | 슬라이드마다 해당 종류의 첫 번째·마지막 블록 |
+| `slide[3]/table[0]` | 3번 슬라이드의 첫 번째 표 |
+| `section[Appendix]`, `section[Appendix]/image` | PowerPoint 구역(section)의 슬라이드(또는 블록) |
 
-# 분기 실적
+설정: `merged_cells`, `include_notes`, `include_hidden`, 그리고 `headings`
+(`placeholder`는 제목 placeholder에서 나온 제목만 남기며, legacy의
+`--headings strict`에 해당합니다).
 
-- 매출 18% 증가
-- 영업이익률 24% 달성
+규칙 동작: `exclude`, `merged_cells`, `header_rows`, `caption_rows`(표), `heading_level`(제목 수준
+변경 또는 텍스트를 제목으로), `as_text`(제목·목록), `description`(이미지 대체
+텍스트), `notes`와 `order`(슬라이드 selector: 발표자 노트 유지·제거, 블록 id 순서대로
+읽기), 그리고 검토용으로만 남는 `reason`. 뒤의
+규칙이 앞의 규칙보다 우선하며, 모든 selector는 파싱된 그대로의 문서를 봅니다.
+`recipe_json_schema()`(또는 `pptx2markdown --recipe-schema`)는 입력 폼이나 모델의
+구조화 출력에 쓸 JSON Schema를 돌려줍니다.
 
-| 지역 | 매출 |
-| --- | ---: |
-| APAC | $12.4M |
+### 검토(review)
 
-![image](media/image1.png)
+변환기는 항상 스스로 결정합니다. `review()`는 그중 다시 볼 만한 결정을 골라,
+각 대안을 바로 쓸 수 있는 레시피 규칙으로 함께 내놓습니다. 병합된 그룹이 있는
+머리글 아래 행이 라벨처럼 보이는 경우(머리글 두 줄?), 첫 행이 모두 숫자인
+경우(머리글 없음?), 병합된 첫 행을 표 제목으로 본 경우, 설명이 없는 이미지,
+글꼴 크기만으로 판정한 제목(제목이 맞나?), 목록이나 표를 이끄는 짧은 굵은
+줄(소제목?), 그리고 여러 순서로 읽힐 수 있는 배치의 슬라이드가 그 대상입니다.
+사람이나 UI, 언어 모델은 선택지만 고르면 되고, 고른 결과가 곧 레시피가 됩니다.
+
+읽기 순서는 슬라이드의 구조를 따릅니다. 그룹과 다른 도형을 감싸는 도형(카드
+테두리, 라벨이 붙은 상자, 콜아웃이 올라간 그림)은 한 단위로 읽고, 슬라이드를 덮는
+배경은 무시합니다. 기하 정보만으로 순서를 정할 수 없는 곳(행으로도 열로도 읽히는
+격자, 틈 없이 나란한 텍스트)은 `reading-order` 검토 항목이 되고, 그 선택지는 후보
+순서를 담은 `order` 규칙입니다. 그래서 사람이나 모델은 그런 슬라이드만 보면 됩니다.
+`choose_reading_orders_with(presentation, judge)`는 그 슬라이드만 LibreOffice로 로컬에서
+한 장짜리 PDF로 렌더링해, 사용자가 준 `judge` 함수에 후보 중 하나를 고르게 합니다.
+[설계 문서](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/reading_order_design.ko.md)를 참고하세요.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    for item in pptx2markdown.review(presentation.document):
+        print(item.target, item.question, [option.label for option in item.options])
 ```
 
-## CLI 옵션
+`pptx2markdown deck.pptx --review`는 번들을 쓰지 않고 같은 내용을 JSON으로
+출력합니다.
 
-| 플래그 | 기본값 | 설명 |
-| --- | --- | --- |
-| `-o, --output-dir` | `./output` | 최종 Markdown/JSON과 복사된 asset |
-| `--work-dir` | `./.pptx2markdown` | 압축 해제 패키지, 분석 파일, 캐시 |
-| `--output-format` | `markdown` | `markdown` 또는 `json` |
-| `--headings` | `auto` | `auto` 또는 placeholder 전용 `strict` 헤딩 판정 |
-| `--placeholder-inheritance` | `style` | `none`, `geometry`, `style` 상속 |
-| `--inherited-shapes` | `visible` | `none`, `visible`, `all` 레이아웃/마스터 도형 |
-| `--ppt-converter` | `auto` | `.ppt`용 `auto`, `powerpoint`, `libreoffice` |
-| `--convert-vector-images` | 꺼짐 | 내장 EMF/WMF 이미지를 LibreOffice로 PNG 변환 |
-| `--verbose` | 꺼짐 | 디버그 로깅 |
+### 이미지 설명(모델 무관)
 
-정확한 CLI 목록은 `pptx2markdown --help`로 확인하세요.
+이미지 설명은 추가 설치 없이 로컬이든 아니든 어떤 모델로도 만들 수 있습니다.
+`describe_images_with`는 설명이 필요한 그림마다 슬라이드 Markdown을 맥락으로 붙여
+사용자가 준 함수에 넘기고, 답을 레시피로 돌려줍니다. 그 함수가 보내지 않는 한
+어떤 데이터도 밖으로 나가지 않습니다(사내망·온프레미스 환경).
 
-## 출력 구조
+```python
+from pptx2markdown import ImageDescription, describe_images_with
+
+def describe(request):  # request.data, .media_type, .alt_text, .slide_markdown
+    text = my_local_vision_model(request.data, context=request.slide_markdown)
+    return ImageDescription(description=text)
+
+with pptx2markdown.parse("deck.pptx") as presentation:
+    presentation.apply(describe_images_with(presentation, describe))
+```
+
+### 감사(audit)
+
+규칙 기반 변환기는 조용히 실패합니다. 이해하지 못한 도형은 출력에서 그냥 빠집니다.
+`audit()`은 파서의 규칙을 거치지 않고 슬라이드 XML을 다시 읽어, 문서에 없는 입력
+텍스트를 슬라이드 번호와 도형 id와 함께 모두 보고하고, 문서에서 빠진 슬라이드도
+알려 줍니다. 텍스트는 글자와 숫자만 비교하므로 이스케이프, 강조, 목록 기호, 줄바꿈은
+손실로 치지 않습니다. 바닥글·날짜·슬라이드 번호 placeholder와 병합으로 가려진 셀은
+제외하며, 차트·SmartArt·수식은 감사하지 않습니다.
+
+```python
+with pptx2markdown.parse("deck.pptx") as presentation:
+    report = presentation.audit()
+    print(report.ok, report.coverage, report.losses)
+```
+
+`pptx2markdown deck.pptx --audit`는 번들을 쓰지 않고 보고서를 JSON으로 출력하며,
+손실이 있으면 종료 코드 1을 돌려줍니다. 레시피가 지운 내용도 손실로 보이므로 CLI와
+MCP 도구는 레시피 없이 변환 결과를 감사합니다.
+
+### 모델로 판단하기
+
+패키지 안에서는 어떤 모델도 호출하지 않습니다. 판단이 필요한 곳에서는 그 판단에
+필요한 것만 사용자가 넘긴 함수에 전달하고, 답을 레시피 규칙으로 바꿉니다. 검토
+항목은 `recipe_from_answers`, 이미지 설명은 `describe_images_with`, 읽기 순서는
+`choose_reading_orders_with`로 처리합니다. 함수는 사람이어도, 로컬 모델이어도,
+호스팅 모델이어도 됩니다. 아래 MCP 서버를 쓰면 호스트 모델(예: Claude Code)이
+별도 API 키 없이 같은 일을 합니다. 여러 포맷을 다루는 에이전트는
+[계약](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/agent_contract.ko.md)을 통해 그 위에 올릴 수 있습니다.
+
+### MCP 서버
+
+`pip install "pptx2markdown[mcp]"`를 설치하면 MCP(Model Context Protocol) 서버
+`pptx2markdown-mcp`(stdio)가 추가되어, Claude 같은 에이전트가 레시피 작업 흐름을 직접
+수행할 수 있습니다. 도구는 `convert_presentation`(블록 id가 표시된 Markdown, 레시피
+적용 가능), `review_presentation`, `audit_presentation`(변환에서 빠진 텍스트),
+`presentation_images`(설명 없는 그림을 이미지로 돌려주어 호스트 모델이 레시피로 설명을
+달 수 있게 함), `check_recipe`(규칙마다 고르는 대상), `presentation_chunks`,
+`recipe_schema`입니다. 두 프롬프트가 호스트 모델을 작업 흐름으로 안내합니다.
+`prepare_for_retrieval`(감사, 검토 답하기, 그림 설명, 레시피 확인, 청크)과
+`apply_request`(자연어 요청을 확인된 레시피로)입니다. 로컬 `.pptx` 파일을 읽기만 하고 아무것도
+쓰지 않습니다.
+
+```bash
+claude mcp add pptx2markdown -- pptx2markdown-mcp
+```
+
+또는 MCP 클라이언트 설정에서:
+
+```json
+{"mcpServers": {"pptx2markdown": {"command": "pptx2markdown-mcp"}}}
+```
+
+파싱과 저장을 한 번에 수행하려면 `convert()`를 사용합니다.
+
+```python
+result = pptx2markdown.convert(
+    "deck.pptx",
+    output_dir="output",
+)
+```
+
+## CLI
+
+```bash
+pptx2markdown deck.pptx
+pptx2markdown first.pptx second.pptx --output-dir converted
+pptx2markdown decks/*.pptx --jobs 0   # CPU마다 작업 프로세스 하나
+pptx2markdown deck.pptx --output-format json
+pptx2markdown deck.pptx --output-format chunks --max-chunk-chars 2000
+pptx2markdown deck.pptx --merged-cells blank
+pptx2markdown deck.pptx --recipe recipe.json
+pptx2markdown --recipe-schema
+pptx2markdown deck.pptx --review
+pptx2markdown deck.pptx --audit
+pptx2markdown old-deck.ppt --ppt-converter libreoffice --vector-images png
+```
+
+PowerPoint 잠금 파일(`~$deck.pptx`, 덱을 열어 둔 동안 생김)은 경고만 하고 건너뛰므로
+`decks/*.pptx` 같은 글롭이 이 파일 때문에 실패하지 않습니다.
+
+기본 출력:
 
 ```text
 output/
-├── convert_manifest.json
-└── <deck-name>/
-    ├── <deck-name>.md       # 또는 <deck-name>.json
+└── deck/
+    ├── deck.md
     ├── media/
-    └── attachments/
-
-.pptx2markdown/
-├── target_slides/
-├── structure_analysis/
-├── table_pipeline/
-└── .cache/
+    ├── attachments/
+    └── bundle-manifest.json
 ```
 
-`convert_manifest.json`에는 파일 및 슬라이드 상태, 경고, 실패, 블록 통계가
-기록됩니다. JSON 출력은 패키지에 포함된 `PresentationDocument 1.0` 스키마를
-따릅니다. 입력 경로는 basename만 남기고 생성 링크에는 이식 가능한 `/` 구분자를
-사용합니다.
+Markdown 링크는 `deck.md` 기준 상대경로이므로 `deck/` 디렉터리 전체를 옮겨도
+내장 asset 연결이 유지됩니다.
 
-## 읽기 순서와 결정론
+## 지원하는 정적 콘텐츠
 
-읽기 순서는 항상 네이티브 도형 bbox 기반 재귀 XY-cut을 사용합니다. 기하학적
-영역을 열과 행으로 나누고, 더 분할할 수 없으면 top-left 순서를 사용합니다.
-원본 XML 순서는 좌표가 같은 경우의 결정론적 tie-break 또는 유효한 좌표가 없는
-객체의 fallback으로만 사용합니다.
+- 슬라이드 순서와 숨김 슬라이드 metadata
+- 재귀 XY-cut으로 좌표만 사용하는 읽기 순서: 세로 공백으로 나뉜 열은 한 열씩
+  읽고, 전체 폭 제목이나 구분선은 그 아래 열보다 먼저 읽으며, 조금씩 어긋나게
+  쌓인 상자는 위에서 아래로 읽습니다. 1px까지 겹쳐도 공백으로 보고, 배경 틀과
+  바닥글은 열 경계를 막지 않습니다.
+- title/subtitle placeholder, 절 번호, 글꼴 크기에 따른 제목 판정. 각 제목은 판정
+  근거를 `source`(`placeholder`, `position`, `numbering`, `text`, `font`)로 남기므로
+  가장 약한 판정만 골라 검토하거나 뺄 수 있습니다.
+- slide layout/master에서 상속한 placeholder 종류, 위치, 글꼴 크기, 글머리 기호
+  (바닥글 placeholder는 제외)
+- slide layout/master에 그려진 텍스트 shape와 그림(블록에 `source_part`가 남고, 가는
+  선·띠는 장식으로 봅니다. 반복되는 로고는 레시피 설정 `template_pictures: false`로
+  뺄 수 있습니다)
+- 텍스트, hyperlink, 목록. 한 shape 안에서 이어지는 일반 문단은 텍스트 블록
+  하나(문단마다 한 줄)로, 이어지는 글머리 기호 문단은 목록 하나로 묶습니다.
+  같은 shape 안의 텍스트·목록·수식은 각자 종류에 맞는 블록으로 둡니다.
+  직접 입력한 `▶`로 시작하는 문단은 목록 항목이 되고, 항목 바로 뒤에 공백으로
+  들여 쓴 문단은 그 항목에 이어 붙습니다.
+- 굵게·기울임 run은 텍스트 일부를 강조할 때 `**굵게**`/`*기울임*`으로 씁니다. 표
+  셀 전체나 여러 줄짜리 텍스트 상자 전체에 걸린 굵게는 서식이라 빼고, 렌더러가
+  표시할 수 없는 강조도 뺍니다. 텍스트·제목·목록의 `text`는
+  이스케이프된 inline Markdown이라, 직접 입력한 `# x`, `- x`, `<tag>`, `[x](y)`가
+  제목·목록·HTML·링크로 바뀌지 않고 글자 그대로 보입니다.
+- 수식(OMML)을 omml2latex로 LaTeX 변환
+- 내장 이미지(그림으로 채운 도형 포함)
+- 내장 audio/video payload
+- OLE, 3D model, 오디오·비디오 첨부. 라벨은 파일 이름이고, OLE 복합 파일은 그 안의
+  실제 파일(Packager의 원본 파일이나 프로그램의 문서 stream)로 풀어서 저장하며
+  ProgID는 `program`에 남깁니다.
+- 네이티브 표: JSON에는 렌더링된 `markdown`과 함께 전체 격자(`rows`)를 남깁니다.
+  병합 시작 칸에는 텍스트와 `row_span`/`col_span`이, 병합으로 덮인 칸에는
+  `merged_from`이 들어갑니다. 첫 행을 머리글로 쓰고 빈 머리글은 `col_N`으로
+  채웁니다. 덮인 칸에 무엇을 쓸지는 `merged_cells`로 정합니다. 기본값 `fill`은
+  병합된 값을 모든 칸에 반복해 각 행이 혼자서도 뜻이 통하게 하고(검색·RAG에
+  유리), `header`는 머리글 행에서만 반복하며, `blank`는 반복하지
+  않습니다. 표 전체 폭으로 병합된 첫 행은 표 제목으로 보고 표 위에 한 번만
+  씁니다(`caption_rows`). 셀 안의 글머리 기호·번호·링크를 유지하고, 셀 위에 놓인
+  그림이나 셀 배경 그림은 그 셀 안에 넣습니다.
+- chart2md를 이용한 차트 변환: 일반 차트는 cache 값으로, Office 2016 chartEx
+  차트(깔때기, 폭포 등)는 내장 workbook으로 변환합니다. 내장 workbook도 패키지와
+  같은 기준으로 검사하며, 거부되면 cache 값을 사용합니다.
+- smartart2md를 이용한 SmartArt 변환: 계층은 들여 쓴 목록, 프로세스·순환은 번호
+  단계, 행렬은 표, 그림은 이미지로 씁니다. 텍스트 없는 노드만 있는 다이어그램은
+  `[smartart: N unlabeled nodes]`로 개수를 남깁니다.
+- 발표자 노트
+- 그룹 도형과 Markup Compatibility `AlternateContent`
 
-동일한 입력과 옵션의 JSON 및 Markdown 출력은 지원 운영체제에서 바이트 단위로
-같아야 합니다. 저장소에는 검토 가능한 PPTX fixture 17개와 두 출력 형식의 예상
-결과 및 asset hash가 함께 들어 있습니다.
+지원하지 못하거나 관계가 없는 콘텐츠는 구조화 warning 또는
+`UnsupportedBlock`으로 남기며, 성공한 것처럼 조용히 버리지 않습니다.
 
-## 보안 모델
-
-일반 `.pptx` 변환은 로컬에서 동작하며 네트워크나 모델을 호출하지 않습니다.
-OOXML 압축 해제 단계에서는 경로 탈출, 링크, 암호화된 entry, relationship 탈출,
-설정된 압축 한도를 넘는 패키지를 거부합니다. 추출된 첨부파일은 입력
-프레젠테이션의 데이터이므로 열기 전에 직접 확인하세요. 구형 `.ppt`
-변환은 선택한 외부 Office 변환기를 실행합니다.
-`--convert-vector-images`도 내장 EMF/WMF asset 변환을 위해 LibreOffice를
-실행합니다.
-
-## 문서
-
-- [출력 스키마](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/output_schema.ko.md)
-- [메인 변환기](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/main_converter.ko.md)
-- [구조 분석기](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/structure_analyzer.ko.md)
-- [골든 PPTX 모음](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/README.ko.md)
+OCR과 layout/master에 그려진 표는 지원하지 않으며, 이미지 설명은
+사용자가 넘긴 설명 함수가 만듭니다.
 
 ## 개발
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ".[mcp]"
 python -m unittest discover -v
 python scripts/update_goldens.py --check
-ruff check src tests scripts
-ruff format --check src tests scripts
+ruff check src tests scripts benchmarks
+ruff format --check src tests scripts benchmarks
 ```
 
-파서 동작을 의도적으로 바꿀 때는 새 골든 스냅샷을 승인하기 전에 생성된
-Markdown과 JSON diff를 직접 검토해야 합니다.
+변환 결과가 의도적으로 바뀌면 golden 스냅샷의 diff를 검토한 뒤
+`python scripts/update_goldens.py --accept`로 받아들입니다.
+
+0.1.x에서 옮겨 오는 경우 [마이그레이션 가이드](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/MIGRATION.ko.md)를 참고하세요.
+
+소유권, 수명주기, 보안 설계는 [ARCHITECTURE.ko.md](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/docs/ARCHITECTURE.ko.md)를
+참고하세요.
 
 ## 라이선스
 
 Copyright 2026 Moonyoung Lee, Inseong Lee, Seung-Woo Jeong
 
-이 프로젝트는 [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)으로 배포합니다.
-외부 골든 fixture의 저작권 표시는
-[`THIRD_PARTY_NOTICES.ko.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/THIRD_PARTY_NOTICES.ko.md)에 정리되어 있습니다.
+이 프로젝트는 [Apache License 2.0](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/LICENSE)으로 배포됩니다. 서드파티 golden
+fixture의 출처 표기는 [`THIRD_PARTY_NOTICES.ko.md`](https://github.com/PPTX2Markdown/PPTX2Markdown/blob/main/tests/fixtures/golden/THIRD_PARTY_NOTICES.ko.md)에 있습니다.

@@ -78,10 +78,14 @@ Ask before editing a shell profile or running commands such as `uv tool update-s
 or `pipx ensurepath`. Prefer telling the user how to refresh or restart the shell
 instead of silently changing profile files.
 
-## 5. Ask whether legacy PPT support is needed
+## 5. Ask about optional features
 
 Normal `.pptx` conversion does not require LibreOffice. LibreOffice is optional
-for legacy `.ppt` conversion and EMF/WMF handling.
+for legacy `.ppt` input, EMF/WMF pictures as PNG, and rendering slides whose
+reading order is in question. The `mcp` extra adds the `pptx2markdown-mcp`
+server for agents such as Claude Code; install it only when the user wants it
+(`uv tool install --upgrade "pptx2markdown[mcp]"`, or the same extra with `pipx`
+or `pip`).
 
 Ask whether the user needs those features. If not, skip LibreOffice. If yes,
 detect whether `soffice` or LibreOffice is already available. Before using
@@ -98,9 +102,9 @@ Open a new or refreshed shell when PATH changes require it, then run:
 pptx2markdown --help
 ```
 
-Confirm that help lists the static parser options, including
-`--output-format {markdown,json}` and `--headings {auto,strict}`. It must not
-list Surya, OCR, VLM, or reading-order provider options.
+Confirm that help lists the 0.2 options, including
+`--output-format {markdown,json,chunks}`, `--review` and `--audit`. If it lists
+`--work-dir`, an old 0.1 version is installed; upgrade it.
 
 If the installation method exposes its own package listing, use it to report the
 installed version (`uv tool list`, `pipx list`, or Python package metadata).

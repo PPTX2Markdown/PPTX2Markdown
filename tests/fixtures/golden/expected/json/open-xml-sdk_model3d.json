@@ -1,44 +1,74 @@
 {
-  "schema_version": "1.0",
-  "source": {
-    "name": "open-xml-sdk_model3d.pptx",
-    "format": "pptx"
-  },
+  "assets": [
+    {
+      "id": "asset-adab5c60b1a85656",
+      "kind": "attachment",
+      "media_type": "model/gltf-binary",
+      "original_name": "model3d1.glb",
+      "payload_available": true,
+      "sha256": "551ea08021a491e4f88dbf1efdc5cf8ac18b5deb36f440aa77ccc271fb0c2eda",
+      "size": 381504,
+      "source_part": "ppt/media/model3d1.glb"
+    },
+    {
+      "id": "asset-c81c8c9c77ff6df8",
+      "kind": "image",
+      "media_type": "image/png",
+      "original_name": "image1.png",
+      "payload_available": true,
+      "sha256": "3c8ba74a45db9c75ebc77d5ad4a84e2d0117ad6e8beb7a1f667e76eea8ac1693",
+      "size": 127068,
+      "source_part": "ppt/media/image1.png"
+    }
+  ],
+  "schema_version": "2.0",
   "slides": [
     {
-      "page": 1,
-      "hidden": false,
       "blocks": [
         {
-          "kind": "image",
-          "content": "![image](media/image1.png)",
-          "shape_id": "4",
-          "heading_level": null,
+          "alt_text": "Smiling Face",
+          "asset_id": "asset-c81c8c9c77ff6df8",
           "bbox": {
-            "x": 4606986,
-            "y": 1920956,
-            "width": 2978028,
             "height": 3016087,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 2978028,
+            "x": 4606986,
+            "y": 1920956
           },
+          "description": null,
+          "id": "s1.b1",
+          "kind": "image",
+          "shape_id": "4",
           "source_part": "slide"
         },
         {
-          "kind": "attachment",
-          "content": "[attachment: model3d1.glb](attachments/model3d1.glb)",
-          "shape_id": "4",
-          "heading_level": null,
+          "asset_id": "asset-adab5c60b1a85656",
           "bbox": {
-            "x": 4606986,
-            "y": 1920956,
-            "width": 2978028,
             "height": 3016087,
-            "unit": "emu"
+            "unit": "emu",
+            "width": 2978028,
+            "x": 4606986,
+            "y": 1920956
           },
+          "id": "s1.b2",
+          "kind": "attachment",
+          "label": "model3d1.glb",
+          "program": null,
+          "shape_id": "4",
           "source_part": "slide"
         }
       ],
-      "notes": null
+      "hidden": false,
+      "notes": null,
+      "page": 1,
+      "reading_order": null,
+      "section": null
     }
-  ]
+  ],
+  "source": {
+    "format": "pptx",
+    "name": "open-xml-sdk_model3d.pptx",
+    "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67"
+  },
+  "warnings": []
 }

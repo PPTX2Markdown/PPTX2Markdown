@@ -1,10 +1,14 @@
 [Page_1]
 
-Static Text
+**Static Text**
+
 1. {{bullet1}}
+
 Next Line with static text.
+
 - {{bullet2}}
   - {{bullet2-1}}
+
 Final Line
 
 [Page_2]
