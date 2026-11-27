@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import mimetypes
 import re
 import shutil
 import tempfile
@@ -91,6 +90,63 @@ _ZIP_DOCUMENTS = {
 }
 
 
+# A fixed table: the platform's MIME registry differs by OS and Python version
+# (.glb is unknown to Python 3.12 on macOS, model/gltf-binary on Linux), and the
+# same deck must give the same bytes everywhere.
+_BY_EXTENSION = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".jpe": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".svg": "image/svg+xml",
+    ".webp": "image/webp",
+    ".ico": "image/vnd.microsoft.icon",
+    ".emf": "image/emf",
+    ".wmf": "image/wmf",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".wma": "audio/x-ms-wma",
+    ".ogg": "audio/ogg",
+    ".mid": "audio/midi",
+    ".midi": "audio/midi",
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".mov": "video/quicktime",
+    ".avi": "video/x-msvideo",
+    ".wmv": "video/x-ms-wmv",
+    ".mpg": "video/mpeg",
+    ".mpeg": "video/mpeg",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
+    ".obj": "model/obj",
+    ".stl": "model/stl",
+    ".fbx": "application/octet-stream",
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".xls": "application/vnd.ms-excel",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".rtf": "application/rtf",
+    ".hwp": "application/x-hwp",
+    ".txt": "text/plain",
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".xml": "application/xml",
+    ".json": "application/json",
+    ".zip": "application/zip",
+    ".7z": "application/x-7z-compressed",
+    ".bin": "application/octet-stream",
+}
+
+
 def media_type_for(name: str, data_prefix: bytes = b"") -> str:
     """Infer a conservative media type from magic bytes and the filename."""
 
@@ -120,10 +176,7 @@ def media_type_for(name: str, data_prefix: bytes = b"") -> str:
     if data_prefix.startswith((b"\xd7\xcd\xc6\x9a", b"\x01\x00\x09\x00", b"\x02\x00\x09\x00")):
         return "image/wmf"
     suffix = PurePosixPath(name).suffix.casefold()
-    if suffix in {".emf", ".wmf"}:
-        return f"image/{suffix[1:]}"
-    guessed, _ = mimetypes.guess_type(name)
-    return guessed or "application/octet-stream"
+    return _BY_EXTENSION.get(suffix) or _ZIP_DOCUMENTS.get(suffix) or "application/octet-stream"
 
 
 class AssetStore:

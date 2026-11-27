@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import mimetypes
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from pptx2markdown.assets import AssetLimits, AssetStore, safe_basename
+from pptx2markdown.assets import AssetLimits, AssetStore, media_type_for, safe_basename
 from pptx2markdown.errors import AssetLimitError, AssetUnavailableError
+
+
+class MediaTypeTests(unittest.TestCase):
+    def test_media_types_do_not_depend_on_the_platform_registry(self) -> None:
+        names = ("model3d1.glb", "clip.mov", "notes.txt", "deck.ppt", "unknown.xyz")
+        expected = [media_type_for(name) for name in names]
+        with mock.patch.object(mimetypes, "guess_type", return_value=("x/changed", None)):
+            self.assertEqual([media_type_for(name) for name in names], expected)
+        self.assertEqual(expected[0], "model/gltf-binary")
+        self.assertEqual(expected[-1], "application/octet-stream")
 
 
 class AssetStoreTests(unittest.TestCase):

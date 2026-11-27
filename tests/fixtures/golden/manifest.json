@@ -81,7 +81,7 @@
       "repository_path": "test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
       "source_url": "https://raw.githubusercontent.com/dotnet/Open-XML-SDK/00967dc871f06776ae969762c6703d062308a6c9/test/DocumentFormat.OpenXml.Tests.Assets/assets/TestFiles/3dtestdash.pptx",
       "sha256": "d02922ba45387aab0742a9fb3e3eee2523fe9cbd0fffc2043ad78fb4727a5d67",
-      "json_sha256": "23441e1c74d4023fbb0e19e46783628b3a9526d0108c66efad6be0ea1e3f679b",
+      "json_sha256": "556f4df2b881243150c26757ce59d0ee2046f998c44bafb47cd99d2ffa2913a4",
       "markdown_sha256": "b87fc65d93780c144b339d0a429879bdc5c91a45651d0f2bd300a5d8fda61595",
       "coverage": [
         "3D model",

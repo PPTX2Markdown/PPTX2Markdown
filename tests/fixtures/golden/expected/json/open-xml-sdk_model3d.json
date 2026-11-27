@@ -3,7 +3,7 @@
     {
       "id": "asset-adab5c60b1a85656",
       "kind": "attachment",
-      "media_type": "application/octet-stream",
+      "media_type": "model/gltf-binary",
       "original_name": "model3d1.glb",
       "payload_available": true,
       "sha256": "551ea08021a491e4f88dbf1efdc5cf8ac18b5deb36f440aa77ccc271fb0c2eda",
